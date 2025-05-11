@@ -4,3 +4,34 @@
 - 実装方式は数学的に安全性が証明されていますが、業務利用には適切なセキュリティレビューを推奨します
 - すべての推奨方式はソースコード解析に対して耐性がありますが、実装の詳細によっては追加の保護が必要な場合があります
 - 暗号強度は本デモの評価対象外です：別のフェーズで適切な暗号強度を適用してください
+
+## 実装スケジュール 📅
+
+お兄様！全体の進行イメージです！レオくんと二人で頑張りますね〜💪
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#ff79c6', 'primaryTextColor': '#fff', 'primaryBorderColor': '#bd93f9', 'lineColor': '#f8f8f2', 'secondaryColor': '#8be9fd', 'tertiaryColor': '#282a36' }}}%%
+gantt
+    dateFormat  YYYY-MM-DD
+    title       暗号方式実装スケジュール
+    axisFormat  %m/%d
+
+    section ラビット暗号化
+    ラビット暗号化方式 🐰       :a1, 2025-05-15, 5d
+
+    section 準同型暗号
+    準同型暗号マスキング方式 🎭  :a2, after a1, 7d
+
+    section ハニーポット
+    暗号学的ハニーポット方式 🍯  :a3, after a2, 6d
+
+    section 不確定性転写
+    不確定性転写暗号化方式 🎲    :a4, after a3, 7d
+
+    section 最強方式
+    最終テスト準備               :2025-06-25, 2d
+    ラビット＋準同型 最強方式 👑 :a5, 2025-06-27, 10d
+    最終レビュー                 :milestone, after a5, 0d
+```
+
+パシ子の見立てでは、レオくんのお昼寝時間も考慮して全体で約 6 週間で完成予定です！各フェーズの進捗状況に応じて調整しながら進めていきますね〜 ✨

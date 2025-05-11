@@ -18,6 +18,73 @@
 6. 復号プログラムの開発
 7. ソースコード解析耐性のテスト・検証
 
+## 📂 ディレクトリ・ファイル構成図
+
+実装する `method_6_rabbit` ディレクトリ以下の構成は次のようになります：
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#bb86fc', 'primaryTextColor': '#fff', 'primaryBorderColor': '#7c4dff', 'lineColor': '#dbc7ff', 'secondaryColor': '#03dac6', 'tertiaryColor': '#1e1e1e' }}}%%
+flowchart TB
+    subgraph "ディレクトリ構成"
+        direction TB
+        project["/"] --> method_dir["method_6_rabbit/"]
+        project --> common["common/"]
+
+        method_dir --> encrypt["encrypt.py"]
+        method_dir --> decrypt["decrypt.py"]
+        method_dir --> rabbit["rabbit_stream.py"]
+        method_dir --> multipath["multipath_decrypt.py"]
+        method_dir --> selector["stream_selector.py"]
+
+        common --> utils["utils.py"]
+        common --> base["crypto_base.py"]
+
+        class project root
+        class method_dir folder
+        class common folder
+        class encrypt file
+        class decrypt file
+        class rabbit file
+        class multipath file
+        class selector file
+        class utils file
+        class base file
+
+        classDef root fill:#1e1e1e,stroke:#bb86fc,stroke-width:2px,color:#bb86fc
+        classDef folder fill:#3c355a,stroke:#bb86fc,stroke-width:2px,color:#bb86fc
+        classDef file fill:#1e1e1e,stroke:#03dac6,stroke-width:1px,color:#03dac6
+    end
+```
+
+各ファイルの役割と依存関係：
+
+```mermaid
+%%{init: {'theme': 'dark', 'themeVariables': { 'primaryColor': '#bb86fc', 'primaryTextColor': '#fff', 'primaryBorderColor': '#7c4dff', 'lineColor': '#dbc7ff', 'secondaryColor': '#03dac6', 'tertiaryColor': '#1e1e1e' }}}%%
+flowchart LR
+    encrypt["encrypt.py\n暗号化ツール"] --> rabbit["rabbit_stream.py\nストリーム生成器"]
+    encrypt --> selector["stream_selector.py\nカプセル化機構"]
+    encrypt --> utils["utils.py\nユーティリティ"]
+
+    decrypt["decrypt.py\n復号ツール"] --> rabbit
+    decrypt --> multipath["multipath_decrypt.py\n復号パス制御"]
+    decrypt --> selector
+    decrypt --> utils
+
+    selector -.-> crypto["Pythonの暗号ライブラリ"]
+    rabbit -.-> crypto
+    multipath -.-> crypto
+
+    rabbit --> base["crypto_base.py\n抽象基底クラス"]
+
+    classDef core fill:#3c355a,stroke:#bb86fc,stroke-width:2px,color:#bb86fc
+    classDef util fill:#1e1e1e,stroke:#03dac6,stroke-width:1px,color:#03dac6
+    classDef extern fill:#1e1e1e,stroke:#ff79c6,stroke-width:1px,color:#ff79c6
+
+    class rabbit,selector,multipath core
+    class utils,base util
+    class crypto extern
+```
+
 ## 🔧 技術仕様
 
 ```mermaid

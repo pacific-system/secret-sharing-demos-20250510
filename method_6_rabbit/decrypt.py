@@ -13,7 +13,8 @@ import argparse
 import json
 import base64
 import hashlib
-from typing import Tuple, Dict, Any, Optional
+import binascii
+from typing import Tuple, Dict, Any, Optional, Union
 
 # インポートエラーを回避するための処理
 if __name__ == "__main__":
@@ -75,6 +76,63 @@ def read_encrypted_file(file_path: str) -> Tuple[bytes, Dict[str, Any]]:
     except Exception as e:
         print(f"エラー: ファイルの読み込みに失敗しました: {e}")
         sys.exit(1)
+
+
+def read_key_from_file(key_file_path: str) -> str:
+    """
+    鍵ファイルから鍵を読み込む
+
+    Args:
+        key_file_path: 鍵ファイルのパス
+
+    Returns:
+        鍵の文字列
+    """
+    try:
+        with open(key_file_path, 'r') as file:
+            key = file.read().strip()
+        return key
+    except FileNotFoundError:
+        print(f"エラー: 鍵ファイル '{key_file_path}' が見つかりません")
+        sys.exit(1)
+    except Exception as e:
+        print(f"エラー: 鍵ファイルの読み込みに失敗しました: {e}")
+        sys.exit(1)
+
+
+def process_key_input(key_input: str) -> str:
+    """
+    様々な形式の鍵入力を処理する
+
+    Args:
+        key_input: 鍵入力（パスワード、16進数文字列、ファイルパス）
+
+    Returns:
+        処理された鍵文字列
+    """
+    # ファイルからの読み込み
+    if key_input.startswith("file:"):
+        key_file_path = key_input[5:]
+        return read_key_from_file(key_file_path)
+
+    # 16進数文字列の処理
+    elif key_input.startswith("hex:"):
+        hex_key = key_input[4:]
+        try:
+            # 16進数文字列を検証して文字列に変換（UTF-8として復号）
+            raw_bytes = binascii.unhexlify(hex_key)
+            try:
+                # UTF-8として復号可能なら、それをパスワードとして使用
+                return raw_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                # UTF-8として解釈できない場合は16進数文字列をそのまま使用
+                return hex_key
+        except ValueError:
+            print(f"エラー: 不正な16進数文字列です: {hex_key}")
+            sys.exit(1)
+
+    # 通常のパスワードはそのまま返す
+    return key_input
 
 
 def decrypt_data(encrypted_data: bytes, password: str, metadata: Dict[str, Any]) -> Tuple[bytes, str]:
@@ -190,10 +248,22 @@ def parse_arguments() -> argparse.Namespace:
         help="復号ファイルの出力先"
     )
 
-    parser.add_argument(
+    # 鍵入力オプショングループ（いずれか一つを必須に）
+    key_group = parser.add_mutually_exclusive_group(required=True)
+
+    key_group.add_argument(
         "-p", "--password",
-        required=True,
-        help="復号用パスワード"
+        help="復号用パスワード。通常の文字列として処理されます"
+    )
+
+    key_group.add_argument(
+        "-k", "--key-hex",
+        help="16進数形式の鍵（16進数文字列をASCIIとして解釈）"
+    )
+
+    key_group.add_argument(
+        "-f", "--key-file",
+        help="鍵が保存されたファイルのパス"
     )
 
     parser.add_argument(
@@ -210,14 +280,32 @@ def main():
     # 引数解析
     args = parse_arguments()
 
+    # 鍵入力の処理
+    if args.password:
+        key_input = args.password
+    elif args.key_hex:
+        key_input = f"hex:{args.key_hex}"
+    elif args.key_file:
+        key_input = f"file:{args.key_file}"
+    else:
+        # ここには到達しないはずだが、念のため
+        print("エラー: 鍵が指定されていません")
+        sys.exit(1)
+
+    # 鍵入力を処理
+    password = process_key_input(key_input)
+
+    if args.verbose and args.key_hex:
+        print(f"16進数鍵 '{args.key_hex}' を処理しました")
+
     print(f"暗号化ファイル '{args.input}' を読み込んでいます...")
     encrypted_data, metadata = read_encrypted_file(args.input)
 
     if args.verbose:
         print(f"メタデータ: {json.dumps(metadata, indent=2)}")
 
-    print(f"パスワードを使用してデータを復号しています...")
-    decrypted_data, path_type = decrypt_data(encrypted_data, args.password, metadata)
+    print(f"鍵を使用してデータを復号しています...")
+    decrypted_data, path_type = decrypt_data(encrypted_data, password, metadata)
 
     # 復号結果を表示
     if path_type == "true":
@@ -225,7 +313,7 @@ def main():
     elif path_type == "false":
         print("非正規データへの復号に成功しました")
     else:
-        print("警告: 復号データの検証に失敗しました。パスワードが正しくない可能性があります。")
+        print("警告: 復号データの検証に失敗しました。鍵が正しくない可能性があります。")
 
     # 復号データをファイルに保存
     save_decrypted_file(decrypted_data, args.output)

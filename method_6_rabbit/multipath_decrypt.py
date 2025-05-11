@@ -15,7 +15,8 @@ import json
 import base64
 import hashlib
 import time
-from typing import Tuple, Dict, Any, List, Optional
+import binascii
+from typing import Tuple, Dict, Any, List, Optional, Union
 
 # インポートエラーを回避するための処理
 if __name__ == "__main__":
@@ -77,6 +78,63 @@ def read_encrypted_file(file_path: str) -> Tuple[bytes, Dict[str, Any]]:
     except Exception as e:
         print(f"エラー: ファイルの読み込みに失敗しました: {e}")
         sys.exit(1)
+
+
+def read_key_from_file(key_file_path: str) -> str:
+    """
+    鍵ファイルから鍵を読み込む
+
+    Args:
+        key_file_path: 鍵ファイルのパス
+
+    Returns:
+        鍵の文字列
+    """
+    try:
+        with open(key_file_path, 'r') as file:
+            key = file.read().strip()
+        return key
+    except FileNotFoundError:
+        print(f"エラー: 鍵ファイル '{key_file_path}' が見つかりません")
+        sys.exit(1)
+    except Exception as e:
+        print(f"エラー: 鍵ファイルの読み込みに失敗しました: {e}")
+        sys.exit(1)
+
+
+def process_key_input(key_input: str) -> str:
+    """
+    様々な形式の鍵入力を処理する
+
+    Args:
+        key_input: 鍵入力（パスワード、16進数文字列、ファイルパス）
+
+    Returns:
+        処理された鍵文字列
+    """
+    # ファイルからの読み込み
+    if key_input.startswith("file:"):
+        key_file_path = key_input[5:]
+        return read_key_from_file(key_file_path)
+
+    # 16進数文字列の処理
+    elif key_input.startswith("hex:"):
+        hex_key = key_input[4:]
+        try:
+            # 16進数文字列を検証して文字列に変換（UTF-8として復号）
+            raw_bytes = binascii.unhexlify(hex_key)
+            try:
+                # UTF-8として復号可能なら、それをパスワードとして使用
+                return raw_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                # UTF-8として解釈できない場合は16進数文字列をそのまま使用
+                return hex_key
+        except ValueError:
+            print(f"エラー: 不正な16進数文字列です: {hex_key}")
+            sys.exit(1)
+
+    # 通常のパスワードはそのまま返す
+    return key_input
 
 
 def decrypt_data(encrypted_data: bytes, password: str, metadata: Dict[str, Any]) -> Tuple[bytes, str]:
@@ -192,11 +250,25 @@ def parse_arguments() -> argparse.Namespace:
         help="復号ファイルの出力先のプレフィックス"
     )
 
-    parser.add_argument(
+    # 異なる鍵形式のオプション
+    key_group = parser.add_mutually_exclusive_group(required=True)
+
+    key_group.add_argument(
         "-p", "--passwords",
-        required=True,
         nargs='+',
         help="復号に使用する複数のパスワード（スペース区切り）"
+    )
+
+    key_group.add_argument(
+        "-k", "--key-hex-list",
+        nargs='+',
+        help="16進数形式の鍵リスト（スペース区切り）"
+    )
+
+    key_group.add_argument(
+        "-f", "--key-files",
+        nargs='+',
+        help="鍵が保存されたファイルのパスリスト（スペース区切り）"
     )
 
     parser.add_argument(
@@ -213,23 +285,35 @@ def main():
     # 引数解析
     args = parse_arguments()
 
+    # 鍵入力の処理
+    keys = []
+    if args.passwords:
+        keys = args.passwords
+    elif args.key_hex_list:
+        keys = [f"hex:{k}" for k in args.key_hex_list]
+    elif args.key_files:
+        keys = [f"file:{f}" for f in args.key_files]
+
+    # 各鍵を処理
+    processed_keys = [process_key_input(key) for key in keys]
+
     print(f"暗号化ファイル '{args.input}' を読み込んでいます...")
     encrypted_data, metadata = read_encrypted_file(args.input)
 
     if args.verbose:
         print(f"メタデータ: {json.dumps(metadata, indent=2)}")
 
-    print(f"{len(args.passwords)}個のパスワードでの復号を開始します...")
+    print(f"{len(processed_keys)}個の鍵での復号を開始します...")
 
     # 結果格納用
     results = []
 
-    # 各パスワードで復号を試みる
-    for i, password in enumerate(args.passwords):
-        print(f"\nパスワード {i+1}/{len(args.passwords)} を使用して復号しています...")
+    # 各鍵で復号を試みる
+    for i, key in enumerate(processed_keys):
+        print(f"\n鍵 {i+1}/{len(processed_keys)} を使用して復号しています...")
 
         start_time = time.time()
-        decrypted_data, path_type = decrypt_data(encrypted_data, password, metadata)
+        decrypted_data, path_type = decrypt_data(encrypted_data, key, metadata)
         end_time = time.time()
 
         # パス種別に基づいてラベルを決定
@@ -245,12 +329,17 @@ def main():
 
         # 復号結果を保存
         save_decrypted_file(decrypted_data, output_file)
-        print(f"パスワード {i+1}: {path_label}パスへの復号結果（{output_file}）")
+        print(f"鍵 {i+1}: {path_label}パスへの復号結果（{output_file}）")
+
+        # 表示用に鍵の一部を隠す
+        display_key = keys[i]
+        if len(display_key) > 6:
+            display_key = display_key[:3] + "..." + display_key[-3:]
 
         # 結果を追加
         results.append({
             "password_index": i+1,
-            "password": password[:3] + "..." + password[-3:],  # セキュリティのため一部のみ表示
+            "password": display_key,
             "path_type": path_type,
             "decrypt_time": end_time - start_time,
             "output_file": output_file
@@ -259,7 +348,7 @@ def main():
     # 結果サマリーを表示
     print("\n=== 復号結果サマリー ===")
     print(f"暗号ファイル: {args.input}")
-    print(f"試行パスワード数: {len(args.passwords)}")
+    print(f"試行鍵数: {len(processed_keys)}")
 
     true_count = sum(1 for r in results if r["path_type"] == "true")
     false_count = sum(1 for r in results if r["path_type"] == "false")

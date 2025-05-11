@@ -4,7 +4,13 @@
 # ディレクトリ構造が変わったので修正
 README_DIR := .
 ROOT_DIR := ../..
-README_PARTS := $(sort $(wildcard $(README_DIR)/*.md))
+
+# 10_0_issues.md を特別扱いして最後に結合されるようにする
+ISSUES_FILE := $(README_DIR)/10_0_issues.md
+OTHER_PARTS := $(filter-out $(ISSUES_FILE) $(README_DIR)/README.md $(README_DIR)/Makefile, $(wildcard $(README_DIR)/*.md))
+SORTED_OTHER_PARTS := $(sort $(OTHER_PARTS))
+README_PARTS := $(SORTED_OTHER_PARTS) $(ISSUES_FILE)
+
 README_TARGET := $(ROOT_DIR)/README.md
 
 # デフォルトターゲット：README.md を生成
@@ -13,13 +19,13 @@ all: $(README_TARGET)
 # README.md の生成ルール
 $(README_TARGET): $(README_PARTS)
 	@echo "💕 パシ子がREADME.mdを生成します！"
-	@cat $(filter-out $(README_DIR)/README.md $(README_DIR)/Makefile, $^) > $@
+	@cat $^ > $@
 	@echo "✨ READMEの生成が完了しました！"
 
 # READMEパーツの一覧表示
 list:
 	@echo "📑 README パーツ一覧："
-	@for part in $(filter-out $(README_DIR)/README.md $(README_DIR)/Makefile, $(README_PARTS)); do \
+	@for part in $(README_PARTS); do \
 		echo "  - $$part"; \
 	done
 

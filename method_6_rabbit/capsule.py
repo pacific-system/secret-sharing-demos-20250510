@@ -428,6 +428,48 @@ def remove_indistinguishability(data: bytes, nonce: bytes) -> bytes:
     return bytes(result)
 
 
+def is_multipath_capsule(data: bytes, metadata: Dict[str, Any]) -> bool:
+    """
+    データが多重パスカプセル形式かどうかを判定
+
+    Args:
+        data: 判定対象データ
+        metadata: メタデータ
+
+    Returns:
+        多重パスカプセル形式の場合はTrue
+    """
+    # 必要なメタデータフィールドの存在を確認
+    required_fields = [
+        "version", "salt", "function_index",
+        "true_nonce", "false_nonce",
+        "true_path_check", "false_path_check"
+    ]
+
+    for field in required_fields:
+        if field not in metadata:
+            return False
+
+    # バージョン確認
+    if metadata.get("version") != CAPSULE_VERSION:
+        return False
+
+    # データ長の妥当性確認
+    if len(data) < 16:  # 最小限のデータ長
+        return False
+
+    # ノンスデータの検証
+    try:
+        true_nonce = base64.b64decode(metadata["true_nonce"])
+        false_nonce = base64.b64decode(metadata["false_nonce"])
+        if len(true_nonce) != NONCE_SIZE or len(false_nonce) != NONCE_SIZE:
+            return False
+    except:
+        return False
+
+    return True
+
+
 def create_multipath_capsule(true_data: bytes, false_data: bytes, key: str) -> Tuple[bytes, Dict[str, Any]]:
     """
     高度なカプセルを作成

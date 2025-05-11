@@ -5,6 +5,8 @@
 ラビット暗号化方式の設定ファイル
 """
 
+import os
+
 # ラビットストリーム暗号の設定パラメータ
 RABBIT_IV_SIZE = 8  # 初期化ベクトルサイズ（バイト）
 RABBIT_KEY_SIZE = 16  # 鍵サイズ（バイト）
@@ -17,9 +19,10 @@ TRUE_KEY_MARKER = 0xA5  # 正規鍵マーカー（内部識別用）
 FALSE_KEY_MARKER = 0x5A  # 非正規鍵マーカー（内部識別用）
 STREAM_SELECTOR_SEED = 0x42  # ストリーム選択シード値
 
-# ファイルパス設定
-TRUE_FILE_PATH = "../../common/true-false-text/true.text"
-FALSE_FILE_PATH = "../../common/true-false-text/false.text"
+# パッケージルートからの相対パスを動的に解決
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+TRUE_FILE_PATH = os.path.join(BASE_DIR, "common", "true-false-text", "true.text")
+FALSE_FILE_PATH = os.path.join(BASE_DIR, "common", "true-false-text", "false.text")
 ENCRYPTED_FILE_PATH = "encrypted.bin"  # 暗号化ファイルの出力パス
 DECRYPTED_FILE_PATH = "decrypted.text"  # 復号ファイルの出力パス
 

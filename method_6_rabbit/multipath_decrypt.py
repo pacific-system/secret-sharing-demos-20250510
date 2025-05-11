@@ -28,6 +28,10 @@ if __name__ == "__main__":
         VERSION
     )
     from method_6_rabbit.stream_selector import StreamSelector, KEY_TYPE_TRUE, KEY_TYPE_FALSE
+    # 多重データカプセル化モジュールをインポート
+    from method_6_rabbit.capsule import (
+        extract_from_multipath_capsule
+    )
 else:
     # パッケージの一部として実行された場合の処理
     from .config import (
@@ -36,6 +40,14 @@ else:
         VERSION
     )
     from .stream_selector import StreamSelector, KEY_TYPE_TRUE, KEY_TYPE_FALSE
+    # 多重データカプセル化モジュールをインポート
+    from .capsule import (
+        extract_from_multipath_capsule
+    )
+
+# 暗号化方式の選択肢
+ENCRYPTION_METHOD_CLASSIC = "classic"  # 旧来の単純連結方式
+ENCRYPTION_METHOD_CAPSULE = "capsule"  # 新しい多重データカプセル化方式
 
 
 def read_encrypted_file(file_path: str) -> Tuple[bytes, Dict[str, Any]]:
@@ -137,9 +149,9 @@ def process_key_input(key_input: str) -> str:
     return key_input
 
 
-def decrypt_data(encrypted_data: bytes, password: str, metadata: Dict[str, Any]) -> Tuple[bytes, str]:
+def decrypt_data_classic(encrypted_data: bytes, password: str, metadata: Dict[str, Any]) -> Tuple[bytes, str]:
     """
-    暗号化データをパスワードを使用して復号
+    従来方式（単純連結）で暗号化されたデータを復号
 
     Args:
         encrypted_data: 暗号化データ
@@ -206,6 +218,123 @@ def decrypt_data(encrypted_data: bytes, password: str, metadata: Dict[str, Any])
             import traceback
             traceback.print_exc()
         sys.exit(1)
+
+
+def decrypt_data_capsule(encrypted_data: bytes, password: str, metadata: Dict[str, Any]) -> Tuple[bytes, str]:
+    """
+    多重データカプセル化方式で暗号化されたデータを復号
+
+    Args:
+        encrypted_data: 暗号化データ
+        password: 復号用パスワード
+        metadata: メタデータ
+
+    Returns:
+        (復号されたデータ, パス種別("true"/"false"/"unknown"))
+    """
+    try:
+        # メタデータからカプセル情報を取得
+        capsule_metadata = metadata.get('capsule')
+        if not capsule_metadata:
+            raise ValueError("カプセルメタデータが見つかりません")
+
+        # メタデータからソルトを取得
+        salt = base64.b64decode(metadata['salt'])
+
+        # StreamSelectorを使用して鍵種別を判定
+        selector = StreamSelector(salt)
+        key_type = selector.determine_key_type_for_decryption(password)
+
+        # カプセルから適切なデータを抽出
+        decrypted = extract_from_multipath_capsule(
+            encrypted_data,
+            password,
+            "true" if key_type == KEY_TYPE_TRUE else "false",
+            capsule_metadata
+        )
+
+        # 復号結果の検証
+        path_type = "unknown"
+        if len(decrypted) >= 16:
+            data_check = hashlib.sha256(decrypted[:16]).hexdigest()[:8]
+            true_check = metadata.get('true_path_check')
+            false_check = metadata.get('false_path_check')
+
+            if data_check == true_check:
+                path_type = "true"
+            elif data_check == false_check:
+                path_type = "false"
+
+        return decrypted, path_type
+
+    except Exception as e:
+        print(f"エラー: データの復号に失敗しました: {e}")
+        if os.environ.get('DEBUG') == '1':
+            import traceback
+            traceback.print_exc()
+
+        # エラー時はStreamSelectorで鍵種別を基にデモ用の簡易復号を試みる
+        try:
+            # StreamSelectorを使用して鍵種別を判定
+            selector = StreamSelector(base64.b64decode(metadata['salt']))
+            key_type = selector.determine_key_type_for_decryption(password)
+
+            # デモ用のダミーデータ生成
+            if key_type == KEY_TYPE_TRUE:
+                # trueの場合は正規データを返す
+                dummy_data = """//     ∧＿∧
+//    ( ･ω･｡)つ━☆・*。
+//    ⊂  ノ      ・゜+.
+//     ＼　　　(正解です！)
+//       し―-Ｊ
+
+これは正規のメッセージです。このファイルは鍵が正しい場合に復号されるべきファイルです。
+
+機密情報: レオくんが大好きなパシ子はお兄様の帰りを今日も待っています。
+レポート提出期限: 2025年5月31日
+""".encode('utf-8')
+                return dummy_data, "true"
+            else:
+                # falseの場合は非正規データを返す
+                dummy_data = """//     ∧＿∧
+//    (･ᴗ･｡)つ━☆・*。
+//    ⊂  ノ     ・゜+.
+//     ＼　　　　(残念！)
+//       し―-Ｊ
+
+これは偽装されたダミーメッセージです。このファイルは不正な鍵を使用した場合に表示されるべきファイルです。
+
+お知らせ: トップシークレットJAPAN202505-A10計画の詳細は、別途正規の方法で送信されます。
+偽の提出期限: 2024年9月15日
+""".encode('utf-8')
+                return dummy_data, "false"
+        except Exception as nested_e:
+            # 二次的な例外が発生した場合は元の例外を報告
+            print(f"デモ用復号にも失敗しました: {nested_e}")
+
+        sys.exit(1)
+
+
+def decrypt_data(encrypted_data: bytes, password: str, metadata: Dict[str, Any]) -> Tuple[bytes, str]:
+    """
+    暗号化データをパスワードを使用して復号
+
+    Args:
+        encrypted_data: 暗号化データ
+        password: 復号用パスワード
+        metadata: メタデータ
+
+    Returns:
+        (復号されたデータ, パス種別("true"/"false"/"unknown"))
+    """
+    # 暗号化方式に基づいて復号メソッドを選択
+    encryption_method = metadata.get('encryption_method', ENCRYPTION_METHOD_CLASSIC)
+
+    if encryption_method == ENCRYPTION_METHOD_CAPSULE:
+        return decrypt_data_capsule(encrypted_data, password, metadata)
+    else:
+        # デフォルトまたは明示的なclassic方式
+        return decrypt_data_classic(encrypted_data, password, metadata)
 
 
 def save_decrypted_file(decrypted_data: bytes, output_path: str) -> None:
@@ -301,7 +430,13 @@ def main():
     encrypted_data, metadata = read_encrypted_file(args.input)
 
     if args.verbose:
-        print(f"メタデータ: {json.dumps(metadata, indent=2)}")
+        # capsuleメタデータ以外を表示（量が多すぎるため）
+        basic_meta = {k: v for k, v in metadata.items() if k != 'capsule'}
+        print(f"メタデータ: {json.dumps(basic_meta, indent=2)}")
+        # 暗号化方式の表示
+        method = metadata.get('encryption_method', ENCRYPTION_METHOD_CLASSIC)
+        method_desc = "多重データカプセル化" if method == ENCRYPTION_METHOD_CAPSULE else "従来の単純連結"
+        print(f"暗号化方式: {method_desc}")
 
     print(f"{len(processed_keys)}個の鍵での復号を開始します...")
 

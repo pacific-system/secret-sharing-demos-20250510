@@ -75,9 +75,9 @@ def generate_master_key() -> bytes:
     return secrets.token_bytes(RABBIT_KEY_SIZE)
 
 
-def encrypt_data(data: bytes, stream: bytes) -> bytes:
+def xor_encrypt_data(data: bytes, stream: bytes) -> bytes:
     """
-    データをストリーム暗号化
+    データをXORストリーム暗号化
 
     Args:
         data: 暗号化するバイト列
@@ -160,8 +160,8 @@ def create_encrypted_container_classic(true_data: bytes, false_data: bytes, mast
     false_stream = false_stream_gen.get_stream_for_decryption(false_password, max_length)
 
     # データを暗号化
-    true_encrypted = encrypt_data(true_data, true_stream)
-    false_encrypted = encrypt_data(false_data, false_stream)
+    true_encrypted = xor_encrypt_data(true_data, true_stream)
+    false_encrypted = xor_encrypt_data(false_data, false_stream)
 
     # 両方の暗号化データを連結
     final_encrypted = true_encrypted + false_encrypted
@@ -287,6 +287,74 @@ def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_
     except Exception as e:
         print(f"エラー: 暗号化ファイルの保存に失敗しました: {e}")
         sys.exit(1)
+
+
+def encrypt_file(true_file: str, false_file: str, output_file: str, key: str,
+                method: str = ENCRYPTION_METHOD_CAPSULE) -> None:
+    """
+    ファイルを暗号化する
+
+    Args:
+        true_file: 正規の平文ファイルパス
+        false_file: 非正規の平文ファイルパス
+        output_file: 出力ファイルパス
+        key: 暗号化に使用する鍵
+        method: 暗号化方式
+    """
+    # ファイルを読み込む
+    true_data = read_file(true_file)
+    false_data = read_file(false_file)
+
+    # 鍵から派生したマスター鍵を生成
+    master_key = hashlib.sha256(key.encode('utf-8')).digest()[:RABBIT_KEY_SIZE]
+
+    # 暗号化する
+    encrypted_data, metadata = create_encrypted_container(
+        true_data, false_data, master_key, key, key, method
+    )
+
+    # 暗号化したデータを保存する
+    save_encrypted_file(encrypted_data, metadata, output_file)
+
+
+def encrypt_data(true_data: bytes, false_data: bytes, key: str,
+                method: str = ENCRYPTION_METHOD_CAPSULE) -> bytes:
+    """
+    データを暗号化する
+
+    Args:
+        true_data: 正規の平文データ
+        false_data: 非正規の平文データ
+        key: 暗号化に使用する鍵
+        method: 暗号化方式
+
+    Returns:
+        暗号化されたデータ
+    """
+    # 鍵から派生したマスター鍵を生成
+    master_key = hashlib.sha256(key.encode('utf-8')).digest()[:RABBIT_KEY_SIZE]
+
+    # 暗号化する
+    encrypted_data, metadata = create_encrypted_container(
+        true_data, false_data, master_key, key, key, method
+    )
+
+    # メタデータをJSON形式に変換
+    metadata_json = json.dumps(metadata, indent=2)
+    metadata_bytes = metadata_json.encode('utf-8')
+
+    # ヘッダーとデータを結合
+    result = bytearray()
+    # マジックヘッダー
+    result.extend(b'RABBIT_ENCRYPTED_V1\n')
+    # メタデータサイズ
+    result.extend(len(metadata_bytes).to_bytes(4, byteorder='big'))
+    # メタデータ
+    result.extend(metadata_bytes)
+    # 暗号化データ
+    result.extend(encrypted_data)
+
+    return bytes(result)
 
 
 def parse_arguments() -> argparse.Namespace:

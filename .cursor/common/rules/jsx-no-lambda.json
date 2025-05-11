@@ -1,0 +1,4 @@
+{
+  "severity": "warning",
+  "message": "JSX内でのインラインラムダ式は避けてください"
+}

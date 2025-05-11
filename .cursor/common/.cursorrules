@@ -1,0 +1,84 @@
+{
+  "rules": {
+    // コードスタイル関連のルール
+    "$import": "./rules/code-style/index.json",
+
+    // コメント関連のルール
+    "$import": "./rules/comments/index.json",
+
+    // Git関連のルール
+    "$import": "./rules/git/index.json",
+
+    "max-lines": {
+      "severity": "warning",
+      "options": {
+        "max": 300,
+        "skipBlankLines": true,
+        "skipComments": true
+      },
+      "message": "ファイルは300行以内に収めることを推奨します"
+    },
+    "naming-convention": {
+      "severity": "error",
+      "options": {
+        "types": "PascalCase",
+        "classes": "PascalCase",
+        "interfaces": "PascalCase",
+        "enums": "PascalCase",
+        "variables": "camelCase",
+        "functions": "camelCase",
+        "methods": "camelCase",
+        "private": "camelCase",
+        "protected": "camelCase",
+        "public": "camelCase",
+        "constants": "UPPER_CASE"
+      },
+      "message": "命名規則に従ってください"
+    },
+    "import-order": {
+      "severity": "warning",
+      "options": {
+        "groups": [
+          "builtin",
+          "external",
+          "internal",
+          "parent",
+          "sibling",
+          "index"
+        ],
+        "alphabetize": true
+      },
+      "message": "importの順序を整理してください"
+    },
+    "no-unused-vars": {
+      "severity": "warning",
+      "message": "未使用の変数は削除してください"
+    },
+    "no-explicit-any": {
+      "severity": "warning",
+      "message": "anyの使用は避けてください"
+    },
+    "require-await": {
+      "severity": "error",
+      "message": "async関数内でawaitを使用してください"
+    },
+    "no-floating-promises": {
+      "severity": "error",
+      "message": "Promiseの戻り値は適切に処理してください"
+    }
+  },
+  "filePatterns": {
+    // ファイルパターンと無視パターン
+    "$import": "./rules/code-style/file-patterns.json",
+
+    "*.{ts,tsx}": [
+      "max-lines",
+      "naming-convention",
+      "import-order",
+      "no-unused-vars",
+      "no-explicit-any",
+      "require-await",
+      "no-floating-promises"
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "severity": "error",
+  "options": {
+    "types": "PascalCase",
+    "classes": "PascalCase",
+    "interfaces": "PascalCase",
+    "enums": "PascalCase",
+    "variables": "camelCase",
+    "functions": "camelCase",
+    "methods": "camelCase",
+    "private": "camelCase",
+    "protected": "camelCase",
+    "public": "camelCase",
+    "constants": "UPPER_CASE"
+  },
+  "message": "命名規則に従ってください"
+}

@@ -1,0 +1,156 @@
+{
+  "rules": {
+    "comment-style": {
+      "severity": "error",
+      "options": {
+        "fileHeader": {
+          "template": [
+            "/**",
+            " * 🎨 作成: {author} ({date})",
+            " *",
+            " * 💡 目的: {purpose}",
+            " *",
+            " * 🔥 主な機能:",
+            " * {features}",
+            " *",
+            " * ⚠️ 注意点:",
+            " * {warnings}",
+            " *",
+            " * 📝 更新履歴:",
+            " * {history}",
+            " *",
+            " * 💖 チームへのメッセージ:",
+            " * {message}",
+            " */"
+          ],
+          "required": ["author", "date", "purpose", "features"]
+        },
+        "functionHeader": {
+          "template": [
+            "/**",
+            " * 💫 {description}",
+            " *",
+            " * 📝 パラメータ:",
+            " * {params}",
+            " *",
+            " * 🎯 戻り値:",
+            " * {returns}",
+            " *",
+            " * ⚠️ エラー:",
+            " * {errors}",
+            " *",
+            " * 💡 使用例:",
+            " * {example}",
+            " *",
+            " * 😊 実装メモ:",
+            " * {note}",
+            " */"
+          ],
+          "required": ["description", "params", "returns"]
+        },
+        "inlineComment": {
+          "styles": {
+            "explanation": "// 💭 {explanation}",
+            "warning": "// ⚠️ 注意: {warning}",
+            "todo": "// 📝 TODO: {task}",
+            "hack": "// ⚡ HACK: {reason}",
+            "fix": "// 🔧 FIX: {issue}",
+            "review": "// 👀 レビュー: {point}"
+          },
+          "emotions": {
+            "success": [
+              "// ✨ やった！{message}",
+              "// 🎉 できた！{message}",
+              "// 💪 完成！{message}"
+            ],
+            "challenge": [
+              "// 🤔 むむむ...{message}",
+              "// 💦 大変だけど...{message}",
+              "// 😅 ちょっと複雑だけど...{message}"
+            ],
+            "improvement": [
+              "// 📚 もっと良くできそう！{message}",
+              "// 💡 こうするともっと便利かも！{message}",
+              "// ✍️ 次はこうしたい！{message}"
+            ]
+          }
+        },
+        "codeBlock": {
+          "start": [
+            "// ==============================",
+            "// 🔥 {blockName}",
+            "// =============================="
+          ],
+          "end": [
+            "// ==============================",
+            "// ✨ {blockName} 終了",
+            "// =============================="
+          ]
+        },
+        "variableComment": {
+          "template": "// 📌 {purpose} ({constraints})",
+          "example": [
+            "// 📌 ユーザーID (英数字のみ)",
+            "const userId: string;",
+            "",
+            "// 📌 最大ファイルサイズ (5MB)",
+            "const MAX_FILE_SIZE = 5 * 1024 * 1024;"
+          ]
+        },
+        "classComment": {
+          "template": [
+            "/**",
+            " * 🏭 {className}",
+            " *",
+            " * 💡 クラスの目的:",
+            " * {purpose}",
+            " *",
+            " * 🔥 主な責務:",
+            " * {responsibilities}",
+            " *",
+            " * 👥 関連クラス:",
+            " * {relations}",
+            " *",
+            " * 😊 使用例:",
+            " * {example}",
+            " *",
+            " * ✨ 作成者より:",
+            " * {message}",
+            " */"
+          ]
+        },
+        "interfaceComment": {
+          "template": [
+            "/**",
+            " * 📋 {interfaceName}",
+            " *",
+            " * 💡 インターフェースの目的:",
+            " * {purpose}",
+            " *",
+            " * 🔥 必須メソッド:",
+            " * {methods}",
+            " *",
+            " * 👥 実装クラス:",
+            " * {implementations}",
+            " *",
+            " * 💪 使用例:",
+            " * {example}",
+            " */"
+          ]
+        }
+      },
+      "message": "コメントは定められたスタイルに従い、具体的で温かみのある内容にしてください！"
+    }
+  },
+  "filePatterns": {
+    "*.{ts,tsx,js,jsx}": ["comment-style"]
+  },
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    "coverage/**",
+    "**/*.test.{ts,tsx}",
+    "**/*.spec.{ts,tsx}"
+  ]
+}

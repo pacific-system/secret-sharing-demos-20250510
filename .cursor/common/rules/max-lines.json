@@ -1,0 +1,9 @@
+{
+  "severity": "warning",
+  "options": {
+    "max": 300,
+    "skipBlankLines": true,
+    "skipComments": true
+  },
+  "message": "ファイルは300行以内に収めることを推奨します"
+}

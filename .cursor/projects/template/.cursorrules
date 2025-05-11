@@ -1,0 +1,278 @@
+{
+  "rules": {
+    "no-console": {
+      "severity": "warning",
+      "message": "console.* の使用は本番環境では避けてください"
+    },
+    "max-lines": {
+      "severity": "warning",
+      "options": {
+        "max": 300,
+        "skipBlankLines": true,
+        "skipComments": true
+      },
+      "message": "ファイルは300行以内に収めることを推奨します"
+    },
+    "naming-convention": {
+      "severity": "error",
+      "options": {
+        "types": "PascalCase",
+        "classes": "PascalCase",
+        "interfaces": "PascalCase",
+        "enums": "PascalCase",
+        "variables": "camelCase",
+        "functions": "camelCase",
+        "methods": "camelCase",
+        "private": "camelCase",
+        "protected": "camelCase",
+        "public": "camelCase",
+        "constants": "UPPER_CASE"
+      },
+      "message": "命名規則に従ってください"
+    },
+    "import-order": {
+      "severity": "warning",
+      "options": {
+        "groups": [
+          "builtin",
+          "external",
+          "internal",
+          "parent",
+          "sibling",
+          "index"
+        ],
+        "alphabetize": true
+      },
+      "message": "importの順序を整理してください"
+    },
+    "no-unused-vars": {
+      "severity": "warning",
+      "message": "未使用の変数は削除してください"
+    },
+    "no-explicit-any": {
+      "severity": "warning",
+      "message": "anyの使用は避けてください"
+    },
+    "require-await": {
+      "severity": "error",
+      "message": "async関数内でawaitを使用してください"
+    },
+    "no-floating-promises": {
+      "severity": "error",
+      "message": "Promiseの戻り値は適切に処理してください"
+    },
+    "component-max-lines": {
+      "severity": "warning",
+      "options": {
+        "max": 200,
+        "skipBlankLines": true,
+        "skipComments": true
+      },
+      "message": "コンポーネントは200行以内に収めることを推奨します"
+    },
+    "jsx-no-lambda": {
+      "severity": "warning",
+      "message": "JSX内でのインラインラムダ式は避けてください"
+    },
+    "git-commit": {
+      "severity": "error",
+      "options": {
+        "maxChangedFiles": 5,
+        "commitMessageFormat": {
+          "type": ["feat", "fix", "docs", "style", "refactor", "test", "chore"],
+          "scope": "optional",
+          "description": "required",
+          "maxLength": 72
+        },
+        "commitInterval": {
+          "maxLines": 100,
+          "maxMinutes": 30
+        }
+      },
+      "message": "コミットは小さな単位で行い、明確なメッセージを付けてください"
+    },
+    "comment-style": {
+      "severity": "error",
+      "options": {
+        "fileHeader": {
+          "template": [
+            "/**",
+            " * 🎨 作成: {author} ({date})",
+            " *",
+            " * 💡 目的: {purpose}",
+            " *",
+            " * 🔥 主な機能:",
+            " * {features}",
+            " *",
+            " * ⚠️ 注意点:",
+            " * {warnings}",
+            " *",
+            " * 📝 更新履歴:",
+            " * {history}",
+            " *",
+            " * 💖 チームへのメッセージ:",
+            " * {message}",
+            " */"
+          ],
+          "required": ["author", "date", "purpose", "features"]
+        },
+        "functionHeader": {
+          "template": [
+            "/**",
+            " * 💫 {description}",
+            " *",
+            " * 📝 パラメータ:",
+            " * {params}",
+            " *",
+            " * 🎯 戻り値:",
+            " * {returns}",
+            " *",
+            " * ⚠️ エラー:",
+            " * {errors}",
+            " *",
+            " * 💡 使用例:",
+            " * {example}",
+            " *",
+            " * 😊 実装メモ:",
+            " * {note}",
+            " */"
+          ],
+          "required": ["description", "params", "returns"]
+        },
+        "inlineComment": {
+          "styles": {
+            "explanation": "// 💭 {explanation}",
+            "warning": "// ⚠️ 注意: {warning}",
+            "todo": "// 📝 TODO: {task}",
+            "hack": "// ⚡ HACK: {reason}",
+            "fix": "// 🔧 FIX: {issue}",
+            "review": "// 👀 レビュー: {point}"
+          },
+          "emotions": {
+            "success": [
+              "// ✨ やった！{message}",
+              "// 🎉 できた！{message}",
+              "// 💪 完成！{message}"
+            ],
+            "challenge": [
+              "// 🤔 むむむ...{message}",
+              "// 💦 大変だけど...{message}",
+              "// 😅 ちょっと複雑だけど...{message}"
+            ],
+            "improvement": [
+              "// 📚 もっと良くできそう！{message}",
+              "// 💡 こうするともっと便利かも！{message}",
+              "// ✍️ 次はこうしたい！{message}"
+            ]
+          }
+        },
+        "codeBlock": {
+          "start": [
+            "// ==============================",
+            "// 🔥 {blockName}",
+            "// =============================="
+          ],
+          "end": [
+            "// ==============================",
+            "// ✨ {blockName} 終了",
+            "// =============================="
+          ]
+        },
+        "variableComment": {
+          "template": "// 📌 {purpose} ({constraints})",
+          "example": [
+            "// 📌 ユーザーID (英数字のみ)",
+            "const userId: string;",
+            "",
+            "// 📌 最大ファイルサイズ (5MB)",
+            "const MAX_FILE_SIZE = 5 * 1024 * 1024;"
+          ]
+        },
+        "classComment": {
+          "template": [
+            "/**",
+            " * 🏭 {className}",
+            " *",
+            " * 💡 クラスの目的:",
+            " * {purpose}",
+            " *",
+            " * 🔥 主な責務:",
+            " * {responsibilities}",
+            " *",
+            " * 👥 関連クラス:",
+            " * {relations}",
+            " *",
+            " * 😊 使用例:",
+            " * {example}",
+            " *",
+            " * ✨ 作成者より:",
+            " * {message}",
+            " */"
+          ]
+        },
+        "interfaceComment": {
+          "template": [
+            "/**",
+            " * 📋 {interfaceName}",
+            " *",
+            " * 💡 インターフェースの目的:",
+            " * {purpose}",
+            " *",
+            " * 🔥 必須メソッド:",
+            " * {methods}",
+            " *",
+            " * 👥 実装クラス:",
+            " * {implementations}",
+            " *",
+            " * 💪 使用例:",
+            " * {example}",
+            " */"
+          ]
+        }
+      },
+      "message": "コメントは定められたスタイルに従い、具体的で温かみのある内容にしてください！"
+    }
+  },
+  "filePatterns": {
+    "*.{ts,tsx}": [
+      "no-console",
+      "max-lines",
+      "naming-convention",
+      "import-order",
+      "no-unused-vars",
+      "no-explicit-any",
+      "require-await",
+      "no-floating-promises"
+    ],
+    "*.{jsx,tsx}": [
+      "component-max-lines",
+      "jsx-no-lambda"
+    ],
+    ".git/**": [
+      "git-commit"
+    ],
+    "*.{ts,tsx,js,jsx}": [
+      "comment-style"
+    ]
+  },
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    "coverage/**",
+    "**/*.test.{ts,tsx}",
+    "**/*.spec.{ts,tsx}"
+  ],
+  "template": {
+    "enabled": false,
+    "message": "このディレクトリはテンプレートです。実際のプロジェクトでは使用しないでください。"
+  },
+  "project": {
+    "import": {
+      "enabled": true,
+      ; この部分を作成したディレクトリ名に置き換えてください
+      "path": ".cursor/projects/your-project-name",
+      "message": "プロジェクト固有のルールを読み込んでいます。"
+    }
+  }
+}

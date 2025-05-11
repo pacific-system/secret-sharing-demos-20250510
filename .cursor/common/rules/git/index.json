@@ -1,0 +1,50 @@
+{
+  "rules": {
+    "git-commit": {
+      "severity": "error",
+      "options": {
+        "maxChangedFiles": 5,
+        "commitMessageFormat": {
+          "type": ["feat", "fix", "docs", "style", "refactor", "test", "chore"],
+          "scope": "optional",
+          "description": "required",
+          "maxLength": 72
+        },
+        "commitInterval": {
+          "maxLines": 100,
+          "maxMinutes": 30
+        }
+      },
+      "message": "コミットは小さな単位で行い、明確なメッセージを付けてください"
+    },
+    "git-branch": {
+      "severity": "warning",
+      "options": {
+        "naming": {
+          "feature": "feature/",
+          "bugfix": "bugfix/",
+          "hotfix": "hotfix/",
+          "release": "release/",
+          "develop": "develop",
+          "main": "main"
+        },
+        "maxLength": 50
+      },
+      "message": "ブランチ名は適切なプレフィックスを付け、簡潔にしてください"
+    },
+    "git-merge": {
+      "severity": "error",
+      "options": {
+        "requirePullRequest": true,
+        "requireReview": true,
+        "requireTests": true,
+        "requireCleanBuild": true
+      },
+      "message": "マージは適切なレビューとテストを経て行ってください"
+    }
+  },
+  "filePatterns": {
+    ".git/**": ["git-commit", "git-branch", "git-merge"]
+  },
+  "ignorePatterns": ["node_modules/**", "dist/**", "build/**"]
+}

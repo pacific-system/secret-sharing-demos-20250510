@@ -1,0 +1,4 @@
+{
+  "severity": "warning",
+  "message": "console.* の使用は本番環境では避けてください"
+}

@@ -1,0 +1,4 @@
+{
+  "severity": "warning",
+  "message": "未使用の変数は削除してください"
+}

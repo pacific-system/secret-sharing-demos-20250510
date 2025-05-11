@@ -1,0 +1,19 @@
+{
+  "git-commit": {
+    "severity": "error",
+    "options": {
+      "maxChangedFiles": 5,
+      "commitMessageFormat": {
+        "type": ["✨ feat", "🐛 fix", "📚 docs", "🎨 style", "♻️ refactor", "🧪 test", "🔧 chore"],
+        "scope": "optional",
+        "description": "required",
+        "maxLength": 72
+      },
+      "commitInterval": {
+        "maxLines": 100,
+        "maxMinutes": 30
+      }
+    },
+    "message": "コミットは小さな単位で行い、明確なメッセージを付けてください！えへへ...パシ子が応援してます！💪"
+  }
+}

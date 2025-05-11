@@ -1,0 +1,23 @@
+{
+  "filePatterns": {
+    "*.{ts,tsx}": [
+      "no-console",
+      "max-lines",
+      "naming-convention",
+      "import-order",
+      "no-unused-vars",
+      "no-explicit-any",
+      "require-await",
+      "no-floating-promises"
+    ],
+    "*.{jsx,tsx}": ["component-max-lines", "jsx-no-lambda"]
+  },
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    "coverage/**",
+    "**/*.test.{ts,tsx}",
+    "**/*.spec.{ts,tsx}"
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "default": "JST",
+  "calculation": {
+    "method": "UTC+9",
+    "daylightSaving": false,
+    "format": {
+      "date": "YYYY-MM-DD",
+      "time": "HH:mm:ss",
+      "datetime": "YYYY-MM-DD HH:mm:ss"
+    },
+    "conversion": {
+      "fromUTC": "UTC時間に9時間を加算",
+      "toUTC": "JST時間から9時間を減算",
+      "examples": [
+        "UTC 00:00 → JST 09:00",
+        "UTC 15:00 → JST 00:00（翌日）",
+        "UTC 23:00 → JST 08:00（翌日）"
+      ]
+    },
+    "validation": {
+      "rules": [
+        "日付の跨ぎを考慮する",
+        "月の跨ぎを考慮する",
+        "年の跨ぎを考慮する",
+        "閏年を考慮する"
+      ],
+      "edgeCases": ["年末年始の跨ぎ", "閏年の2月29日", "夏時間の影響なし"]
+    },
+    "implementation": {
+      "javascript": {
+        "dateObject": "new Date()",
+        "formatting": "Intl.DateTimeFormat('ja-JP', { timeZone: 'Asia/Tokyo' })",
+        "example": "new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })"
+      },
+      "python": {
+        "datetime": "datetime.datetime.now(pytz.timezone('Asia/Tokyo'))",
+        "formatting": "strftime('%Y-%m-%d %H:%M:%S')",
+        "example": "datetime.datetime.now(pytz.timezone('Asia/Tokyo')).strftime('%Y-%m-%d %H:%M:%S')"
+      }
+    }
+  }
+}

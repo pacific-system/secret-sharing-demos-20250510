@@ -1,0 +1,33 @@
+{
+  "inline-comments": {
+    "severity": "error",
+    "options": {
+      "styles": {
+        "explanation": "// 💭 {explanation}",
+        "warning": "// ⚠️ 注意: {warning}",
+        "todo": "// 📝 TODO: {task}",
+        "hack": "// ⚡ HACK: {reason}",
+        "fix": "// 🔧 FIX: {issue}",
+        "review": "// 👀 レビュー: {point}"
+      },
+      "emotions": {
+        "success": [
+          "// ✨ やった！{message}",
+          "// 🎉 できた！{message}",
+          "// 💪 完成！{message}"
+        ],
+        "challenge": [
+          "// 🤔 むむむ...{message}",
+          "// 💦 大変だけど...{message}",
+          "// 😅 ちょっと複雑だけど...{message}"
+        ],
+        "improvement": [
+          "// 📚 もっと良くできそう！{message}",
+          "// 💡 こうするともっと便利かも！{message}",
+          "// ✍️ 次はこうしたい！{message}"
+        ]
+      }
+    },
+    "message": "インラインコメントは定められたスタイルに従ってください"
+  }
+}

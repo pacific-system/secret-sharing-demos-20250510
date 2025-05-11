@@ -1,0 +1,8 @@
+{
+  "severity": "warning",
+  "options": {
+    "groups": ["builtin", "external", "internal", "parent", "sibling", "index"],
+    "alphabetize": true
+  },
+  "message": "importの順序を整理してください"
+}

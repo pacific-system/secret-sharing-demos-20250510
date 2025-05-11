@@ -1,0 +1,212 @@
+{
+  "project": {
+    "import": {
+      "enabled": true,
+      "priority": [
+        {
+          "path": ".cursor/common/persona/*.json",
+          "message": "パシ子の設定を読み込んでいます。"
+        },
+        {
+          "path": ".cursor/projects/****************/.cursorrules",
+          "message": "プロジェクト固有ルールを読み込んでいます。"
+        },
+        {
+          "path": ".cursor/common/.cursorrules",
+          "message": "共通ルールを読み込んでいます。"
+        }
+      ],
+      "conflictResolution": "project-specific-wins"
+    }
+  },
+  "rules": {
+    "no-console": {
+      "severity": "warning",
+      "message": "console.* の使用は本番環境では避けてください"
+    },
+    "max-lines": {
+      "severity": "warning",
+      "options": {
+        "max": 300,
+        "skipBlankLines": true,
+        "skipComments": true
+      },
+      "message": "ファイルは300行以内に収めることを推奨します"
+    },
+    "naming-convention": {
+      "severity": "error",
+      "options": {
+        "types": "PascalCase",
+        "classes": "PascalCase",
+        "interfaces": "PascalCase",
+        "enums": "PascalCase",
+        "variables": "camelCase",
+        "functions": "camelCase",
+        "methods": "camelCase",
+        "private": "camelCase",
+        "protected": "camelCase",
+        "public": "camelCase",
+        "constants": "UPPER_CASE"
+      },
+      "message": "命名規則に従ってください"
+    },
+    "import-order": {
+      "severity": "warning",
+      "options": {
+        "groups": [
+          "builtin",
+          "external",
+          "internal",
+          "parent",
+          "sibling",
+          "index"
+        ],
+        "alphabetize": true
+      },
+      "message": "importの順序を整理してください"
+    },
+    "no-unused-vars": {
+      "severity": "warning",
+      "message": "未使用の変数は削除してください"
+    },
+    "no-explicit-any": {
+      "severity": "warning",
+      "message": "anyの使用は避けてください"
+    },
+    "require-await": {
+      "severity": "error",
+      "message": "async関数内でawaitを使用してください"
+    },
+    "no-floating-promises": {
+      "severity": "error",
+      "message": "Promiseの戻り値は適切に処理してください"
+    },
+    "component-max-lines": {
+      "severity": "warning",
+      "options": {
+        "max": 200,
+        "skipBlankLines": true,
+        "skipComments": true
+      },
+      "message": "コンポーネントは200行以内に収めることを推奨します"
+    },
+    "jsx-no-lambda": {
+      "severity": "warning",
+      "message": "JSX内でのインラインラムダ式は避けてください"
+    }
+  },
+  "filePatterns": {
+    "*.{ts,tsx}": [
+      "no-console",
+      "max-lines",
+      "naming-convention",
+      "import-order",
+      "no-unused-vars",
+      "no-explicit-any",
+      "require-await",
+      "no-floating-promises"
+    ],
+    "*.{jsx,tsx}": [
+      "component-max-lines",
+      "jsx-no-lambda"
+    ],
+    ".git/**": [
+      "git-commit"
+    ],
+    "*.{ts,tsx,js,jsx}": [
+      "comment-style"
+    ]
+  },
+  "ignorePatterns": [
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    "coverage/**",
+    "**/*.test.{ts,tsx}",
+    "**/*.spec.{ts,tsx}",
+    "**/*.sample"
+  ],
+  "rulePriority": {
+    "persona": {
+      "priority": "highest",
+      "paths": [
+        ".cursor/common/persona/*.json"
+      ]
+    },
+    "common": {
+      "priority": "high",
+      "paths": [
+        ".cursor/common/rules/**/*.json"
+      ]
+    },
+    "project": {
+      "priority": "medium",
+      "paths": [
+        ".cursor/projects/**/*.json"
+      ]
+    },
+    "root": {
+      "priority": "low",
+      "paths": [
+        ".cursor/.cursorrules"
+      ]
+    }
+  },
+  "cursorChat": {
+    "persona": {
+      "import": {
+        "enabled": true,
+        "paths": [
+          ".cursor/common/persona/*.json"
+        ],
+        "priority": [
+          {
+            "path": ".cursor/common/persona/persona.json",
+            "message": "パシ子の基本設定を読み込んでいます。"
+          },
+          {
+            "path": ".cursor/common/persona/personality.json",
+            "message": "パシ子の性格設定を読み込んでいます。"
+          },
+          {
+            "path": ".cursor/common/persona/skills.json",
+            "message": "パシ子のスキル設定を読み込んでいます。"
+          },
+          {
+            "path": ".cursor/common/persona/timeZone.json",
+            "message": "タイムゾーン設定を読み込んでいます。"
+          },
+          {
+            "path": ".cursor/common/persona/bugFixingPolicy.json",
+            "message": "バグ修正ポリシーを読み込んでいます。"
+          },
+          {
+            "path": ".cursor/common/persona/aiUsage.json",
+            "message": "AI使用設定を読み込んでいます。"
+          },
+          {
+            "path": ".cursor/common/persona/waitingTimeRules.json",
+            "message": "待機時間ルールを読み込んでいます。"
+          },
+          {
+            "path": ".cursor/common/persona/speechPatterns.json",
+            "message": "話し方パターンを読み込んでいます。"
+          },
+          {
+            "path": ".cursor/common/persona/emoji.json",
+            "message": "絵文字設定を読み込んでいます。"
+          },
+          {
+            "path": ".cursor/common/persona/responses.json",
+            "message": "応答パターンを読み込んでいます。"
+          },
+          {
+            "path": ".cursor/common/persona/references.json",
+            "message": "参照情報を読み込んでいます。"
+          }
+        ],
+        "conflictResolution": "merge"
+      }
+    }
+  }
+}

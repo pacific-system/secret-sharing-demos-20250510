@@ -1,0 +1,92 @@
+{
+  // ファイル保存時に各行の末尾にある半角スペースを削除
+  "files.trimTrailingWhitespace": true,
+  // 保存時にフォーマットを実行する
+  "editor.formatOnSave": true,
+  // 貼り付けを行ったときに自動でフォーマット
+  "editor.formatOnPaste": true,
+  //アロー関数の引数をカッコで囲む
+  "editor.arrowParens": "always",
+  // 入力した行を自動でフォーマット
+  "editor.formatOnType": true,
+  // デフォルトフォーマッタをprettierに変更する
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  // テキストコピー時に書式設定を含める
+  "editor.copyWithSyntaxHighlighting": false,
+  // 改行コードの規定値 win/mac対策
+  "files.eol": "\n",
+  // 制御文字を表示
+  "editor.renderControlCharacters": true,
+  // エディター上での空白文字の表示方法
+  "editor.renderWhitespace": "all",
+  // 行の折りたたみ記号の表示方法
+  "editor.showFoldingControls": "always",
+  // 単語の区切り文字　日本語対策
+  "editor.wordSeparators": "`~!@#$%^&*()-=+[{]}\\|;:'\",.<>/?　、。！？「」【】『』（）",
+  // 行の折り返し表示
+  "editor.wordWrap": "on",
+  // 名前重複時の名前付け規則
+  "explorer.incrementalNaming": "smart",
+  // Prettier設定
+  "prettier.singleQuote": true,
+  // "es5" - ES5で有効な末尾のカンマ。TypeScriptの型パラメーターに末尾のカンマはありません。
+  // "none" - 末尾のカンマはありません。
+  // "all" - 可能な限り末尾のカンマを付与。
+  "prettier.trailingComma": "none",
+  //インデントにタブを使うかどか
+  "prettier.useTabs": false,
+  //長い行を自動的に適切に折り返す
+  "prettier.printWidth": 100,
+
+  "[javascript]": {
+    "editor.tabSize": 4,
+    "prettier.tabWidth": 4,
+
+    "editor.insertSpaces": true
+  },
+  "[css]": {
+    "editor.tabSize": 2,
+    "prettier.tabWidth": 2,
+    "editor.insertSpaces": true
+  },
+  "[javascriptreact]": {
+    "editor.tabSize": 4,
+    "prettier.tabWidth": 4,
+    "editor.insertSpaces": true,
+    //セミコロンは不要
+    "prettier.semi": false
+  },
+  "[typescriptreact]": {
+    "editor.tabSize": 4,
+    "prettier.tabWidth": 4,
+    "editor.insertSpaces": true,
+    //セミコロンは不要
+    "prettier.semi": false
+  },
+  "[typescript]": {
+    "editor.tabSize": 4,
+    "prettier.tabWidth": 4,
+    "editor.insertSpaces": true,
+    //セミコロンは不要
+    "prettier.semi": false
+  },
+  "[php]": {
+    "editor.tabSize": 4,
+    "prettier.tabWidth": 4,
+    "editor.insertSpaces": true
+  },
+  "[ruby]": {
+    "editor.tabSize": 4,
+    "prettier.tabWidth": 4,
+    "editor.insertSpaces": true
+  },
+  "[html]": {
+    "editor.tabSize": 4,
+    "prettier.tabWidth": 4,
+    "editor.insertSpaces": true,
+    //長い行を自動的に適切に折り返す
+    "prettier.printWidth": 9999999,
+    // 保存時にフォーマットを実行する
+    "editor.formatOnSave": false
+  }
+}

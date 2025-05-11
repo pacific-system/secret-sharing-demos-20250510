@@ -1,0 +1,9 @@
+{
+  "severity": "warning",
+  "options": {
+    "max": 200,
+    "skipBlankLines": true,
+    "skipComments": true
+  },
+  "message": "コンポーネントは200行以内に収めることを推奨します"
+}

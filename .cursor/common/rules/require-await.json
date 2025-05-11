@@ -1,0 +1,4 @@
+{
+  "severity": "error",
+  "message": "async関数内でawaitを使用してください"
+}

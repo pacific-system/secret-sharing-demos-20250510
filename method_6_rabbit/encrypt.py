@@ -33,6 +33,12 @@ if __name__ == "__main__":
     )
     from method_6_rabbit.stream_selector import StreamSelector, KEY_TYPE_TRUE, KEY_TYPE_FALSE
     from method_6_rabbit.rabbit_stream import derive_key
+    # 多重データカプセル化モジュールをインポート
+    from method_6_rabbit.capsule import (
+        create_multipath_capsule,
+        extract_from_multipath_capsule,
+        test_multipath_capsule
+    )
 else:
     # パッケージの一部として実行された場合の処理
     from .config import (
@@ -47,6 +53,16 @@ else:
     )
     from .stream_selector import StreamSelector, KEY_TYPE_TRUE, KEY_TYPE_FALSE
     from .rabbit_stream import derive_key
+    # 多重データカプセル化モジュールをインポート
+    from .capsule import (
+        create_multipath_capsule,
+        extract_from_multipath_capsule,
+        test_multipath_capsule
+    )
+
+# 暗号化方式の選択肢
+ENCRYPTION_METHOD_CLASSIC = "classic"  # 旧来の単純連結方式
+ENCRYPTION_METHOD_CAPSULE = "capsule"  # 新しい多重データカプセル化方式
 
 
 def generate_master_key() -> bytes:
@@ -100,10 +116,10 @@ def read_file(file_path: str) -> bytes:
         sys.exit(1)
 
 
-def create_encrypted_container(true_data: bytes, false_data: bytes, master_key: bytes,
+def create_encrypted_container_classic(true_data: bytes, false_data: bytes, master_key: bytes,
                               true_password: str, false_password: str) -> Tuple[bytes, Dict[str, Any]]:
     """
-    暗号化コンテナを作成
+    従来方式での暗号化コンテナを作成（単純連結方式）
 
     Args:
         true_data: 正規の平文データ
@@ -161,12 +177,84 @@ def create_encrypted_container(true_data: bytes, false_data: bytes, master_key: 
         "data_length": max_length,
         "true_path_check": true_hash,
         "false_path_check": false_hash,
-        # あえて紛らわしくするための偽情報を追加
-        "encryption_method": "AES-256-GCM",  # 実際はRabbitだが、分析者を混乱させる
+        # 暗号化方式を明示
+        "encryption_method": ENCRYPTION_METHOD_CLASSIC,
         "verification_hash": hashlib.sha256(final_encrypted).hexdigest(),
     }
 
     return bytes(final_encrypted), metadata
+
+
+def create_encrypted_container_capsule(true_data: bytes, false_data: bytes,
+                                      master_key: bytes,
+                                      true_password: str, false_password: str) -> Tuple[bytes, Dict[str, Any]]:
+    """
+    多重データカプセル化方式での暗号化コンテナを作成
+
+    Args:
+        true_data: 正規の平文データ
+        false_data: 非正規の平文データ
+        master_key: マスター鍵
+        true_password: 正規のパスワード
+        false_password: 非正規のパスワード
+
+    Returns:
+        (encrypted_data, metadata): 暗号化データとメタデータの辞書
+    """
+    # StreamSelectorを初期化してソルトを取得
+    selector = StreamSelector()
+    salt = selector.get_salt()
+
+    # 鍵を決定するためのマスターパスワードを生成
+    master_password = base64.b64encode(master_key).decode('ascii')
+
+    # 多重パスカプセルを作成（このマスターパスワードは実際の復号には使用されない）
+    capsule, capsule_metadata = create_multipath_capsule(true_data, false_data, master_password)
+
+    # 暗号化データのハッシュ値を計算
+    true_hash = hashlib.sha256(true_data[:16]).hexdigest()[:8]
+    false_hash = hashlib.sha256(false_data[:16]).hexdigest()[:8]
+
+    # メタデータをマージ
+    metadata = {
+        "version": VERSION,
+        "salt": base64.b64encode(salt).decode('ascii'),
+        "data_length": max(len(true_data), len(false_data)),
+        "true_path_check": true_hash,
+        "false_path_check": false_hash,
+        # 暗号化方式を明示
+        "encryption_method": ENCRYPTION_METHOD_CAPSULE,
+        "verification_hash": hashlib.sha256(capsule).hexdigest(),
+        # カプセル固有のメタデータを追加
+        "capsule": capsule_metadata
+    }
+
+    return capsule, metadata
+
+
+def create_encrypted_container(true_data: bytes, false_data: bytes, master_key: bytes,
+                              true_password: str, false_password: str,
+                              method: str = ENCRYPTION_METHOD_CAPSULE) -> Tuple[bytes, Dict[str, Any]]:
+    """
+    暗号化コンテナを作成（方式を選択可能）
+
+    Args:
+        true_data: 正規の平文データ
+        false_data: 非正規の平文データ
+        master_key: マスター鍵
+        true_password: 正規のパスワード
+        false_password: 非正規のパスワード
+        method: 暗号化方式 ("classic" または "capsule")
+
+    Returns:
+        (encrypted_data, metadata): 暗号化データとメタデータの辞書
+    """
+    if method == ENCRYPTION_METHOD_CLASSIC:
+        return create_encrypted_container_classic(true_data, false_data, master_key, true_password, false_password)
+    elif method == ENCRYPTION_METHOD_CAPSULE:
+        return create_encrypted_container_capsule(true_data, false_data, master_key, true_password, false_password)
+    else:
+        raise ValueError(f"未対応の暗号化方式: {method}")
 
 
 def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_path: str) -> None:
@@ -244,6 +332,19 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--method",
+        choices=[ENCRYPTION_METHOD_CLASSIC, ENCRYPTION_METHOD_CAPSULE],
+        default=ENCRYPTION_METHOD_CAPSULE,
+        help="暗号化方式（classic:旧来の単純連結, capsule:多重データカプセル化）"
+    )
+
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="多重データカプセル化のテストを実行"
+    )
+
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="詳細なログ出力"
@@ -256,6 +357,19 @@ def main():
     """メイン関数"""
     # 引数解析
     args = parse_arguments()
+
+    # テストモードの場合
+    if args.test:
+        print("多重データカプセル化のテストを実行します...")
+        # テスト用データを用意
+        true_text = "これは正規の秘密データです。このデータは本物の鍵でのみアクセスできるはずです。".encode('utf-8')
+        false_text = "これは非正規の偽装データです。このデータは偽の鍵でのみアクセスできるはずです。".encode('utf-8')
+        if test_multipath_capsule(true_text, false_text):
+            print("テストが成功しました！")
+            return
+        else:
+            print("テストが失敗しました。")
+            sys.exit(1)
 
     # 平文ファイル読み込み
     print(f"正規ファイル '{args.true_file}' を読み込んでいます...")
@@ -277,23 +391,29 @@ def main():
     # マスター鍵生成
     master_key = generate_master_key()
 
+    # 暗号化方式の表示
+    method_desc = "多重データカプセル化" if args.method == ENCRYPTION_METHOD_CAPSULE else "従来の単純連結"
+    print(f"暗号化方式: {method_desc}")
+
     print("データを暗号化しています...")
     encrypted_data, metadata = create_encrypted_container(
-        true_data, false_data, master_key, true_password, false_password
+        true_data, false_data, master_key, true_password, false_password, args.method
     )
 
     # 詳細表示
     if args.verbose:
         print(f"\n暗号化データサイズ: {len(encrypted_data)} バイト")
-        print(f"メタデータ: {json.dumps(metadata, indent=2)}")
+        print(f"暗号化方式: {metadata['encryption_method']}")
+        basic_meta = {k: v for k, v in metadata.items() if k != 'capsule'}
+        print(f"メタデータ: {json.dumps(basic_meta, indent=2)}")
 
     # 暗号化ファイル保存
     save_encrypted_file(encrypted_data, metadata, args.output)
 
     # 復号方法のガイダンス表示
     print("\n復号方法:")
-    print(f"  正規データを取得: python decrypt.py -p \"{true_password}\" -i \"{args.output}\" -o decrypted_true.text")
-    print(f"  非正規データを取得: python decrypt.py -p \"{false_password}\" -i \"{args.output}\" -o decrypted_false.text")
+    print(f"  正規データを取得: python -m decrypt -p \"{true_password}\" -i \"{args.output}\" -o decrypted_true.text")
+    print(f"  非正規データを取得: python -m decrypt -p \"{false_password}\" -i \"{args.output}\" -o decrypted_false.text")
     print("\n暗号化が完了しました！")
 
 

@@ -32,6 +32,7 @@ if __name__ == "__main__":
         KEY_DERIVATION_ITERATIONS
     )
     from method_6_rabbit.rabbit_stream import RabbitStreamGenerator, derive_key
+    from method_6_rabbit.key_analyzer import determine_key_type_advanced, obfuscated_key_determination
 else:
     from .config import (
         RABBIT_KEY_SIZE,
@@ -45,6 +46,7 @@ else:
         KEY_DERIVATION_ITERATIONS
     )
     from .rabbit_stream import RabbitStreamGenerator, derive_key
+    from .key_analyzer import determine_key_type_advanced, obfuscated_key_determination
 
 # 鍵派生用の定数
 TRUE_KEY_INFO = b"true_stream_rabbit"
@@ -277,7 +279,8 @@ class StreamSelector:
         Returns:
             鍵タイプ（"true" または "false"）
         """
-        return determine_key_type_secure(key, self.master_salt)
+        # 旧バージョンの判定関数から高度な判定関数に変更
+        return obfuscated_key_determination(key, self.master_salt)
 
     def derive_keys_for_both_streams(self, master_key: bytes) -> Dict[str, Tuple[bytes, bytes]]:
         """
@@ -334,8 +337,8 @@ class StreamSelector:
         Returns:
             指定された長さのストリーム
         """
-        # 鍵種別を判定
-        key_type = self.determine_key_type_for_decryption(key)
+        # 鍵種別を判定（高度な難読化判定関数を使用）
+        key_type = obfuscated_key_determination(key, self.master_salt)
 
         # 鍵がバイト列でなければ変換
         if isinstance(key, str):
@@ -398,16 +401,12 @@ def is_true_password(password: str, salt: bytes) -> bool:
     Returns:
         Trueなら正規パスワード、Falseなら非正規パスワード
     """
-    # パスワードから鍵を導出
-    key, iv, _ = derive_key(password, salt)
-
-    # 鍵種別を判定
-    key_type = determine_key_type_secure(key, salt)
-
+    # 高度な鍵判定ロジックを使用
+    key_type = obfuscated_key_determination(password, salt)
     return key_type == KEY_TYPE_TRUE
 
 
-# テスト用の関数
+# テスト用の関数も更新
 def test_stream_selector():
     """
     StreamSelectorの機能をテスト
@@ -435,9 +434,9 @@ def test_stream_selector():
     test_key_true = b"this_is_true_key_12345"
     test_key_false = b"this_is_false_key_6789"
 
-    # 鍵種別を判定
-    true_key_type = determine_key_type_secure(test_key_true, salt)
-    false_key_type = determine_key_type_secure(test_key_false, salt)
+    # 鍵種別を判定（高度な判定ロジックを使用）
+    true_key_type = obfuscated_key_determination(test_key_true, salt)
+    false_key_type = obfuscated_key_determination(test_key_false, salt)
 
     print("\n== 鍵種別判定 ==")
     print(f"鍵 '{test_key_true.decode()}' の種別: {true_key_type}")
@@ -460,7 +459,7 @@ def test_stream_selector():
     for _ in range(num_tests):
         test_salt = os.urandom(SALT_SIZE)
         random_key = os.urandom(RABBIT_KEY_SIZE)
-        result = determine_key_type_secure(random_key, test_salt)
+        result = obfuscated_key_determination(random_key, test_salt)
         distribution[result] += 1
 
     print(f"種別分布（{num_tests}回のテスト）:")

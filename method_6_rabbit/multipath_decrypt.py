@@ -50,6 +50,62 @@ ENCRYPTION_METHOD_CLASSIC = "classic"  # 旧来の単純連結方式
 ENCRYPTION_METHOD_CAPSULE = "capsule"  # 新しい多重データカプセル化方式
 
 
+class MultiPathDecryptor:
+    """
+    複数の鍵で暗号文を復号するデコーダ
+
+    同一の暗号文に対して複数の鍵でアクセスし、それぞれの復号結果を取得します。
+    """
+
+    def __init__(self):
+        """初期化"""
+        pass
+
+    def decrypt_file_with_multiple_keys(self, input_file: str,
+                                      key_output_pairs: List[Tuple[str, str]]) -> List[Tuple[str, str, bool]]:
+        """
+        単一の暗号化ファイルを複数の鍵で復号
+
+        Args:
+            input_file: 入力暗号化ファイルパス
+            key_output_pairs: (鍵, 出力ファイルパス)のタプルリスト
+
+        Returns:
+            [(鍵, 出力ファイルパス, 成功フラグ)]のリスト
+        """
+        results = []
+
+        try:
+            # 暗号化ファイルの読み込み（一度だけ）
+            encrypted_data, metadata = read_encrypted_file(input_file)
+
+            # 各鍵で復号を試行
+            for key, output_path in key_output_pairs:
+                try:
+                    # 復号処理
+                    decrypted_data, path_type = decrypt_data(encrypted_data, key, metadata)
+
+                    # 結果を保存
+                    save_decrypted_file(decrypted_data, output_path)
+
+                    # 成功として記録
+                    results.append((key, output_path, True))
+
+                except Exception as e:
+                    # この鍵での復号は失敗
+                    print(f"鍵 '{key}' での復号に失敗: {e}")
+                    results.append((key, output_path, False))
+
+        except Exception as e:
+            # ファイル読み込み等の共通処理で失敗した場合
+            print(f"共通復号処理に失敗: {e}")
+            # すべての鍵について失敗として記録
+            for key, output_path in key_output_pairs:
+                results.append((key, output_path, False))
+
+        return results
+
+
 def read_encrypted_file(file_path: str) -> Tuple[bytes, Dict[str, Any]]:
     """
     暗号化されたファイルを読み込む

@@ -9,30 +9,29 @@
 
 のなかの
 
-'準同型暗号マスキング方式 🎭 実装【子 Issue #4】：暗号化実装（encrypt.py）'
-'docs/issue/homomorphic_masking_method_4.md'
-(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/14)
+'準同型暗号マスキング方式 🎭 実装【子 Issue #5】：復号実装（decrypt.py）'
+'docs/issue/homomorphic_masking_method_5.md'
+(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/15)
 を実装してください
 
-完了と定義される実装結果：
-
-1. コマンドライン引数が適切に処理され、ヘルプが表示される
-2. 正規ファイル（true.text）と非正規ファイル（false.text）が正しく読み込まれる
-3. マスター鍵が安全に生成される
-4. 準同型暗号化とマスク適用が正しく実装されている
-5. 区別不可能な暗号文形式への変換が実装されている
-6. 暗号文ファイルが適切な形式で出力される
-7. エラー処理が適切に実装されている
-8. 鍵をファイルに保存するオプションが機能する
-9. 処理時間が表示される
-10. コードにはわかりやすいコメントが付けられている
+1. 完了と定義される実装結果：
+2. コマンドライン引数が適切に処理され、ヘルプが表示される
+3. 暗号文ファイルが正しく読み込まれる
+4. 鍵解析機能が正しく実装されている
+5. 鍵の種類に応じて適切なマスク関数が選択される
+6. マスク関数の除去と準同型復号が正しく実装されている
+7. 復号されたデータが適切に出力ファイルに書き込まれる
+8. エラー処理が適切に実装されている
+9. 進捗表示機能が実装されている
+10. 処理時間が表示される
+11. コードにはわかりやすいコメントが付けられている
 
 [要求の完了方法]
 
 - 全て完了するまでレポートを作成しないでください
 - 実装レポートを'docs/issue'に MD 形式で生成
 - テストスクリプトで生成される画像を'git issue の書式で'添付(path 例：https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/homomorphic_operations.png?raw=true)
-- gh コマンドを実行し(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/14)にMDファイルをコメント投稿して実装レポートをチームで共有
+- gh コマンドを実行し(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/15)にMDファイルをコメント投稿して実装レポートをチームで共有
 
 - 'git commit'（パシ子スタイル。readme を含めること）
 - 'git push'

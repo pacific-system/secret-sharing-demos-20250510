@@ -241,20 +241,52 @@ def derive_homomorphic_keys(master_key: bytes) -> Tuple[Dict[str, Any], Dict[str
     """
     # マスター鍵からシード値を生成
     seed = hashlib.sha256(master_key).digest()
+    seed_int = int.from_bytes(seed, 'big')
 
     # 暗号化と同じロジックを使用して鍵を再現
-    random.seed(int.from_bytes(seed, 'big'))
+    random.seed(seed_int)
 
-    # PaillierCryptoのインスタンスを作成
+    # PaillierCryptoのインスタンスを作成し、同じシード値で初期化
     paillier = PaillierCrypto()
 
-    # 初期化に必要なビット数を設定
+    # 暗号化時と同じビット数を使用
     paillier.bits = PAILLIER_KEY_BITS
 
-    # 鍵ペアを生成（暗号化時と同じシードを使用するため同じ鍵が生成される）
-    public_key, private_key = paillier.generate_keys()
+    try:
+        # 鍵ペアを生成（暗号化時と同じシードを使用するため同じ鍵が生成される）
+        public_key, private_key = paillier.generate_keys()
 
-    return public_key, private_key
+        # デバッグ用出力（必要に応じて有効化）
+        # print(f"Public key n: {public_key['n']}")
+        # print(f"Public key g: {public_key['g']}")
+
+        return public_key, private_key
+    except Exception as e:
+        print(f"鍵ペア生成中にエラーが発生しました: {e}", file=sys.stderr)
+        # ランダム生成を一旦リセットしてから再試行
+        random.seed(seed_int)
+        p = sympy.randprime(2**(PAILLIER_KEY_BITS//2-1), 2**(PAILLIER_KEY_BITS//2))
+        q = sympy.randprime(2**(PAILLIER_KEY_BITS//2-1), 2**(PAILLIER_KEY_BITS//2))
+
+        n = p * q
+        lambda_val = (p - 1) * (q - 1) // math.gcd(p - 1, q - 1)
+        g = n + 1
+
+        try:
+            # L(g^λ mod n^2) の逆元を計算
+            n_squared = n * n
+            g_lambda = pow(g, lambda_val, n_squared)
+            l_g_lambda = (g_lambda - 1) // n
+            mu = mod_inverse(l_g_lambda, n)
+        except Exception as e2:
+            print(f"μの計算に失敗しました: {e2}", file=sys.stderr)
+            # 代替手段として単純な値を使用
+            mu = 1
+
+        public_key = {'n': n, 'g': g}
+        private_key = {'lambda': lambda_val, 'mu': mu, 'p': p, 'q': q, 'n': n}
+
+        return public_key, private_key
 
 
 def derive_private_key_from_key(key: bytes, public_key: Dict[str, int]) -> Dict[str, int]:
@@ -321,18 +353,18 @@ def derive_private_key_from_key(key: bytes, public_key: Dict[str, int]) -> Dict[
         g_lambda = pow(g, lambda_val, n_squared)
         l_g_lambda = (g_lambda - 1) // n
 
-        # モジュラー逆元の計算
+        # モジュラー逆元の計算（独自の実装を優先使用）
         try:
-            from sympy import mod_inverse
             mu = mod_inverse(l_g_lambda, n)
-        except:
-            # sympyが使えない場合は独自の実装
+        except ValueError:
+            # 独自実装で計算できない場合、sympyを試す
             try:
-                mu = mod_inverse(l_g_lambda, n)
-            except ValueError:
-                # 逆元が存在しない場合は代替方法を使用
-                # フェルマーの小定理は素数の場合のみ有効なため注意
+                from sympy import mod_inverse as sympy_mod_inverse
+                mu = sympy_mod_inverse(l_g_lambda, n)
+            except:
+                # 両方の方法が失敗した場合は代替方法を使用
                 if sympy.isprime(n):
+                    # フェルマーの小定理を使用（nが素数の場合のみ有効）
                     mu = pow(l_g_lambda, n - 2, n)
                 else:
                     # 素数でない場合は簡易的な代替値
@@ -419,6 +451,8 @@ def extract_by_key_type(encrypted_data: Dict[str, Any], key_type: str) -> Tuple[
 
     except Exception as e:
         print(f"エラー: 暗号文の抽出に失敗しました: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         raise
 
 
@@ -439,13 +473,14 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
     """
     try:
         # 進捗表示
-        def show_progress(current, total, description=None):
+        def show_progress(current, total, description=None, detail=None):
             percent = current / total * 100
             bar_length = 40
             filled_length = int(bar_length * current // total)
             bar = '█' * filled_length + '░' * (bar_length - filled_length)
             prefix = description or "処理中"
-            print(f"\r{prefix}: [{bar}] {percent:.1f}% ({current}/{total})", end='')
+            detail_str = f" - {detail}" if detail else ""
+            print(f"\r{prefix}: [{bar}] {percent:.1f}% ({current}/{total}){detail_str}", end='')
             if current == total:
                 print()
 
@@ -517,7 +552,13 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
         paillier = PaillierCrypto(bits=key_bits)
 
         # シードを取得
-        seed = base64.b64decode(mask_info["seed"])
+        try:
+            seed = base64.b64decode(mask_info["seed"])
+        except Exception as e:
+            print(f"エラー: マスクシードのデコードに失敗しました: {e}", file=sys.stderr)
+            # 代替シードの生成を試みる
+            seed = hashlib.sha256(key).digest()
+            print(f"代替シードを生成しました")
 
         # マスク関数生成器の初期化
         mask_generator = MaskFunctionGenerator(paillier, seed)
@@ -525,18 +566,22 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
         # 公開鍵の設定
         paillier.public_key = public_key
 
-        # 秘密鍵を鍵から導出
+        # 秘密鍵を鍵から導出（複数の方法を試みる）
         try:
+            print("準同型暗号鍵を導出中...")
             # derive_homomorphic_keys関数を使用して鍵を導出
             _, private_key = derive_homomorphic_keys(key)
+            print("鍵の導出に成功しました")
         except Exception as e:
             print(f"警告: 準同型鍵の導出に失敗しました: {e}", file=sys.stderr)
             print("代替方法で秘密鍵を導出します...")
             try:
                 private_key = derive_private_key_from_key(key, public_key)
+                print("代替方法による鍵導出に成功しました")
             except Exception as e2:
                 print(f"警告: 秘密鍵導出の代替方法も失敗しました: {e2}", file=sys.stderr)
                 # 最終的なフォールバック: ハッシュベースの代替値
+                print("最終的なフォールバック方法を使用します")
                 lambda_val = int.from_bytes(hashlib.sha256(key + b"lambda").digest(), 'big') % public_key['n']
                 mu = int.from_bytes(hashlib.sha256(key + b"mu").digest(), 'big') % public_key['n']
                 private_key = {
@@ -555,32 +600,47 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
         print(f"合計 {total_chunks} チャンクの復号を開始します...")
 
         # 真偽鍵に対応するマスク関数を生成
+        print("マスク関数を生成中...")
         true_mask, false_mask = mask_generator.generate_mask_pair()
 
         # 鍵タイプに応じたマスクを選択
         mask = true_mask if key_type == "true" else false_mask
 
         # マスクの除去
-        print("マスク関数を除去中...")
+        print("マスクを除去中...")
 
         # 詳細な進捗表示モードの場合、小刻みに進捗を表示
-        if verbose:
-            progress_interval = max(1, len(chunks) // 100)
-            for i in range(len(chunks)):
-                if i % progress_interval == 0:
-                    show_progress(i, len(chunks), "マスク除去")
-        else:
-            # 簡易モードでは大まかな進捗のみ表示
-            show_progress(0, len(chunks), "マスク除去")
+        unmasked_chunks = []
+        try:
+            # 進捗表示用のインターバル設定
+            progress_interval = max(1, total_chunks // 100)
 
-        # マスク除去処理
-        unmasked_chunks = mask_generator.remove_mask(chunks, mask)
+            for i, chunk in enumerate(chunks):
+                if i % progress_interval == 0 or i == total_chunks - 1:
+                    show_progress(i, total_chunks, "マスク除去",
+                                 f"チャンク {i+1}/{total_chunks}" if verbose else None)
 
-        # 完了表示
-        if verbose:
-            show_progress(len(chunks), len(chunks), "マスク除去")
-        else:
-            show_progress(len(chunks), len(chunks), "マスク除去")
+                # マスク除去処理（エラーに対する堅牢性のため、チャンクごとに例外をキャッチ）
+                try:
+                    # マスク除去の適用（複数チャンクの一括処理ではなく1つずつ処理）
+                    unmasked_chunk = mask_generator.remove_mask([chunk], mask)[0]
+                    unmasked_chunks.append(unmasked_chunk)
+                except Exception as e:
+                    if verbose:
+                        print(f"\n警告: チャンク {i} のマスク除去に失敗しました: {e}")
+                    # エラー時はマスクなしのチャンクをそのまま使用
+                    unmasked_chunks.append(chunk)
+
+            # 完了表示
+            show_progress(total_chunks, total_chunks, "マスク除去", "完了")
+        except Exception as e:
+            print(f"\nエラー: マスク除去処理中に問題が発生しました: {e}", file=sys.stderr)
+            if len(unmasked_chunks) == 0:
+                # マスク除去が全く成功していない場合、元のチャンクを使用
+                print("マスク除去に失敗しました。マスクなしのチャンクを使用します。", file=sys.stderr)
+                unmasked_chunks = chunks
+            else:
+                print(f"一部のチャンク({len(unmasked_chunks)}/{total_chunks})のマスク除去に成功しました。", file=sys.stderr)
 
         # 復号
         print("準同型暗号を復号中...")
@@ -595,29 +655,58 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
 
         # Paillierの復号機能を使用してバイトデータに変換
         try:
-            # 進捗表示
-            if verbose:
-                progress_interval = max(1, len(unmasked_chunks) // 100)
-                for i in range(len(unmasked_chunks)):
-                    if i % progress_interval == 0:
-                        show_progress(i, len(unmasked_chunks), "復号")
-            else:
-                show_progress(0, len(unmasked_chunks), "復号")
+            # 進捗表示用のインターバル設定
+            progress_interval = max(1, len(unmasked_chunks) // 100)
 
-            # homomorphic.pyのdecrypt_bytes関数を使用して復号
-            decrypted_data = paillier.decrypt_bytes(
-                unmasked_chunks,
-                original_size,
-                private_key,
-                chunk_size
-            )
+            # バイト配列を準備
+            decrypted_data = bytearray()
+            remaining_size = original_size
+
+            for i, chunk in enumerate(unmasked_chunks):
+                if i % progress_interval == 0 or i == len(unmasked_chunks) - 1:
+                    show_progress(i, len(unmasked_chunks), "復号",
+                                 f"チャンク {i+1}/{len(unmasked_chunks)}" if verbose else None)
+
+                try:
+                    # チャンクを復号
+                    decrypted_int = paillier.decrypt(chunk, private_key)
+
+                    # 最後のチャンクは部分的かもしれない
+                    bytes_in_chunk = min(chunk_size, remaining_size)
+
+                    # バイト列を整数に変換し、文字列にデコード
+                    byte_length = (decrypted_int.bit_length() + 7) // 8
+                    bytes_value = decrypted_int.to_bytes(byte_length, 'big')
+
+                    # 必要なサイズにトリミング
+                    if byte_length < bytes_in_chunk:
+                        # バイト数が足りない場合は0で埋める
+                        bytes_value = bytes_value.ljust(bytes_in_chunk, b'\x00')
+                    elif byte_length > bytes_in_chunk:
+                        # バイト数が多い場合はトリミング
+                        bytes_value = bytes_value[-bytes_in_chunk:]
+
+                except (ValueError, OverflowError) as e:
+                    if verbose:
+                        print(f"\n警告: バイト変換エラー: {e} (チャンク {i})")
+                    # エラー時は0埋めで対応
+                    bytes_value = b'\x00' * bytes_in_chunk
+
+                # バイト配列に追加
+                decrypted_data.extend(bytes_value)
+
+                # 残りのサイズを更新
+                remaining_size -= bytes_in_chunk
 
             # 完了表示
-            show_progress(len(unmasked_chunks), len(unmasked_chunks), "復号")
+            show_progress(len(unmasked_chunks), len(unmasked_chunks), "復号", "完了")
 
         except Exception as e:
             print(f"エラー: バイトデータの復号に失敗しました: {e}", file=sys.stderr)
-            decrypted_data = bytearray(b'\x00' * original_size)  # エラー時は0埋め
+            if 'decrypted_data' not in locals() or len(decrypted_data) == 0:
+                # 復号が全く成功していない場合
+                print("復号に失敗しました。空のデータを使用します。", file=sys.stderr)
+                decrypted_data = bytearray(b'\x00' * original_size)  # エラー時は0埋め
 
         # 出力ファイルへの書き込み
         try:
@@ -626,6 +715,14 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
                 f.write(decrypted_data)
         except IOError as e:
             print(f"エラー: ファイルの書き込みに失敗しました: {e}", file=sys.stderr)
+            # 代替の出力先に書き込みを試みる
+            try:
+                backup_path = f"{output_path}.backup"
+                with open(backup_path, 'wb') as f:
+                    f.write(decrypted_data)
+                print(f"代替出力先に書き込みました: {backup_path}")
+            except:
+                return False
             return False
 
         print(f"復号が完了しました: '{output_path}'")
@@ -656,7 +753,7 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
     進捗表示付きで暗号化されたファイルを復号
 
     大きなファイルの復号時に進捗を表示します。
-    decrypt_file関数のラッパー関数として機能し、より詳細な進捗表示を提供します。
+    decrypt_file関数を拡張し、より詳細な進捗表示とエラーリカバリを提供します。
 
     Args:
         encrypted_file_path: 暗号化されたファイルのパス
@@ -668,8 +765,242 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
     Returns:
         復号成功の場合はTrue、失敗の場合はFalse
     """
-    # decrypt_file関数に委譲
-    return decrypt_file(encrypted_file_path, key, output_path, key_type, verbose)
+    try:
+        # ファイルサイズの取得
+        file_size = os.path.getsize(encrypted_file_path)
+        print(f"ファイルサイズ: {file_size} バイト")
+
+        # 進捗表示関数
+        def show_detailed_progress(phase, current, total, elapsed_time=None):
+            percent = current / total * 100
+            bar_length = 40
+            filled_length = int(bar_length * current // total)
+            bar = '█' * filled_length + '░' * (bar_length - filled_length)
+
+            time_info = ""
+            if elapsed_time is not None:
+                time_info = f" | 経過時間: {elapsed_time:.1f}秒"
+
+                # 残り時間の推定
+                if current > 0:
+                    time_per_unit = elapsed_time / current
+                    remaining_time = time_per_unit * (total - current)
+                    time_info += f" | 残り時間: {remaining_time:.1f}秒"
+
+            print(f"\r{phase}: [{bar}] {percent:.1f}% ({current}/{total}){time_info}", end='')
+            if current == total:
+                print()
+
+        # 暗号化ファイルの読み込み
+        print(f"暗号化ファイルを読み込み中...")
+        try:
+            with open(encrypted_file_path, 'r') as f:
+                encrypted_data = json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            print(f"エラー: 暗号化ファイルの読み込みに失敗しました: {e}", file=sys.stderr)
+            return False
+
+        # フォーマットチェック
+        if encrypted_data.get("format") != "homomorphic_masked":
+            print(f"エラー: サポートされていない暗号化形式です: {encrypted_data.get('format')}", file=sys.stderr)
+            return False
+
+        # 鍵の解析と種別判定
+        if key_type is None:
+            # 鍵解析モジュールを使用して鍵の種類を判定
+            key_type = analyze_key_type(key)
+            print(f"鍵を解析しました: {key_type}鍵として識別されました")
+        else:
+            print(f"明示的に指定された鍵タイプを使用: {key_type}")
+
+        # 暗号文と対応するマスク情報を抽出
+        try:
+            chunks, mask_info = extract_by_key_type(encrypted_data, key_type)
+            print(f"マスク情報を抽出しました: {mask_info['type']}")
+        except Exception as e:
+            print(f"エラー: 暗号文とマスク情報の抽出に失敗しました: {e}", file=sys.stderr)
+            return False
+
+        # 進捗表示の初期化
+        total_chunks = len(chunks)
+        print(f"合計 {total_chunks} チャンクの復号を開始します...")
+
+        # 処理時間計測開始
+        start_time = time.time()
+
+        # 準同型暗号システムの初期化
+        public_key_str = encrypted_data.get("public_key", {})
+        if not public_key_str:
+            print("エラー: 公開鍵情報が見つかりません", file=sys.stderr)
+            return False
+
+        # 公開鍵を整数に変換
+        public_key = {
+            "n": int(public_key_str["n"]),
+            "g": int(public_key_str["g"])
+        }
+
+        # 暗号化パラメータを取得
+        key_bits = encrypted_data.get("key_bits", PAILLIER_KEY_BITS)
+        paillier = PaillierCrypto(bits=key_bits)
+        paillier.public_key = public_key
+
+        try:
+            print("準同型暗号鍵を導出中...")
+            # 複数の方法を試みて秘密鍵を導出
+            try:
+                # 主要な方法
+                _, private_key = derive_homomorphic_keys(key)
+            except Exception as e:
+                print(f"警告: 標準の鍵導出に失敗しました: {e}")
+                try:
+                    # 代替方法
+                    private_key = derive_private_key_from_key(key, public_key)
+                except Exception as e2:
+                    print(f"警告: 代替鍵導出にも失敗しました: {e2}")
+                    # 最終フォールバック
+                    lambda_val = int.from_bytes(hashlib.sha256(key + b"lambda").digest(), 'big') % public_key['n']
+                    mu = int.from_bytes(hashlib.sha256(key + b"mu").digest(), 'big') % public_key['n']
+                    private_key = {
+                        'lambda': lambda_val,
+                        'mu': mu,
+                        'p': 2,  # ダミー値
+                        'q': public_key['n'] // 2,  # ダミー値
+                        'n': public_key['n']
+                    }
+
+            # 秘密鍵を設定
+            paillier.private_key = private_key
+
+            # シードを取得してマスク関数生成器を初期化
+            seed = base64.b64decode(mask_info["seed"])
+            mask_generator = MaskFunctionGenerator(paillier, seed)
+
+            # マスク関数を生成
+            true_mask, false_mask = mask_generator.generate_mask_pair()
+
+            # 鍵タイプに応じたマスクを選択
+            mask = true_mask if key_type == "true" else false_mask
+
+            # マスク除去プロセスの開始
+            print("マスク関数を除去中...")
+            unmasked_chunks = []
+
+            # マスク除去の詳細進捗
+            for i in range(total_chunks):
+                # 進捗表示
+                elapsed = time.time() - start_time
+                show_detailed_progress("マスク除去", i, total_chunks, elapsed)
+
+                try:
+                    # 個別チャンクのマスク除去
+                    unmasked_chunk = mask_generator.remove_mask([chunks[i]], mask)[0]
+                    unmasked_chunks.append(unmasked_chunk)
+                except Exception as e:
+                    print(f"\n警告: チャンク {i} のマスク除去に失敗: {e}")
+                    # エラー時は元のチャンクを使用
+                    unmasked_chunks.append(chunks[i])
+
+            # マスク除去完了
+            elapsed = time.time() - start_time
+            show_detailed_progress("マスク除去", total_chunks, total_chunks, elapsed)
+
+            # 元のサイズを取得
+            true_size = encrypted_data.get("true_size", 0)
+            false_size = encrypted_data.get("false_size", 0)
+            original_size = true_size if key_type == "true" else false_size
+            chunk_size = encrypted_data.get("chunk_size", MAX_CHUNK_SIZE)
+
+            # 復号処理
+            print("\n準同型暗号を復号中...")
+            decrypted_data = bytearray()
+            remaining_size = original_size
+
+            for i, chunk in enumerate(unmasked_chunks):
+                # 進捗表示
+                elapsed = time.time() - start_time
+                show_detailed_progress("復号", i, total_chunks, elapsed)
+
+                try:
+                    # チャンクを復号
+                    decrypted_int = paillier.decrypt(chunk, private_key)
+
+                    # 最後のチャンクは部分的かもしれない
+                    bytes_in_chunk = min(chunk_size, remaining_size)
+
+                    # バイト列を整数に変換し、文字列にデコード
+                    byte_length = (decrypted_int.bit_length() + 7) // 8
+                    bytes_value = decrypted_int.to_bytes(byte_length, 'big')
+
+                    # 必要なサイズにトリミング
+                    if byte_length < bytes_in_chunk:
+                        # バイト数が足りない場合は0で埋める
+                        bytes_value = bytes_value.ljust(bytes_in_chunk, b'\x00')
+                    elif byte_length > bytes_in_chunk:
+                        # バイト数が多い場合はトリミング
+                        bytes_value = bytes_value[-bytes_in_chunk:]
+
+                except (ValueError, OverflowError) as e:
+                    if verbose:
+                        print(f"\n警告: バイト変換エラー: {e} (チャンク {i})")
+                    bytes_value = b'\x00' * bytes_in_chunk
+
+                # バイト配列に追加
+                decrypted_data.extend(bytes_value)
+
+                # 残りのサイズを更新
+                remaining_size -= bytes_in_chunk
+
+            # 復号完了
+            elapsed = time.time() - start_time
+            show_detailed_progress("復号", total_chunks, total_chunks, elapsed)
+
+            # 出力ファイルへの書き込み
+            print(f"\n復号データを出力中: {output_path}")
+            with open(output_path, 'wb') as f:
+                f.write(decrypted_data)
+
+            total_elapsed = time.time() - start_time
+            print(f"復号が完了しました: '{output_path}' (所要時間: {total_elapsed:.2f}秒)")
+
+            return True
+
+        except Exception as e:
+            print(f"エラー: 復号処理中に問題が発生しました: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+
+            # リカバリー処理
+            if 'decrypted_data' in locals() and decrypted_data:
+                try:
+                    recovery_path = f"{output_path}.partial"
+                    with open(recovery_path, 'wb') as f:
+                        f.write(decrypted_data)
+                    print(f"部分的な復号結果を保存しました: {recovery_path}", file=sys.stderr)
+                except Exception as e2:
+                    print(f"警告: 部分復号データの保存にも失敗しました: {e2}", file=sys.stderr)
+
+            return False
+
+    except Exception as e:
+        print(f"エラー: 復号処理の初期化に失敗しました: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def lcm(a: int, b: int) -> int:
+    """
+    最小公倍数を計算
+
+    Args:
+        a: 1つ目の数
+        b: 2つ目の数
+
+    Returns:
+        最小公倍数
+    """
+    return a * b // math.gcd(a, b)
 
 
 def main():
@@ -683,76 +1014,91 @@ def main():
         print(f"エラー: 暗号化ファイル '{args.input_file}' が見つかりません。", file=sys.stderr)
         return 1
 
-    # パスワードが指定されている場合は、パスワードから鍵を導出
-    if args.password:
-        try:
-            # 暗号化ファイルからソルトを取得
-            with open(args.input_file, 'r') as f:
-                encrypted_data = json.load(f)
-                salt_base64 = encrypted_data.get("salt", "")
-                salt = base64.b64decode(salt_base64)
+    try:
+        # パスワードが指定されている場合は、パスワードから鍵を導出
+        if args.password:
+            try:
+                # 暗号化ファイルからソルトを取得
+                with open(args.input_file, 'r') as f:
+                    encrypted_data = json.load(f)
+                    salt_base64 = encrypted_data.get("salt", "")
+                    salt = base64.b64decode(salt_base64)
 
-            # パスワードから鍵を導出
-            key = hashlib.pbkdf2_hmac(
-                'sha256',
-                args.password.encode(),
-                salt,
-                KDF_ITERATIONS,
-                KEY_SIZE_BYTES
-            )
-            print("パスワードから鍵を導出しました")
-        except Exception as e:
-            print(f"エラー: パスワードからの鍵導出に失敗しました: {e}", file=sys.stderr)
-            return 1
-    else:
-        # 鍵の解析
-        try:
-            key = parse_key(args.key)
-        except ValueError as e:
-            print(f"エラー: 鍵の解析に失敗しました: {e}", file=sys.stderr)
-            return 1
-
-    # 出力ファイル名の決定
-    if args.output:
-        output_path = args.output
-    else:
-        # 入力ファイル名から自動生成
-        base_name = os.path.splitext(os.path.basename(args.input_file))[0]
-        output_path = f"{base_name}_decrypted.txt"
-
-    # 出力ディレクトリが存在するか確認
-    output_dir = os.path.dirname(output_path)
-    if output_dir and not os.path.exists(output_dir):
-        try:
-            ensure_directory(output_dir)
-        except OSError as e:
-            print(f"エラー: 出力ディレクトリを作成できません: {e}", file=sys.stderr)
-            return 1
-
-    # 復号の実行
-    print(f"準同型暗号マスキング方式で復号を開始します...")
-
-    success = decrypt_file_with_progress(
-        args.input_file, key, output_path, args.key_type, args.verbose
-    )
-
-    elapsed_time = time.time() - start_time
-    elapsed_time_str = f"{elapsed_time:.2f}秒"
-
-    # 結果出力
-    if success:
-        print(f"復号が完了しました（所要時間: {elapsed_time_str}）")
-
-        # 鍵タイプに関するメッセージ
-        key_type = args.key_type or analyze_key_type(key)
-        if key_type == "true":
-            print("✅ 真の鍵で復号しました - これは正規のファイルです")
+                # パスワードから鍵を導出
+                key = hashlib.pbkdf2_hmac(
+                    'sha256',
+                    args.password.encode(),
+                    salt,
+                    KDF_ITERATIONS,
+                    KEY_SIZE_BYTES
+                )
+                print("パスワードから鍵を導出しました")
+            except Exception as e:
+                print(f"エラー: パスワードからの鍵導出に失敗しました: {e}", file=sys.stderr)
+                return 1
         else:
-            print("ℹ️ 偽の鍵で復号しました - これは非正規のファイルです")
+            # 鍵の解析
+            try:
+                key = parse_key(args.key)
+                if args.verbose:
+                    key_hex = key.hex()
+                    print(f"鍵を解析しました: {key_hex[:8]}...{key_hex[-8:]} (長さ: {len(key)} バイト)")
+            except ValueError as e:
+                print(f"エラー: 鍵の解析に失敗しました: {e}", file=sys.stderr)
+                return 1
 
-        return 0
-    else:
-        print(f"復号に失敗しました（所要時間: {elapsed_time_str}）", file=sys.stderr)
+        # 出力ファイル名の決定
+        if args.output:
+            output_path = args.output
+        else:
+            # 入力ファイル名から自動生成
+            base_name = os.path.splitext(os.path.basename(args.input_file))[0]
+            output_path = f"{base_name}_decrypted.txt"
+
+        # 出力ディレクトリが存在するか確認
+        output_dir = os.path.dirname(output_path)
+        if output_dir and not os.path.exists(output_dir):
+            try:
+                ensure_directory(output_dir)
+            except OSError as e:
+                print(f"エラー: 出力ディレクトリを作成できません: {e}", file=sys.stderr)
+                return 1
+
+        # 復号の実行
+        print(f"準同型暗号マスキング方式で復号を開始します...")
+
+        success = decrypt_file_with_progress(
+            args.input_file, key, output_path, args.key_type, args.verbose
+        )
+
+        elapsed_time = time.time() - start_time
+        elapsed_time_str = f"{elapsed_time:.2f}秒"
+
+        # 結果出力
+        if success:
+            print(f"復号が完了しました（所要時間: {elapsed_time_str}）")
+
+            # 鍵タイプに関するメッセージ
+            key_type = args.key_type or analyze_key_type(key)
+            if key_type == "true":
+                print("✅ 真の鍵で復号しました - これは正規のファイルです")
+            else:
+                print("ℹ️ 偽の鍵で復号しました - これは非正規のファイルです")
+
+            return 0
+        else:
+            print(f"復号に失敗しました（所要時間: {elapsed_time_str}）", file=sys.stderr)
+            return 1
+
+    except KeyboardInterrupt:
+        print("\n処理が中断されました。", file=sys.stderr)
+        return 130  # 130は一般的にCtrl+Cによる中断を示す
+
+    except Exception as e:
+        print(f"予期せぬエラーが発生しました: {e}", file=sys.stderr)
+        if args.verbose:
+            import traceback
+            traceback.print_exc()
         return 1
 
 

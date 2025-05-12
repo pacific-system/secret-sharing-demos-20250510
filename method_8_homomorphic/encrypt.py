@@ -33,7 +33,8 @@ from method_8_homomorphic.config import (
     CRYPTO_ALGORITHM,
     PAILLIER_KEY_BITS,
     ELGAMAL_KEY_BITS,
-    MASK_SEED_SIZE
+    MASK_SEED_SIZE,
+    MAX_CHUNK_SIZE
 )
 from method_8_homomorphic.homomorphic import (
     PaillierCrypto, ElGamalCrypto,
@@ -276,7 +277,7 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     print("真と偽のデータを準同型暗号で暗号化中...")
 
     # データをチャンクに分割
-    chunk_size = 64  # バイトごとの暗号化に適したサイズ
+    chunk_size = MAX_CHUNK_SIZE  # バイトごとの暗号化に適したサイズ
     true_chunks = [true_content[i:i+chunk_size] for i in range(0, len(true_content), chunk_size)]
     false_chunks = [false_content[i:i+chunk_size] for i in range(0, len(false_content), chunk_size)]
 
@@ -316,12 +317,11 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     additional_data = {
         "true_size": len(true_content),
         "false_size": len(false_content),
-        "true_chunks": len(true_chunks),
-        "false_chunks": len(false_chunks),
         "salt": base64.b64encode(salt).decode('ascii'),
         "algorithm": args.algorithm,
         "key_bits": args.key_bits,
         "timestamp": int(time.time()),
+        "chunk_size": chunk_size,  # チャンクサイズを明示的に含める
         "public_key": {
             "n": str(paillier_pub["n"]),
             "g": str(paillier_pub["g"])

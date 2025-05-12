@@ -45,6 +45,10 @@ from method_8_homomorphic.crypto_mask import (
     MaskFunctionGenerator, AdvancedMaskFunctionGenerator,
     transform_between_true_false, create_indistinguishable_form, extract_by_key_type
 )
+from method_8_homomorphic.crypto_adapters import (
+    process_data_for_encryption, process_data_after_decryption,
+    DataAdapter
+)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -129,6 +133,13 @@ def parse_arguments() -> argparse.Namespace:
         '--verbose', '-v',
         action='store_true',
         help='詳細な出力'
+    )
+
+    parser.add_argument(
+        '--force-data-type',
+        choices=['text', 'binary', 'json', 'base64', 'auto'],
+        default='auto',
+        help='入力データの形式を強制指定（デフォルト: 自動検出）'
     )
 
     return parser.parse_args()
@@ -258,23 +269,59 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     print(f"入力ファイルを読み込み中...")
     try:
         with open(args.true_file, 'rb') as f:
-            true_content = f.read()
+            true_raw_content = f.read()
         with open(args.false_file, 'rb') as f:
-            false_content = f.read()
+            false_raw_content = f.read()
     except FileNotFoundError as e:
         print(f"Error: {e}")
         sys.exit(1)
 
-    # マスク関数生成器の初期化
-    if args.advanced_mask:
-        mask_generator = AdvancedMaskFunctionGenerator(paillier_obj, key)
-        print("高度なマスク関数を使用します（多項式変換など）")
-    else:
-        mask_generator = MaskFunctionGenerator(paillier_obj, key)
-        print("基本マスク関数を使用します")
+    # データタイプの検出と処理
+    true_data_type = 'auto'
+    false_data_type = 'auto'
 
-    # 真と偽のデータをPaillier暗号で暗号化
-    print("真と偽のデータを準同型暗号で暗号化中...")
+    if args.force_data_type != 'auto':
+        # 強制指定された場合
+        true_data_type = args.force_data_type
+        false_data_type = args.force_data_type
+        print(f"データタイプを強制指定: {true_data_type}")
+    else:
+        # 自動検出
+        true_data_type = DataAdapter.detect_data_type(true_raw_content)
+        false_data_type = DataAdapter.detect_data_type(false_raw_content)
+        print(f"真データタイプを自動検出: {true_data_type}")
+        print(f"偽データタイプを自動検出: {false_data_type}")
+
+    # データの前処理
+    true_content, true_final_type = process_data_for_encryption(true_raw_content, true_data_type)
+    false_content, false_final_type = process_data_for_encryption(false_raw_content, false_data_type)
+
+    if args.verbose:
+        print(f"[DEBUG] 暗号化前: データタイプ={true_data_type}, サイズ={len(true_raw_content)}バイト")
+        print(f"[DEBUG] テキスト内容: {true_raw_content[:20]}...")
+        if true_data_type == 'text':
+            try:
+                encoding = 'utf-8'
+                text = true_raw_content.decode(encoding)
+                print(f"[DEBUG] 検出されたエンコーディング: {encoding}")
+                print(f"[DEBUG] デコードされたテキスト（先頭30文字）: {text[:30]}")
+            except UnicodeDecodeError:
+                print(f"[DEBUG] デコードできませんでした")
+        print(f"[DEBUG] 変換後: サイズ={len(true_content)}バイト")
+        print(f"[DEBUG] 変換後先頭バイト: {true_content[:20]}")
+
+        print(f"[DEBUG] 暗号化前: データタイプ={false_data_type}, サイズ={len(false_raw_content)}バイト")
+        print(f"[DEBUG] テキスト内容: {false_raw_content[:20]}...")
+        if false_data_type == 'text':
+            try:
+                encoding = 'utf-8'
+                text = false_raw_content.decode(encoding)
+                print(f"[DEBUG] 検出されたエンコーディング: {encoding}")
+                print(f"[DEBUG] デコードされたテキスト（先頭30文字）: {text[:30]}")
+            except UnicodeDecodeError:
+                print(f"[DEBUG] デコードできませんでした")
+        print(f"[DEBUG] 変換後: サイズ={len(false_content)}バイト")
+        print(f"[DEBUG] 変換後先頭バイト: {false_content[:20]}")
 
     # データをチャンクに分割
     chunk_size = MAX_CHUNK_SIZE  # バイトごとの暗号化に適したサイズ
@@ -308,29 +355,92 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     # マスク適用と真偽変換
     print("マスク関数を適用し、真偽両方の状態を区別不可能な形式に変換中...")
 
-    # 真偽変換（両方の内容を区別不可能にする）
+    # マスク関数生成器の初期化
+    if args.advanced_mask:
+        mask_generator = AdvancedMaskFunctionGenerator(paillier_obj, key)
+        print("高度なマスク関数を使用します（多項式変換など）")
+    else:
+        mask_generator = MaskFunctionGenerator(paillier_obj, key)
+        print("基本マスク関数を使用します")
+
+    # マスク適用と真偽変換
     masked_true, masked_false, true_mask, false_mask = transform_between_true_false(
         paillier_obj, true_encrypted, false_encrypted, mask_generator
     )
 
-    # 区別不可能な形式に変換
-    additional_data = {
-        "true_size": len(true_content),
-        "false_size": len(false_content),
-        "salt": base64.b64encode(salt).decode('ascii'),
+    # データの元のフォーマット情報を保持（復号時に利用）
+    metadata = {
+        "format": "homomorphic_masked",
+        "version": "1.0",
         "algorithm": args.algorithm,
         "key_bits": args.key_bits,
         "timestamp": int(time.time()),
-        "chunk_size": chunk_size,  # チャンクサイズを明示的に含める
-        "public_key": {
-            "n": str(paillier_pub["n"]),
-            "g": str(paillier_pub["g"])
-        }
+        "true_size": len(true_content),
+        "false_size": len(false_content),
+        "chunk_size": chunk_size,
+        "salt": base64.b64encode(salt).decode('ascii'),
+        "true_data_type": true_final_type,
+        "false_data_type": false_final_type,
+        "true_filename": os.path.basename(args.true_file),
+        "false_filename": os.path.basename(args.false_file),
+        "public_key": paillier_obj.public_key  # 公開鍵情報を追加
     }
 
+    # true_file と false_file が両方テキストファイルであるかどうかをチェック
+    try:
+        is_true_text = False
+        is_false_text = False
+
+        # ファイル拡張子でテキストファイルかどうかを判断
+        true_ext = os.path.splitext(args.true_file)[1].lower()
+        false_ext = os.path.splitext(args.false_file)[1].lower()
+
+        text_extensions = ['.txt', '.text', '.md', '.json', '.xml', '.html', '.htm', '.csv', '.log']
+
+        if true_ext in text_extensions:
+            # テキストファイルの可能性が高い
+            try:
+                true_raw_content.decode('utf-8')
+                is_true_text = True
+                metadata["true_encoding"] = "utf-8"
+            except UnicodeDecodeError:
+                # UTF-8以外のエンコーディングを試す
+                for enc in ['latin-1', 'shift-jis', 'euc-jp']:
+                    try:
+                        true_raw_content.decode(enc)
+                        is_true_text = True
+                        metadata["true_encoding"] = enc
+                        break
+                    except UnicodeDecodeError:
+                        continue
+
+        if false_ext in text_extensions:
+            # テキストファイルの可能性が高い
+            try:
+                false_raw_content.decode('utf-8')
+                is_false_text = True
+                metadata["false_encoding"] = "utf-8"
+            except UnicodeDecodeError:
+                # UTF-8以外のエンコーディングを試す
+                for enc in ['latin-1', 'shift-jis', 'euc-jp']:
+                    try:
+                        false_raw_content.decode(enc)
+                        is_false_text = True
+                        metadata["false_encoding"] = enc
+                        break
+                    except UnicodeDecodeError:
+                        continue
+
+        metadata["is_true_text"] = is_true_text
+        metadata["is_false_text"] = is_false_text
+
+    except Exception as e:
+        print(f"ファイル形式の判定中にエラーが発生しました: {e}")
+
+    # 区別不可能な形式に変換
     print("暗号文を区別不可能な形式に変換中...")
     indistinguishable_data = create_indistinguishable_form(
-        masked_true, masked_false, true_mask, false_mask, additional_data
+        masked_true, masked_false, true_mask, false_mask, metadata
     )
 
     # 出力ファイルに書き込み
@@ -353,24 +463,15 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
 
     if args.verbose:
         print(f"\n詳細情報:")
-        print(f"真ファイルサイズ: {len(true_content)} バイト")
-        print(f"偽ファイルサイズ: {len(false_content)} バイト")
+        print(f"真ファイルサイズ: {len(true_raw_content)} バイト")
+        print(f"偽ファイルサイズ: {len(false_raw_content)} バイト")
+        print(f"真データタイプ: {true_final_type}")
+        print(f"偽データタイプ: {false_final_type}")
+        print(f"処理後真データサイズ: {len(true_content)} バイト")
+        print(f"処理後偽データサイズ: {len(false_content)} バイト")
         print(f"暗号化後ファイルサイズ: {os.path.getsize(args.output)} バイト")
         print(f"真チャンク数: {len(true_chunks)}")
         print(f"偽チャンク数: {len(false_chunks)}")
-
-    # メタデータを作成
-    metadata = {
-        "format": OUTPUT_FORMAT,
-        "version": "1.0",
-        "algorithm": args.algorithm,
-        "key_bits": args.key_bits,
-        "timestamp": additional_data["timestamp"],
-        "true_size": len(true_content),
-        "false_size": len(false_content),
-        "chunk_size": chunk_size,
-        "salt": additional_data["salt"]
-    }
 
     return key, metadata
 

@@ -1,0 +1,1 @@
+This is a sample text file. It contains multiple lines. The purpose is to test homomorphic encryption. Let's see if the text is recovered correctly.

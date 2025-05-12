@@ -606,9 +606,19 @@ def create_indistinguishable_form(
     Returns:
         区別不可能な暗号文データ
     """
-    # 両方の暗号文が同じ長さであることを確認
-    if len(masked_true) != len(masked_false):
-        raise ValueError("真と偽の暗号文チャンク数が一致しません")
+    # チャンク数の不均衡を処理（短い方にパディングを追加）
+    if len(masked_true) < len(masked_false):
+        # 真のチャンク数が少ない場合、真のチャンクを複製して追加
+        padding_needed = len(masked_false) - len(masked_true)
+        padding = [masked_true[-1]] * padding_needed  # 最後のチャンクを複製
+        masked_true = masked_true + padding
+        print(f"真の暗号文チャンク数を調整: {len(masked_true) - padding_needed} -> {len(masked_true)}")
+    elif len(masked_true) > len(masked_false):
+        # 偽のチャンク数が少ない場合、偽のチャンクを複製して追加
+        padding_needed = len(masked_true) - len(masked_false)
+        padding = [masked_false[-1]] * padding_needed  # 最後のチャンクを複製
+        masked_false = masked_false + padding
+        print(f"偽の暗号文チャンク数を調整: {len(masked_false) - padding_needed} -> {len(masked_false)}")
 
     # 各チャンクを16進数文字列に変換
     true_hex = [hex(chunk) for chunk in masked_true]
@@ -635,9 +645,30 @@ def create_indistinguishable_form(
         "false_mask": false_mask_info
     }
 
+    # 公開鍵情報が使用可能な場合は追加（復号時に必要）
+    # MaskFunctionGeneratorのパブリックキーを取得
+    if hasattr(true_mask.get("_generator", None), "paillier") and \
+       hasattr(true_mask.get("_generator", {}).get("paillier", None), "public_key") and \
+       true_mask.get("_generator", {}).get("paillier", {}).get("public_key") is not None:
+        result["public_key"] = true_mask["_generator"]["paillier"]["public_key"]
+    # additionalデータから公開鍵を取得（もし含まれていれば）
+    elif additional_data and additional_data.get("paillier_public_key"):
+        result["public_key"] = additional_data["paillier_public_key"]
+    # 最後の手段として、追加データ全体から公開鍵情報を検索
+    elif additional_data:
+        for key in ["public_key", "paillier_public", "paillier_public_key"]:
+            if key in additional_data:
+                result["public_key"] = additional_data[key]
+                break
+
     # 追加のメタデータがあれば追加
     if additional_data:
-        result.update(additional_data)
+        # public_keyはすでに処理済み
+        additional_data_copy = additional_data.copy()
+        additional_data_copy.pop("public_key", None)
+        additional_data_copy.pop("paillier_public_key", None)
+        additional_data_copy.pop("paillier_public", None)
+        result.update(additional_data_copy)
 
     return result
 

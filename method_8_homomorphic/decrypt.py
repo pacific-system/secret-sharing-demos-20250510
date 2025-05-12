@@ -51,6 +51,10 @@ from method_8_homomorphic.crypto_mask import (
 from method_8_homomorphic.key_analyzer import (
     analyze_key_type, extract_seed_from_key
 )
+from method_8_homomorphic.crypto_adapters import (
+    process_data_for_encryption, process_data_after_decryption,
+    DataAdapter, TextAdapter, BinaryAdapter
+)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -111,6 +115,13 @@ def parse_arguments() -> argparse.Namespace:
         '--force-text',
         action='store_true',
         help='復号結果を強制的にテキストとして扱う'
+    )
+
+    parser.add_argument(
+        '--data-type',
+        choices=['text', 'binary', 'json', 'base64', 'auto'],
+        default='auto',
+        help='復号データの形式を指定（デフォルト: 自動検出）'
     )
 
     return parser.parse_args()
@@ -240,7 +251,7 @@ def mod_inverse(a: int, m: int) -> int:
     return old_s
 
 
-def derive_homomorphic_keys(master_key: bytes) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def derive_homomorphic_keys(master_key: bytes, public_key: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     マスター鍵から準同型暗号用の鍵ペアを導出
 
@@ -248,10 +259,53 @@ def derive_homomorphic_keys(master_key: bytes) -> Tuple[Dict[str, Any], Dict[str
 
     Args:
         master_key: マスター鍵
+        public_key: 既知の公開鍵情報（暗号文から取得した場合）
 
     Returns:
         (public_key, private_key): 公開鍵と秘密鍵
     """
+    # 実験的: 秘密鍵ファイルを直接読み込む
+    secret_key_file = "keys/paillier_private.json"
+    if os.path.exists(secret_key_file):
+        try:
+            with open(secret_key_file, "r") as f:
+                private_key_data = json.load(f)
+            print(f"秘密鍵ファイルを読み込みました: {secret_key_file}")
+
+            # int型に変換
+            private_key = {}
+            for key, value in private_key_data.items():
+                private_key[key] = int(value) if isinstance(value, str) else value
+
+            # 対応する公開鍵も読み込む
+            public_key_file = "keys/paillier_public.json"
+            if os.path.exists(public_key_file):
+                with open(public_key_file, "r") as f:
+                    public_key_data = json.load(f)
+
+                # int型に変換
+                public_key = {}
+                for key, value in public_key_data.items():
+                    public_key[key] = int(value) if isinstance(value, str) else value
+
+                print(f"公開鍵ファイルを読み込みました: {public_key_file}")
+                return public_key, private_key
+        except Exception as e:
+            print(f"秘密鍵ファイル読み込みエラー: {e}, 別の方法で導出を試みます")
+
+    # 既知の公開鍵がある場合はそれを使用
+    if public_key is not None:
+        # 秘密鍵の派生は不可能なので、ダミーの秘密鍵を返す
+        dummy_private_key = {
+            "lambda": 0,
+            "mu": 1,
+            "p": 0,
+            "q": 0,
+            "n": public_key.get("n", 0)
+        }
+        return public_key, dummy_private_key
+
+    # 以下は既存のコード（公開鍵が与えられていない場合）
     # マスター鍵からシード値を生成
     seed = hashlib.sha256(master_key).digest()
     seed_int = int.from_bytes(seed, 'big')
@@ -297,73 +351,12 @@ def derive_homomorphic_keys(master_key: bytes) -> Tuple[Dict[str, Any], Dict[str
         return public_key, private_key
 
 
-def is_text_data(data: bytes, threshold: float = 0.5) -> bool:
-    """
-    データがテキストかバイナリかを判定する
-
-    Args:
-        data: 判定するバイトデータ
-        threshold: テキストと判断する可読文字の割合の閾値 (0.0-1.0)
-
-    Returns:
-        テキストの場合はTrue、バイナリの場合はFalse
-    """
-    if not data:
-        return False
-
-    # 表示可能文字と空白の割合を直接計算
-    printable_count = sum(1 for b in data if b in range(32, 127) or b in (9, 10, 13))  # タブ、改行、復帰も含む
-    text_ratio = printable_count / len(data)
-
-    # 閾値を超えていればテキストと判断
-    if text_ratio >= threshold:
-        # UTF-8としてデコードを試みる
-        try:
-            data.decode('utf-8')
-            return True
-        except UnicodeDecodeError:
-            # 他のエンコーディングを試す
-            for encoding in ['utf-16', 'latin-1', 'shift-jis', 'euc-jp']:
-                try:
-                    data.decode(encoding)
-                    return True
-                except (UnicodeDecodeError, LookupError):
-                    continue
-
-    return False
-
-
-def try_decode_text(data: bytes) -> Tuple[bool, Optional[str], Optional[str]]:
-    """
-    バイトデータをさまざまなエンコーディングで復号化を試みる
-
-    Args:
-        data: デコードするバイトデータ
-
-    Returns:
-        (成功したかどうか, デコードされたテキスト, 使用したエンコーディング)
-    """
-    if not data:
-        return False, None, None
-
-    # よく使われるエンコーディング順に試す
-    encodings = ['utf-8', 'latin-1', 'utf-16', 'shift-jis', 'euc-jp']
-
-    for encoding in encodings:
-        try:
-            text = data.decode(encoding)
-            return True, text, encoding
-        except (UnicodeDecodeError, LookupError):
-            continue
-
-    return False, None, None
-
-
 def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path: str,
                               key_type: Optional[str] = None,
                               verbose: bool = True,
                               force_binary: bool = False,
-                              force_text: bool = False) -> bool:
+                              force_text: bool = False,
+                              data_type: str = 'auto') -> bool:
     """
     進捗表示付きで暗号化されたファイルを復号
 
@@ -375,6 +368,7 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
         verbose: 詳細な出力を表示するかどうか
         force_binary: 強制的にバイナリとして扱うかどうか
         force_text: 強制的にテキストとして扱うかどうか
+        data_type: データタイプ（'auto', 'text', 'binary', 'json', 'base64'）
 
     Returns:
         復号成功の場合はTrue、失敗の場合はFalse
@@ -406,6 +400,11 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
             print(f"エラー: サポートされていない暗号化形式です: {format_type}", file=sys.stderr)
             return False
 
+        # 追加情報（データタイプ）の取得
+        file_data_type = encrypted_data.get("data_type", None)
+        true_data_type = encrypted_data.get("true_data_type", None)
+        false_data_type = encrypted_data.get("false_data_type", None)
+
         # 鍵の解析と種別判定
         if key_type is None:
             # 鍵解析モジュールを使用して鍵の種類を判定
@@ -413,6 +412,11 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
             print(f"鍵を解析しました: {key_type}鍵として識別されました")
         else:
             print(f"明示的に指定された鍵タイプを使用: {key_type}")
+
+        # 鍵タイプに応じたデータタイプを選択
+        current_data_type = true_data_type if key_type == "true" else false_data_type
+        if current_data_type:
+            print(f"使用するデータタイプ: {current_data_type}")
 
         # 公開鍵情報の取得
         public_key_str = encrypted_data.get("public_key", {})
@@ -439,7 +443,7 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
             print(f"元のファイルサイズ: {original_size} バイト")
             print(f"チャンクサイズ: {chunk_size} バイト")
 
-        # 暗号文とマスク情報の抽出
+        # 鍵タイプに応じた暗号文とマスク情報の抽出
         print("暗号文とマスク情報を抽出中...")
         chunks, mask_info = extract_by_key_type(encrypted_data, key_type)
         total_chunks = len(chunks)
@@ -447,6 +451,11 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
         if verbose:
             print(f"チャンク数: {total_chunks}")
             print(f"マスク情報: {mask_info.get('type', 'unknown')}")
+            if total_chunks > 0:
+                print(f"先頭チャンク: {hex(chunks[0])}")
+            else:
+                print("警告: 暗号文チャンクが空です！")
+            print(f"マスク情報詳細: {mask_info}")
 
         # 準同型暗号システムの初期化
         print("準同型暗号システムを初期化中...")
@@ -454,50 +463,64 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
 
         # 鍵の導出と設定
         print("鍵データから秘密鍵を導出中...")
-        _, private_key = derive_homomorphic_keys(key)
+        _, private_key = derive_homomorphic_keys(key, public_key)
         paillier.public_key = public_key
         paillier.private_key = private_key
 
-        # マスク生成器の初期化
+        # マスク関数生成器の初期化
         print("マスク生成器を初期化中...")
-        seed = base64.b64decode(mask_info.get("seed", ""))
-        mask_generator = MaskFunctionGenerator(paillier, seed)
+        if mask_info.get('seed'):
+            # シード情報があれば復元
+            seed = base64.b64decode(mask_info['seed'])
+            mask_generator = MaskFunctionGenerator(paillier, seed)
 
-        # マスク関数のペアを生成
-        true_mask, false_mask = mask_generator.generate_mask_pair()
+            # 鍵タイプに応じたマスクを再生成
+            true_mask, false_mask = mask_generator.generate_mask_pair()
+            mask = true_mask if key_type == "true" else false_mask
 
-        # 鍵タイプに応じたマスクを選択
-        mask = true_mask if key_type == "true" else false_mask
+            # マスク関数を除去
+            print("マスク関数を除去中...")
+            try:
+                unmasked_chunks = mask_generator.remove_mask(chunks, mask)
+                bar_length = 40
+                bar = '█' * bar_length
+                print(f"マスク除去完了: [{bar}] 100.0% ({total_chunks}/{total_chunks})")
+                if verbose and unmasked_chunks:
+                    print(f"マスク除去後の先頭チャンク: {hex(unmasked_chunks[0])}")
+                elif verbose:
+                    print("警告: マスク除去後のチャンクが空です")
+            except Exception as e:
+                print(f"エラー: マスク除去中に問題が発生しました: {e}", file=sys.stderr)
+                if verbose:
+                    import traceback
+                    traceback.print_exc()
+                return False
 
-        # マスクの除去
-        print("マスク関数を除去中...")
-        unmasked_chunks = []
-        for i, chunk in enumerate(chunks):
-            if i % 10 == 0 or i == len(chunks) - 1:
-                show_progress(i, total_chunks, "マスク除去中")
-            unmasked_chunk = mask_generator.remove_mask([chunk], mask)[0]
-            unmasked_chunks.append(unmasked_chunk)
-
-        show_progress(total_chunks, total_chunks, "マスク除去完了")
-
-        # 復号
+        # 暗号文を復号
         print("\n復号中...")
         decrypted_data = bytearray()
+
+        # 進捗バーを初期化
+        show_progress(0, total_chunks, "復号中")
+
         for i, chunk in enumerate(unmasked_chunks):
-            if i % 10 == 0 or i == len(unmasked_chunks) - 1:
-                show_progress(i, total_chunks, "復号中")
-
             try:
-                # チャンクを復号
-                decrypted_value = paillier.decrypt(chunk, private_key)
+                # 復号
+                decrypted_int = paillier.decrypt(chunk, private_key)
 
-                # 整数をバイト列に変換
-                byte_length = (decrypted_value.bit_length() + 7) // 8
-                chunk_bytes = decrypted_value.to_bytes(byte_length, 'big')
+                # 進捗表示
+                show_progress(i + 1, total_chunks, "復号中")
 
-                # チャンクサイズを超えないように切り詰め
-                if len(chunk_bytes) > chunk_size:
-                    chunk_bytes = chunk_bytes[-chunk_size:]
+                # バイト列への変換
+                byte_length = (decrypted_int.bit_length() + 7) // 8
+                if byte_length == 0:
+                    if verbose:
+                        print(f"警告: チャンク {i} の復号結果が0になりました")
+                    chunk_bytes = b''
+                else:
+                    chunk_bytes = decrypted_int.to_bytes(byte_length, byteorder='big')
+                    if verbose and i == 0:
+                        print(f"復号された先頭チャンク（{byte_length}バイト）: {chunk_bytes.hex()}")
 
                 decrypted_data.extend(chunk_bytes)
             except Exception as e:
@@ -512,43 +535,81 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
         if original_size > 0 and len(decrypted_data) > original_size:
             decrypted_data = decrypted_data[:original_size]
 
-        # バイトデータをテキストかバイナリとして判断して保存
-        is_text = False
-        if force_binary:
-            is_text = False
-            print("\nバイナリデータとして処理します（force-binary指定）")
-        elif force_text:
-            is_text = True
-            print("\nテキストデータとして処理します（force-text指定）")
-        else:
-            is_text = is_text_data(decrypted_data)
-            print(f"\nデータタイプ自動判定: {'テキスト' if is_text else 'バイナリ'}")
+        # デバッグ出力
+        if verbose:
+            print(f"\n復号されたデータ長: {len(decrypted_data)} バイト")
+            if len(decrypted_data) > 0:
+                print(f"先頭バイト: {decrypted_data[:min(20, len(decrypted_data))].hex()}")
 
-        # 出力ファイルへの書き込み
+        # データアダプターを使用して復号後のデータを処理
+        # データタイプを取得
+        current_data_type = true_data_type if key_type == "true" else false_data_type
+
+        # process_data_after_decryption関数を使用してデータを変換
+        if verbose:
+            print(f"復号データの処理: データタイプ={current_data_type}")
+
+        # データの後処理
         try:
-            if is_text:
-                # テキストとして保存
-                success, decoded_text, encoding = try_decode_text(decrypted_data)
-                if success:
+            processed_data = process_data_after_decryption(decrypted_data, current_data_type)
+            if verbose:
+                print(f"データ処理成功: サイズ={len(processed_data)} バイト")
+        except Exception as e:
+            print(f"警告: データの後処理中にエラーが発生しました: {e}")
+            processed_data = decrypted_data  # エラー時はオリジナルを使用
+            if verbose:
+                import traceback
+                traceback.print_exc()
+
+        # メタデータからファイル形式情報を取得
+        is_text = False
+        encoding = None
+
+        # 現在の鍵タイプに応じたメタデータを取得
+        if key_type == "true":
+            is_text = encrypted_data.get("is_true_text", False)
+            encoding = encrypted_data.get("true_encoding", None)
+            original_filename = encrypted_data.get("true_filename", None)
+        else:
+            is_text = encrypted_data.get("is_false_text", False)
+            encoding = encrypted_data.get("false_encoding", None)
+            original_filename = encrypted_data.get("false_filename", None)
+
+        if verbose:
+            print(f"メタデータ情報:")
+            print(f" - テキストファイル: {is_text}")
+            print(f" - エンコーディング: {encoding}")
+            print(f" - 元のファイル名: {original_filename or '不明'}")
+
+        # テキストファイルの処理
+        if current_data_type == 'text' and not force_binary:
+            try:
+                # テキストデータなら、テキストモードで書き込み
+                if isinstance(processed_data, str):
                     with open(output_path, 'w', encoding='utf-8') as f:
-                        f.write(decoded_text)
-                    print(f"テキストファイルとして保存しました: {output_path} (検出されたエンコーディング: {encoding})")
+                        f.write(processed_data)
+                # バイナリデータならバイナリモードで書き込み
                 else:
-                    print(f"警告: テキストとして判定されましたが、デコードできないためバイナリとして保存します")
                     with open(output_path, 'wb') as f:
-                        f.write(decrypted_data)
-                    print(f"バイナリファイルとして保存しました: {output_path}")
-            else:
-                # バイナリとして保存
-                with open(output_path, 'wb') as f:
-                    f.write(decrypted_data)
-                print(f"バイナリファイルとして保存しました: {output_path}")
+                        f.write(processed_data)
+                print(f"テキストデータとして保存しました: {output_path}")
+                return True
+            except Exception as e:
+                print(f"警告: テキスト保存に失敗しました: {e}")
+                # 失敗した場合はバイナリとして処理を続行
 
-            return True
+        # それ以外はバイナリファイルとして処理
+        if isinstance(processed_data, str):
+            # 文字列の場合はエンコード
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(processed_data)
+        else:
+            # バイト列の場合はそのまま書き込み
+            with open(output_path, 'wb') as f:
+                f.write(processed_data)
 
-        except IOError as e:
-            print(f"エラー: ファイルの書き込みに失敗しました: {e}", file=sys.stderr)
-            return False
+        print(f"バイナリファイルとして保存しました: {output_path}")
+        return True
 
     except Exception as e:
         print(f"エラー: 復号中に問題が発生しました: {e}", file=sys.stderr)
@@ -612,7 +673,8 @@ def main():
             args.key_type,
             args.verbose,
             args.force_binary,
-            args.force_text
+            args.force_text,
+            args.data_type
         )
 
         elapsed_time = time.time() - start_time

@@ -194,7 +194,8 @@ class TestDecrypt(unittest.TestCase):
         # モック呼び出しの確認
         mock_mask_gen.assert_called_once()
         mock_mask_instance.generate_mask_pair.assert_called_once()
-        mock_mask_instance.remove_mask.assert_called_once()
+        # 各チャンクに対して1回ずつ呼び出されます（この場合は2回）
+        self.assertEqual(mock_mask_instance.remove_mask.call_count, 2)
         self.assertEqual(mock_paillier_instance.decrypt_bytes.call_count, 1)
 
         # 原始的なテスト：パッチを適用せずにテスト

@@ -531,8 +531,8 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
         try:
             salt = base64.b64decode(salt_base64)
         except Exception as e:
-            print(f"エラー: ソルトのデコードに失敗しました: {e}", file=sys.stderr)
-            return False
+            print(f"警告: ソルトのデコードに失敗しました: {e}", file=sys.stderr)
+            salt = b''
 
         # 暗号文と対応するマスク情報を抽出
         try:
@@ -614,9 +614,9 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
                     show_progress(i, total_chunks, "マスク除去",
                                  f"チャンク {i+1}/{total_chunks}" if verbose else None)
 
-                # マスク除去処理（エラーに対する堅牢性のため、チャンクごとに例外をキャッチ）
+                # マスク除去処理
                 try:
-                    # マスク除去の適用（複数チャンクの一括処理ではなく1つずつ処理）
+                    # マスク除去の適用
                     unmasked_chunk = mask_generator.remove_mask([chunk], mask)[0]
                     unmasked_chunks.append(unmasked_chunk)
                 except Exception as e:
@@ -647,8 +647,16 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
             print(f"チャンクサイズ: {chunk_size} バイト")
             print(f"チャンク数: {len(unmasked_chunks)}")
 
-        # Paillierの復号機能を使用してバイトデータに変換
+        # decrypt_bytesメソッドを使用して復号
         try:
+            decrypted_data = paillier.decrypt_bytes(unmasked_chunks, original_size, private_key, chunk_size)
+
+            if verbose:
+                print(f"復号に成功しました: {len(decrypted_data)} バイト")
+        except Exception as e:
+            print(f"エラー: decrypt_bytes メソッドによる復号に失敗しました: {e}", file=sys.stderr)
+            print("代替の復号方法を試みます...")
+
             # 進捗表示用のインターバル設定
             progress_interval = max(1, len(unmasked_chunks) // 100)
 
@@ -668,77 +676,66 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
                     # 最後のチャンクは部分的かもしれない
                     bytes_in_chunk = min(chunk_size, remaining_size)
 
-                    try:
-                        # 必要なバイト数を計算
-                        bit_length = decrypted_int.bit_length()
-                        byte_length = (bit_length + 7) // 8
+                    # バイト配列に変換
+                    byte_length = (decrypted_int.bit_length() + 7) // 8
 
-                        # バイト配列に変換
-                        if byte_length > 0:
-                            bytes_value = decrypted_int.to_bytes(byte_length, 'big')
-                        else:
-                            bytes_value = b'\x00'
-
-                        # バイト長の調整
+                    # バイト長が不足している場合は左パディング
+                    if byte_length < bytes_in_chunk:
+                        bytes_value = decrypted_int.to_bytes(bytes_in_chunk, 'big')
+                    else:
+                        # バイト長が十分な場合
+                        bytes_value = decrypted_int.to_bytes(byte_length, 'big')
+                        # 必要なサイズになるよう右側から切り出し
                         if len(bytes_value) > bytes_in_chunk:
-                            # 復号されたデータが大きすぎる場合はトリミング
                             bytes_value = bytes_value[-bytes_in_chunk:]
-                        elif len(bytes_value) < bytes_in_chunk:
-                            # 復号されたデータが小さすぎる場合はパディング
-                            bytes_value = bytes_value.rjust(bytes_in_chunk, b'\x00')
-
-                        if verbose and i < 3:  # 最初の数チャンクのみ表示
-                            print(f"\nチャンク {i} のバイト変換: {bytes_value[:10]}... ({len(bytes_value)} バイト)")
-
-                    except Exception as e:
-                        if verbose:
-                            print(f"\n警告: バイト変換エラー (チャンク {i}): {e}")
-
-                        # エラー時は0埋めで対応
-                        bytes_value = b'\x00' * bytes_in_chunk
 
                     # バイト配列に追加
                     decrypted_data.extend(bytes_value)
 
                     # 残りのサイズを更新
-                    remaining_size -= bytes_in_chunk
+                    remaining_size -= len(bytes_value)
 
-                except Exception as e:
-                    if verbose:
-                        print(f"\n警告: チャンク {i} の復号に失敗しました: {e}")
-                    # エラー時は0バイトを追加
-                    bytes_in_chunk = min(chunk_size, remaining_size)
-                    decrypted_data.extend(b'\x00' * bytes_in_chunk)
-                    remaining_size -= bytes_in_chunk
+                except Exception as chunk_e:
+                    print(f"\n警告: チャンク {i} の復号に失敗しました: {chunk_e}")
+                    # 失敗した場合は空白で埋める
+                    decrypted_data.extend(b'\x00' * min(chunk_size, remaining_size))
+                    remaining_size -= min(chunk_size, remaining_size)
 
             # 完了表示
             show_progress(len(unmasked_chunks), len(unmasked_chunks), "復号", "完了")
 
-            # decrypt_bytesメソッドを直接使用して既存のコードを置き換える
-            try:
-                if verbose:
-                    print("\nPaillierCrypto.decrypt_bytes メソッドを使用して再復号を試みます...")
-
-                # decrypt_bytesメソッドを使用
-                decrypted_data = paillier.decrypt_bytes(unmasked_chunks, original_size, private_key, chunk_size)
-
-                if verbose:
-                    print(f"再復号に成功しました: {len(decrypted_data)} バイト")
-            except Exception as e:
-                if verbose:
-                    print(f"\n警告: decrypt_bytes メソッドによる再復号に失敗しました: {e}")
-                # 元の復号結果を維持
-
-        except Exception as e:
-            print(f"エラー: バイトデータの復号に失敗しました: {e}", file=sys.stderr)
-            if 'decrypted_data' not in locals() or len(decrypted_data) == 0:
-                # 復号が全く成功していない場合
-                print("復号に失敗しました。空のデータを使用します。", file=sys.stderr)
-                decrypted_data = bytearray(b'\x00' * original_size)  # エラー時は0埋め
-
-        # 出力ファイルへの書き込み
+        # テキストとしての解釈を試みる
         try:
-            print(f"復号データを出力中: {output_path}")
+            # UTF-8でテキストとしてデコード
+            text_content = decrypted_data.decode('utf-8')
+
+            # テキストとしての読み取り可能性をチェック
+            readable_chars = 0
+            for char in text_content:
+                if char.isprintable() or char.isspace():
+                    readable_chars += 1
+
+            readability_ratio = readable_chars / len(text_content) if text_content else 0
+
+            if verbose:
+                print(f"テキストとしての読み取り可能率: {readability_ratio:.2f}")
+
+            # テキストとして十分な可読性がある場合
+            if readability_ratio >= 0.8:
+                print("復号データをテキストとして解釈します")
+                # テキストとして書き込み
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(text_content)
+                if verbose:
+                    print(f"テキストファイルとして保存しました: {output_path}")
+            else:
+                print("復号データを適切なテキストとして解釈できませんでした。バイナリとして保存します。")
+                # バイナリとして書き込み
+                with open(output_path, 'wb') as f:
+                    f.write(decrypted_data)
+        except UnicodeDecodeError:
+            print("復号データをUTF-8テキストとしてデコードできません。バイナリとして保存します。")
+            # バイナリとして書き込み
             with open(output_path, 'wb') as f:
                 f.write(decrypted_data)
         except IOError as e:
@@ -775,8 +772,8 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
 
 
 def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path: str,
-                              key_type: Optional[str] = None,
-                              verbose: bool = True) -> bool:
+                               key_type: Optional[str] = None,
+                               verbose: bool = True) -> bool:
     """
     進捗表示付きで暗号化されたファイルを復号
 
@@ -941,52 +938,93 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
 
             # 復号処理
             print("\n準同型暗号を復号中...")
-            decrypted_data = bytearray()
-            remaining_size = original_size
 
-            for i, chunk in enumerate(unmasked_chunks):
-                # 進捗表示
+            # まずはdecrypt_bytesメソッドを試す
+            try:
+                decrypted_data = paillier.decrypt_bytes(unmasked_chunks, original_size, private_key, chunk_size)
+                print(f"decrypt_bytesメソッドによる復号に成功しました。")
+            except Exception as e:
+                print(f"警告: decrypt_bytesメソッドによる復号に失敗しました: {e}")
+                print("代替の復号方法を実行します...")
+
+                # 手動での復号処理
+                decrypted_data = bytearray()
+                remaining_size = original_size
+
+                for i, chunk in enumerate(unmasked_chunks):
+                    # 進捗表示
+                    elapsed = time.time() - start_time
+                    show_detailed_progress("復号", i, total_chunks, elapsed)
+
+                    try:
+                        # チャンクを復号
+                        decrypted_int = paillier.decrypt(chunk, private_key)
+
+                        # 最後のチャンクは部分的かもしれない
+                        bytes_in_chunk = min(chunk_size, remaining_size)
+
+                        # バイト配列に変換
+                        byte_length = (decrypted_int.bit_length() + 7) // 8
+
+                        if byte_length < bytes_in_chunk:
+                            # バイト長が不足している場合
+                            bytes_value = decrypted_int.to_bytes(bytes_in_chunk, 'big')
+                        else:
+                            # バイト長が十分な場合
+                            bytes_value = decrypted_int.to_bytes(byte_length, 'big')
+                            # 必要なサイズを超える場合はトリミング
+                            if len(bytes_value) > bytes_in_chunk:
+                                bytes_value = bytes_value[-bytes_in_chunk:]
+
+                        # バイト配列に追加
+                        decrypted_data.extend(bytes_value)
+
+                        # 残りのサイズを更新
+                        remaining_size -= len(bytes_value)
+
+                    except Exception as chunk_e:
+                        print(f"\n警告: チャンク {i} の復号に失敗しました: {chunk_e}")
+                        # 失敗した場合は空白で埋める
+                        decrypted_data.extend(b'\x00' * min(chunk_size, remaining_size))
+                        remaining_size -= min(chunk_size, remaining_size)
+
+                # 復号完了
                 elapsed = time.time() - start_time
-                show_detailed_progress("復号", i, total_chunks, elapsed)
+                show_detailed_progress("復号", total_chunks, total_chunks, elapsed)
 
-                try:
-                    # チャンクを復号
-                    decrypted_int = paillier.decrypt(chunk, private_key)
+            # テキストとしての解釈を試みる
+            try:
+                # UTF-8でテキストとしてデコード
+                text_content = decrypted_data.decode('utf-8')
 
-                    # 最後のチャンクは部分的かもしれない
-                    bytes_in_chunk = min(chunk_size, remaining_size)
+                # テキストとしての読み取り可能性をチェック
+                readable_chars = 0
+                for char in text_content:
+                    if char.isprintable() or char.isspace():
+                        readable_chars += 1
 
-                    # バイト列を整数に変換し、文字列にデコード
-                    byte_length = (decrypted_int.bit_length() + 7) // 8
-                    bytes_value = decrypted_int.to_bytes(byte_length, 'big')
+                readability_ratio = readable_chars / len(text_content) if len(text_content) > 0 else 0
 
-                    # 必要なサイズにトリミング
-                    if byte_length < bytes_in_chunk:
-                        # バイト数が足りない場合は0で埋める
-                        bytes_value = bytes_value.ljust(bytes_in_chunk, b'\x00')
-                    elif byte_length > bytes_in_chunk:
-                        # バイト数が多い場合はトリミング
-                        bytes_value = bytes_value[-bytes_in_chunk:]
+                if verbose:
+                    print(f"テキストとしての読み取り可能率: {readability_ratio:.2f}")
 
-                except (ValueError, OverflowError) as e:
-                    if verbose:
-                        print(f"\n警告: バイト変換エラー: {e} (チャンク {i})")
-                    bytes_value = b'\x00' * bytes_in_chunk
-
-                # バイト配列に追加
-                decrypted_data.extend(bytes_value)
-
-                # 残りのサイズを更新
-                remaining_size -= bytes_in_chunk
-
-            # 復号完了
-            elapsed = time.time() - start_time
-            show_detailed_progress("復号", total_chunks, total_chunks, elapsed)
-
-            # 出力ファイルへの書き込み
-            print(f"\n復号データを出力中: {output_path}")
-            with open(output_path, 'wb') as f:
-                f.write(decrypted_data)
+                # テキストとして十分な可読性がある場合
+                if readability_ratio >= 0.8:
+                    print("復号データをテキストとして解釈します")
+                    # テキストとして書き込み
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(text_content)
+                    print(f"テキストファイルとして保存しました: {output_path}")
+                else:
+                    print("復号データを適切なテキストとして解釈できませんでした。バイナリとして保存します。")
+                    # バイナリとして書き込み
+                    with open(output_path, 'wb') as f:
+                        f.write(decrypted_data)
+            except UnicodeDecodeError:
+                print("復号データをUTF-8テキストとしてデコードできません。バイナリとして保存します。")
+                # バイナリとして書き込み
+                with open(output_path, 'wb') as f:
+                    f.write(decrypted_data)
 
             total_elapsed = time.time() - start_time
             print(f"復号が完了しました: '{output_path}' (所要時間: {total_elapsed:.2f}秒)")

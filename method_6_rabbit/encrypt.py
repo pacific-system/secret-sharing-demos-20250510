@@ -280,7 +280,7 @@ def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_
         metadata_bytes = metadata_json.encode('utf-8')
 
         # メタデータサイズの妥当性チェック
-        if len(metadata_bytes) > 1024 * 1024:  # 1MB超過でエラー
+        if len(metadata_bytes) > 10 * 1024 * 1024:  # 10MB超過でエラー
             raise ValueError(f"メタデータサイズが大きすぎます: {len(metadata_bytes)} bytes")
 
         # ヘッダーとデータを結合
@@ -300,7 +300,8 @@ def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_
         print(f"暗号化ファイルを '{output_path}' に保存しました")
     except Exception as e:
         print(f"エラー: 暗号化ファイルの保存に失敗しました: {e}")
-        sys.exit(1)
+        # sys.exit(1) は例外を発生させるのみに変更（テスト環境で終了しないように）
+        raise
 
 
 def encrypt_file(true_file: str, false_file: str, output_file: str, key: str,
@@ -359,7 +360,7 @@ def encrypt_data(true_data: bytes, false_data: bytes, true_password: str, false_
     metadata_bytes = metadata_json.encode('utf-8')
 
     # メタデータサイズの妥当性チェック
-    if len(metadata_bytes) > 1024 * 1024:  # 1MB超過でエラー
+    if len(metadata_bytes) > 10 * 1024 * 1024:  # 10MB超過でエラー
         raise ValueError(f"メタデータサイズが大きすぎます: {len(metadata_bytes)} bytes")
 
     # ヘッダーとデータを結合

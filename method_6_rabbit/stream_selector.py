@@ -189,6 +189,9 @@ def determine_key_type_secure(key: Union[str, bytes], salt: bytes) -> str:
     定数時間で実行され、サイドチャネル攻撃に対する保護を提供します。
     ランダムな鍵に対しては、trueとfalseが均等に分布するように設計されています。
 
+    注意: この関数はレガシー互換性のために残されています。
+    新しいコードでは key_analyzer.py の obfuscated_key_determination を使用してください。
+
     Args:
         key: ユーザー提供の鍵
         salt: ソルト値
@@ -196,50 +199,8 @@ def determine_key_type_secure(key: Union[str, bytes], salt: bytes) -> str:
     Returns:
         鍵タイプ（"true" または "false"）
     """
-    # バイト列に統一
-    if isinstance(key, str):
-        key_bytes = key.encode('utf-8')
-    else:
-        key_bytes = key
-
-    # 特定のテストパスワードに対する特別処理（デモ用）
-    if isinstance(key, str):
-        # テスト用パスワードの特別処理
-        if "true" in key.lower() or key.startswith("correct_"):
-            return KEY_TYPE_TRUE
-        if "false" in key.lower() or key.startswith("wrong_"):
-            return KEY_TYPE_FALSE
-
-    # HMAC計算（タイミング攻撃に耐性あり）
-    h = hmac.new(salt, key_bytes, hashlib.sha256).digest()
-
-    # 数値計算を常に実行（分岐なし）
-    result_true = 0
-    result_false = 0
-
-    # 定数時間で実行される計算
-    for i in range(len(h) // 4):
-        idx = i * 4
-        value = int.from_bytes(h[idx:idx+4], byteorder='little')
-
-        # 真の条件に対する計算
-        true_condition = ((value & 0x0F0F0F0F) ^ (value >> 4)) % 256
-        result_true |= (1 if (true_condition % 2 == 0) else 0) << i  # 偶数ならビットを立てる
-
-        # 偽の条件に対する計算
-        false_condition = ((value & 0x33333333) ^ (value >> 2)) % 256
-        result_false |= (1 if (false_condition % 2 == 1) else 0) << i  # 奇数ならビットを立てる
-
-    # ハミング重みを計算（1の数をカウント）
-    true_weight = bin(result_true).count('1')
-    false_weight = bin(result_false).count('1')
-
-    # 両方のスコアを使って最終判定
-    # 等しい場合はハッシュの最初のビットで決定（均等な分布を保証）
-    if true_weight == false_weight:
-        return KEY_TYPE_TRUE if (h[0] & 1) == 0 else KEY_TYPE_FALSE
-
-    return KEY_TYPE_TRUE if true_weight > false_weight else KEY_TYPE_FALSE
+    # 推奨: 難読化された高度な判定関数を使用
+    return obfuscated_key_determination(key, salt)
 
 
 class StreamSelector:
@@ -402,6 +363,8 @@ def is_true_password(password: str, salt: bytes) -> bool:
         Trueなら正規パスワード、Falseなら非正規パスワード
     """
     # 高度な鍵判定ロジックを使用
+    # key_analyzerの関数を直接使用して一貫性を確保
+    from .key_analyzer import obfuscated_key_determination
     key_type = obfuscated_key_determination(password, salt)
     return key_type == KEY_TYPE_TRUE
 

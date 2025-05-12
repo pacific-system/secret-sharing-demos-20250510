@@ -252,10 +252,10 @@ def encapsulate_data(true_data: bytes, false_data: bytes, key: str,
         "false_path_check": false_checksum
     }
 
-    # 単純化のため、真と偽データも一緒に保存
-    # 実際のプロダクション版では省く
-    metadata["true_data"] = base64.b64encode(true_data).decode('utf-8')
-    metadata["false_data"] = base64.b64encode(false_data).decode('utf-8')
+    # メタデータサイズ削減: 実際のデータをメタデータに含めない
+    # テスト用に必要な場合のみコメントアウトを解除
+    # metadata["true_data"] = base64.b64encode(true_data).decode('utf-8')
+    # metadata["false_data"] = base64.b64encode(false_data).decode('utf-8')
 
     return mixed_data, metadata
 
@@ -275,7 +275,7 @@ def extract_data_from_capsule(capsule: bytes, key: str, key_type: str,
         抽出されたデータ
     """
     # 単純化された実装 - 真偽データをメタデータから直接取り出す
-    # 実際のプロダクション版では、この単純な方法は使わない
+    # この機能はテスト用途でのみ使用し、通常は無効化しておく
     if "true_data" in metadata and "false_data" in metadata:
         if key_type == "true":
             return base64.b64decode(metadata["true_data"])

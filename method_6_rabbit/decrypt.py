@@ -99,7 +99,7 @@ def read_encrypted_file(file_path: str) -> Tuple[bytes, Dict[str, Any]]:
             meta_size = int.from_bytes(meta_size_bytes, byteorder='big')
 
             # メタデータサイズの妥当性チェック
-            if meta_size <= 0 or meta_size > 1024 * 1024:  # 1MB超過でエラー
+            if meta_size <= 0 or meta_size > 10 * 1024 * 1024:  # 10MB超過でエラー
                 raise ValueError(f"無効なメタデータサイズ: {meta_size}バイト")
 
             # メタデータを読み取り
@@ -355,7 +355,7 @@ def decrypt_data(data: bytes, key: str) -> bytes:
         meta_size = int.from_bytes(data[header_length:header_length+4], byteorder='big')
 
         # メタデータサイズの妥当性チェック（過大なサイズを防止）
-        if meta_size <= 0 or meta_size > 1024 * 1024:  # 最大1MBのメタデータに制限
+        if meta_size <= 0 or meta_size > 10 * 1024 * 1024:  # 最大10MBのメタデータに制限
             raise ValueError(f"無効なメタデータサイズ: {meta_size}バイト")
 
         # データの長さチェック

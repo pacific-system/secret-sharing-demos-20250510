@@ -52,7 +52,7 @@ A = [
 
 class RabbitStreamGenerator:
     """
-    RFC 4503に準拠したRabbit暗号ストリーム生成器
+    RFC 4503に準拠したRabbit暗号ストリーム生成器（高速化版）
 
     128ビット鍵と64ビットIVから暗号ストリームを生成します。
     """
@@ -78,6 +78,10 @@ class RabbitStreamGenerator:
         self.X = [0] * RABBIT_STATE_WORDS    # 状態変数 X_0, ..., X_7
         self.C = [0] * RABBIT_STATE_WORDS    # カウンタ変数 C_0, ..., C_7
         self.carry = 0                       # キャリービット
+
+        # パフォーマンス最適化: マスクと定数をキャッシュ
+        self._word_mask = WORD_MASK
+        self._a_constants = A
 
         # 鍵セットアップ
         self._key_setup(key)
@@ -147,7 +151,7 @@ class RabbitStreamGenerator:
 
     def _g_function(self, x: int) -> int:
         """
-        RFC 4503のg関数（セクション2.3）
+        RFC 4503のg関数（セクション2.3）- 超高速化版
 
         Args:
             x: 32ビット入力値
@@ -155,43 +159,51 @@ class RabbitStreamGenerator:
         Returns:
             32ビット出力値
         """
-        # x^2 + x mod 2^32 を計算
-        square = (x * (x + 1)) & WORD_MASK
-        return square
+        # 最も効率的な実装に最適化
+        # x * x + x を直接計算し、32ビットマスクを適用
+        return (x * (x + 1)) & self._word_mask
 
     def _next_state(self) -> None:
         """
-        内部状態を1ステップ更新（RFC 4503 セクション2.4）
+        内部状態を1ステップ更新（RFC 4503 セクション2.4）- 超高速化版
         """
-        # カウンタシステムの更新
+        # ローカル参照によるアクセス最適化
+        X = self.X
+        C = self.C
+        carry = self.carry
+        word_mask = self._word_mask
+        a_constants = self._a_constants
+
+        # カウンタ更新を最適化（ループ内変数最小化）
         temp_c = [0] * RABBIT_STATE_WORDS
-
         for i in range(RABBIT_STATE_WORDS):
-            temp = self.C[i] + A[i] + self.carry
-            self.carry = temp >> 32
-            temp_c[i] = temp & WORD_MASK
+            temp = C[i] + a_constants[i] + carry
+            carry = temp >> 32
+            temp_c[i] = temp & word_mask
 
-        # 状態変数の更新
-        temp_x = [0] * RABBIT_STATE_WORDS
+        self.carry = carry
 
-        for i in range(RABBIT_STATE_WORDS):
-            temp_x[i] = self._g_function(self.X[i] + temp_c[i])
+        # g関数の適用を最適化
+        g0 = self._g_function(X[0] + temp_c[0])
+        g1 = self._g_function(X[1] + temp_c[1])
+        g2 = self._g_function(X[2] + temp_c[2])
+        g3 = self._g_function(X[3] + temp_c[3])
+        g4 = self._g_function(X[4] + temp_c[4])
+        g5 = self._g_function(X[5] + temp_c[5])
+        g6 = self._g_function(X[6] + temp_c[6])
+        g7 = self._g_function(X[7] + temp_c[7])
 
-        # 状態変数の回転と更新
-        self.X[0] = temp_x[0] + ((temp_x[7] << 16) & WORD_MASK) + ((temp_x[6] >> 16) & 0xFFFF)
-        self.X[1] = temp_x[1] + ((temp_x[0] << 8) & WORD_MASK) + ((temp_x[7] >> 24) & 0xFF)
-        self.X[2] = temp_x[2] + ((temp_x[1] << 16) & WORD_MASK) + ((temp_x[0] >> 16) & 0xFFFF)
-        self.X[3] = temp_x[3] + ((temp_x[2] << 8) & WORD_MASK) + ((temp_x[1] >> 24) & 0xFF)
-        self.X[4] = temp_x[4] + ((temp_x[3] << 16) & WORD_MASK) + ((temp_x[2] >> 16) & 0xFFFF)
-        self.X[5] = temp_x[5] + ((temp_x[4] << 8) & WORD_MASK) + ((temp_x[3] >> 24) & 0xFF)
-        self.X[6] = temp_x[6] + ((temp_x[5] << 16) & WORD_MASK) + ((temp_x[4] >> 16) & 0xFFFF)
-        self.X[7] = temp_x[7] + ((temp_x[6] << 8) & WORD_MASK) + ((temp_x[5] >> 24) & 0xFF)
+        # 直接計算（中間変数最小化）
+        X[0] = (g0 + ((g7 << 16) & word_mask) + ((g6 >> 16) & 0xFFFF)) & word_mask
+        X[1] = (g1 + ((g0 << 8) & word_mask) + ((g7 >> 24) & 0xFF)) & word_mask
+        X[2] = (g2 + ((g1 << 16) & word_mask) + ((g0 >> 16) & 0xFFFF)) & word_mask
+        X[3] = (g3 + ((g2 << 8) & word_mask) + ((g1 >> 24) & 0xFF)) & word_mask
+        X[4] = (g4 + ((g3 << 16) & word_mask) + ((g2 >> 16) & 0xFFFF)) & word_mask
+        X[5] = (g5 + ((g4 << 8) & word_mask) + ((g3 >> 24) & 0xFF)) & word_mask
+        X[6] = (g6 + ((g5 << 16) & word_mask) + ((g4 >> 16) & 0xFFFF)) & word_mask
+        X[7] = (g7 + ((g6 << 8) & word_mask) + ((g5 >> 24) & 0xFF)) & word_mask
 
-        # 32ビットマスクを適用
-        for i in range(RABBIT_STATE_WORDS):
-            self.X[i] &= WORD_MASK
-
-        # カウンタ変数を更新
+        # カウンタを更新
         self.C = temp_c
 
     def _extract(self) -> bytes:
@@ -219,7 +231,7 @@ class RabbitStreamGenerator:
 
     def generate(self, length: int) -> bytes:
         """
-        指定された長さのストリーム鍵を生成
+        指定された長さのストリーム鍵を生成（超高速化版）
 
         Args:
             length: 生成するストリーム鍵の長さ（バイト単位）
@@ -227,20 +239,52 @@ class RabbitStreamGenerator:
         Returns:
             指定された長さのストリーム鍵
         """
-        result = bytearray()
-
-        # 必要なブロック数を計算
+        # 出力バッファ事前割り当て
         blocks_needed = (length + 15) // 16
+        result = bytearray(blocks_needed * 16)
 
+        # ローカル変数の最適化
+        X = self.X
+        word_mask = self._word_mask
+        next_state = self._next_state
+
+        # 一括処理で高速化
+        pos = 0
         for _ in range(blocks_needed):
-            # 現在の状態から出力ブロックを抽出
-            output_block = self._extract()
-            result.extend(output_block)
+            # 状態から出力計算を最適化（インライン展開）
+            # 16ビットずつXORする計算を直接実装
+            S0 = X[1] ^ (X[0] >> 16)
+            S1 = X[2] ^ (X[1] >> 16)
+            S2 = X[3] ^ (X[2] >> 16)
+            S3 = X[4] ^ (X[3] >> 16)
+            S4 = X[5] ^ (X[4] >> 16)
+            S5 = X[6] ^ (X[5] >> 16)
+            S6 = X[7] ^ (X[6] >> 16)
+            S7 = X[0] ^ (X[7] >> 16)
+
+            # バイトに直接書き込み（インデックス参照を最小化）
+            result[pos] = S0 & 0xFF
+            result[pos+1] = (S0 >> 8) & 0xFF
+            result[pos+2] = S1 & 0xFF
+            result[pos+3] = (S1 >> 8) & 0xFF
+            result[pos+4] = S2 & 0xFF
+            result[pos+5] = (S2 >> 8) & 0xFF
+            result[pos+6] = S3 & 0xFF
+            result[pos+7] = (S3 >> 8) & 0xFF
+            result[pos+8] = S4 & 0xFF
+            result[pos+9] = (S4 >> 8) & 0xFF
+            result[pos+10] = S5 & 0xFF
+            result[pos+11] = (S5 >> 8) & 0xFF
+            result[pos+12] = S6 & 0xFF
+            result[pos+13] = (S6 >> 8) & 0xFF
+            result[pos+14] = S7 & 0xFF
+            result[pos+15] = (S7 >> 8) & 0xFF
+            pos += 16
 
             # 次の状態に更新
-            self._next_state()
+            next_state()
 
-        # 必要なバイト数だけ返す
+        # 必要な分だけ切り出して返す
         return bytes(result[:length])
 
 

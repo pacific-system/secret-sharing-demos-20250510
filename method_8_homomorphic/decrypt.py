@@ -580,36 +580,63 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
             print(f" - テキストファイル: {is_text}")
             print(f" - エンコーディング: {encoding}")
             print(f" - 元のファイル名: {original_filename or '不明'}")
+            print(f" - データタイプ: {current_data_type}")
 
-        # テキストファイルの処理
-        if current_data_type == 'text' and not force_binary:
+        # 強制フラグがある場合はそれを優先
+        if force_text:
+            is_text = True
+            current_data_type = 'text'
+            print(f"テキストモードを強制指定しました")
+        elif force_binary:
+            is_text = False
+            current_data_type = 'binary'
+            print(f"バイナリモードを強制指定しました")
+
+        # テキストアダプタによる処理
+        if current_data_type == 'text' or is_text or force_text:
             try:
-                # テキストデータなら、テキストモードで書き込み
-                if isinstance(processed_data, str):
-                    with open(output_path, 'w', encoding='utf-8') as f:
-                        f.write(processed_data)
-                # バイナリデータならバイナリモードで書き込み
-                else:
-                    with open(output_path, 'wb') as f:
-                        f.write(processed_data)
-                print(f"テキストデータとして保存しました: {output_path}")
-                return True
-            except Exception as e:
-                print(f"警告: テキスト保存に失敗しました: {e}")
-                # 失敗した場合はバイナリとして処理を続行
+                # テキストデータの場合の処理
+                text_adapter = TextAdapter()
 
-        # それ以外はバイナリファイルとして処理
-        if isinstance(processed_data, str):
-            # 文字列の場合はエンコード
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(processed_data)
-        else:
-            # バイト列の場合はそのまま書き込み
+                # 多段エンコーディングのチェック
+                if decrypted_data.startswith(b'TXT-MULTI:'):
+                    processed_text = text_adapter.reverse_multi_stage_encoding(decrypted_data)
+                    print(f"多段エンコーディングのテキスト（{len(processed_text)}文字）を復元しました")
+
+                    # 結果の保存
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(processed_text)
+                    print(f"テキストデータとして保存しました: {output_path}")
+                    return True
+
+                # 通常のテキスト処理
+                try:
+                    # 異なるエンコーディングを試す
+                    for enc in ['utf-8', 'latin-1', 'shift-jis', 'euc-jp']:
+                        try:
+                            text = decrypted_data.decode(enc)
+                            print(f"{enc}エンコーディングでテキストを復元しました")
+                            with open(output_path, 'w', encoding='utf-8') as f:
+                                f.write(text)
+                            print(f"テキストデータとして保存しました: {output_path}")
+                            return True
+                        except UnicodeDecodeError:
+                            continue
+                except Exception as e:
+                    print(f"テキスト変換エラー: {e}")
+            except Exception as e:
+                print(f"警告: テキスト処理中にエラー: {e}")
+                # エラー時はバイナリとして処理継続
+
+        # バイナリデータの処理
+        try:
             with open(output_path, 'wb') as f:
                 f.write(processed_data)
-
-        print(f"バイナリファイルとして保存しました: {output_path}")
-        return True
+            print(f"バイナリファイルとして保存しました: {output_path}")
+            return True
+        except Exception as e:
+            print(f"バイナリ保存エラー: {e}")
+            return False
 
     except Exception as e:
         print(f"エラー: 復号中に問題が発生しました: {e}", file=sys.stderr)

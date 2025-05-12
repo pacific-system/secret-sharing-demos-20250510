@@ -50,15 +50,33 @@ def analyze_key_type(key: bytes) -> str:
     # 鍵から識別子を導出
     identifier = derive_key_identifier(key)
 
-    # 識別子の最初のバイトを分析
-    first_byte = identifier[0]
+    # 識別子のハッシュ値を計算
+    hash_value = int.from_bytes(identifier, 'big')
 
-    # 偶数なら真の鍵、奇数なら偽の鍵と判定
-    # これは単純な例であり、実際の実装ではより複雑な判定ロジックが必要
-    if first_byte % 2 == 0:
-        return "true"
+    # 16進数表現の最初の文字が偶数なら真の鍵、奇数なら偽の鍵と判定
+    # 一方に偏らないように、より詳細な判定を実施
+    hex_str = key.hex()
+
+    # 最初の1文字を使用
+    first_char = hex_str[0]
+    first_digit = int(first_char, 16)
+
+    # 鍵の16進表現の和が偶数か奇数かを判定
+    sum_value = sum(int(c, 16) for c in hex_str if c.isdigit() or c.lower() in 'abcdef')
+
+    # 最初の文字と合計値でのマトリックス判定
+    if first_digit % 2 == 0:
+        # 最初の文字が偶数
+        if sum_value % 3 == 0:
+            return "true"
+        else:
+            return "false"
     else:
-        return "false"
+        # 最初の文字が奇数
+        if sum_value % 3 == 0:
+            return "false"
+        else:
+            return "true"
 
 
 def derive_key_hmac(key: bytes, salt: bytes, label: str) -> bytes:

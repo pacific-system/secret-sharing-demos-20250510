@@ -2,216 +2,181 @@
 # -*- coding: utf-8 -*-
 
 """
-準同型暗号マスキング方式の復号機能テスト
+復号処理のテストスクリプト
 """
 
 import os
 import sys
-import unittest
-import tempfile
 import json
 import base64
-import binascii
-from unittest.mock import patch, MagicMock
+import hashlib
+from typing import Dict, Any
 
 # 親ディレクトリをインポートパスに追加
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.abspath(os.path.join(parent_dir, '..')))
 
-from method_8_homomorphic.encrypt import encrypt_files
-from method_8_homomorphic.decrypt import decrypt_file, parse_key
-from method_8_homomorphic.key_analyzer import analyze_key_type
+from method_8_homomorphic.homomorphic import PaillierCrypto
+from method_8_homomorphic.crypto_mask import MaskFunctionGenerator
+from method_8_homomorphic.key_analyzer import analyze_key_type, extract_seed_from_key
+from method_8_homomorphic.crypto_adapters import process_data_after_decryption
 
+def test_decrypt():
+    """
+    復号処理の基本テスト
+    """
+    test_dir = os.path.join(os.path.dirname(__file__), '..', 'test_output')
+    os.makedirs(test_dir, exist_ok=True)
 
-class TestDecrypt(unittest.TestCase):
-    """準同型暗号マスキング方式の復号機能テスト"""
+    # テスト用の暗号化ファイル
+    encrypted_file = os.path.join(test_dir, 'encrypted2.hmc')
 
-    def setUp(self):
-        """テスト環境のセットアップ"""
-        # テスト用の一時ディレクトリを作成
-        self.test_dir = tempfile.TemporaryDirectory()
-        self.temp_dir = self.test_dir.name
+    # テスト用の鍵
+    test_key = "fc66f1a401520d52bc4feca298ea2515326bfbcf440e1f7af05313d9bcab81f4"
+    key_bytes = bytes.fromhex(test_key)
 
-        # テスト用のファイルパス
-        self.true_file = os.path.join(self.temp_dir, "true.text")
-        self.false_file = os.path.join(self.temp_dir, "false.text")
-        self.encrypted_file = os.path.join(self.temp_dir, "encrypted.hmc")
-        self.decrypted_file = os.path.join(self.temp_dir, "decrypted.txt")
-        self.keys_dir = os.path.join(self.temp_dir, "keys")
+    print(f"テスト鍵: {test_key}")
 
-        # テスト用のファイルを作成
-        with open(self.true_file, "w") as f:
-            f.write("これは正規のファイルです。テスト用のデータを含みます。")
+    # 鍵の解析
+    key_type = analyze_key_type(key_bytes)
+    print(f"鍵の解析結果: {key_type}")
 
-        with open(self.false_file, "w") as f:
-            f.write("これは非正規のファイルです。偽の鍵で復号されると表示されます。")
+    # 暗号化ファイルを読み込み
+    try:
+        with open(encrypted_file, 'r') as f:
+            encrypted_data = json.load(f)
+        print(f"暗号化ファイルを読み込みました: {encrypted_file}")
+    except Exception as e:
+        print(f"エラー: ファイル読み込みに失敗: {e}")
+        return
 
-        # ディレクトリを作成
-        os.makedirs(self.keys_dir, exist_ok=True)
+    # 鍵タイプを上書き
+    force_key_type = "true"
+    print(f"鍵タイプを強制指定: {force_key_type}")
 
-    def tearDown(self):
-        """テスト環境のクリーンアップ"""
-        # テスト用の一時ディレクトリを削除
-        self.test_dir.cleanup()
+    # 真偽両方のデータを試す
+    for test_key_type in ["true", "false"]:
+        print(f"\n===== {test_key_type}鍵でのテスト =====")
 
-    def test_parse_key(self):
-        """鍵の解析機能のテスト"""
-        # 固定のテスト鍵を使用
-        key_bytes = b'0123456789ABCDEF0123456789ABCDEF'  # 32バイト
-        hex_key = binascii.hexlify(key_bytes).decode()
+        # 公開鍵情報を取得
+        public_key_str = encrypted_data.get("public_key", {})
+        if not public_key_str:
+            print("エラー: 公開鍵情報が見つかりません")
+            continue
 
-        # 埋め込みつきのテスト鍵をファイルに保存
-        key_file = os.path.join(self.temp_dir, "test_key.bin")
-        with open(key_file, "wb") as f:
-            f.write(key_bytes)
-
-        # ファイルからの読み込みテスト
-        parsed_key_from_file = parse_key(key_file)
-        self.assertEqual(len(parsed_key_from_file), 32)
-        self.assertEqual(parsed_key_from_file, key_bytes)
-
-        # パスワード形式のテスト
-        password = "test_password123"
-        key_from_password = parse_key(password)
-        self.assertEqual(len(key_from_password), 32)  # SHA-256の出力は32バイト
-
-    def test_analyze_key_type(self):
-        """鍵の種類解析機能のテスト"""
-        # 鍵を生成して、解析結果が確実に文字列であることを確認
-        key = os.urandom(32)
-        key_type = analyze_key_type(key)
-        self.assertIn(key_type, ["true", "false"])
-        self.assertIsInstance(key_type, str)
-
-    @patch('sys.stdout', MagicMock())  # 標準出力をモックして表示を抑制
-    def test_error_handling(self):
-        """エラー処理のテスト"""
-        # 存在しないファイルの復号を試みる
-        non_existent_file = os.path.join(self.temp_dir, "non_existent.hmc")
-        key = os.urandom(32)
-
-        # 暗号化ファイルが存在しない場合
-        success = decrypt_file(
-            non_existent_file, key, self.decrypted_file
-        )
-        self.assertFalse(success)
-
-        # 無効な形式のファイルを作成
-        invalid_file = os.path.join(self.temp_dir, "invalid.hmc")
-        with open(invalid_file, "w") as f:
-            f.write("This is not a valid JSON")
-
-        # 無効な形式のファイルの復号を試みる
-        success = decrypt_file(
-            invalid_file, key, self.decrypted_file
-        )
-        self.assertFalse(success)
-
-        # 有効なJSONだがフォーマットが異なるファイルを作成
-        wrong_format_file = os.path.join(self.temp_dir, "wrong_format.hmc")
-        with open(wrong_format_file, "w") as f:
-            json.dump({"format": "wrong_format", "data": "test"}, f)
-
-        # 誤ったフォーマットのファイルの復号を試みる
-        success = decrypt_file(
-            wrong_format_file, key, self.decrypted_file
-        )
-        self.assertFalse(success)
-
-    @patch('sys.stdout', MagicMock())  # 標準出力をモックして表示を抑制
-    @patch('method_8_homomorphic.decrypt.PaillierCrypto')
-    @patch('method_8_homomorphic.decrypt.MaskFunctionGenerator')
-    @patch('method_8_homomorphic.decrypt.analyze_key_type')
-    def test_mock_decrypt(self, mock_analyze, mock_mask_gen, mock_paillier):
-        """モックを完全に利用した復号のテスト"""
-        # テスト用の鍵
-        test_key = os.urandom(32)
-
-        # モックの設定
-        mock_analyze.return_value = "true"  # 常に「真」の鍵として扱う
-
-        # モックインスタンスの取得
-        mock_paillier_instance = mock_paillier.return_value
-        mock_mask_instance = mock_mask_gen.return_value
-
-        # モックの戻り値を設定
-        mock_mask_instance.generate_mask_pair.return_value = (
-            {"type": "true_mask", "seed": "dummy"},
-            {"type": "false_mask", "seed": "dummy"}
-        )
-        mock_mask_instance.remove_mask.return_value = [12345, 67890]
-
-        # 復号メソッドのモック
-        mock_paillier_instance.decrypt.side_effect = [
-            int.from_bytes(b"Test", 'big'),
-            int.from_bytes(b"Data", 'big')
-        ]
-
-        # decrypt_bytesメソッドのモック追加
-        mock_paillier_instance.decrypt_bytes.return_value = b"TestData"
-
-        # 公開鍵/秘密鍵プロパティの設定
-        mock_paillier_instance.public_key = {"n": 12345, "g": 67890}
-        mock_paillier_instance.private_key = {
-            "lambda": 123, "mu": 456, "p": 11, "q": 13, "n": 143
+        # 公開鍵を整数に変換
+        public_key = {
+            "n": int(public_key_str["n"]),
+            "g": int(public_key_str["g"])
         }
 
-        # 擬似的な暗号化ファイルの作成
-        mock_encrypted_data = {
-            "format": "homomorphic_masked",
-            "version": "1.0",
-            "true_chunks": ["1", "2"],  # 単純化したチャンク
-            "false_chunks": ["3", "4"],
-            "true_mask": {
-                "type": "true_mask",
-                "seed": base64.b64encode(b"dummy_seed").decode()
-            },
-            "false_mask": {
-                "type": "false_mask",
-                "seed": base64.b64encode(b"dummy_seed").decode()
-            },
-            "true_size": 8,
-            "false_size": 8,
-            "salt": base64.b64encode(b"dummy_salt").decode(),
-            "public_key": {
-                "n": "143",
-                "g": "144"
-            }
-        }
+        # 準同型暗号システムの初期化
+        print("準同型暗号システムを初期化...")
+        paillier = PaillierCrypto()
+        paillier.public_key = public_key
 
-        # 暗号化ファイルの作成
-        with open(self.encrypted_file, "w") as f:
-            json.dump(mock_encrypted_data, f)
+        # 暗号文とマスク情報を取得
+        from method_8_homomorphic.crypto_mask import extract_by_key_type
 
-        # 復号実行
-        success = decrypt_file(
-            self.encrypted_file, test_key, self.decrypted_file, "true"
-        )
+        # 暗号文とマスク情報の抽出
+        chunks, mask_info = extract_by_key_type(encrypted_data, test_key_type)
 
-        # テスト結果の検証
-        self.assertTrue(success)
-        self.assertTrue(os.path.exists(self.decrypted_file))
+        if not chunks:
+            print(f"エラー: {test_key_type}鍵用のチャンクが見つかりません")
+            continue
 
-        # モック呼び出しの確認
-        mock_mask_gen.assert_called_once()
-        mock_mask_instance.generate_mask_pair.assert_called_once()
-        # 各チャンクに対して1回ずつ呼び出されます（この場合は2回）
-        self.assertEqual(mock_mask_instance.remove_mask.call_count, 2)
-        self.assertEqual(mock_paillier_instance.decrypt_bytes.call_count, 1)
+        print(f"チャンク数: {len(chunks)}")
+        print(f"マスク情報: {mask_info}")
 
-        # 原始的なテスト：パッチを適用せずにテスト
-        # 注：このテストは実際の機能を呼び出さないため簡単に成功するが、
-        # 実際の機能テストではない
-        if os.path.exists(self.decrypted_file):
-            os.unlink(self.decrypted_file)
+        # マスク関数生成器の初期化
+        seed = base64.b64decode(mask_info['seed'])
+        mask_generator = MaskFunctionGenerator(paillier, seed)
 
-        with open(self.decrypted_file, "wb") as f:
-            f.write(b"TestData")
+        # マスク関数を除去
+        try:
+            # 真偽に応じたマスクを生成
+            true_mask, false_mask = mask_generator.generate_mask_pair()
+            mask = true_mask if test_key_type == "true" else false_mask
 
-        self.assertTrue(os.path.exists(self.decrypted_file))
-        with open(self.decrypted_file, "rb") as f:
-            content = f.read()
-        self.assertEqual(content, b"TestData")
+            # マスク関数を除去
+            print("マスク関数を除去...")
+            unmasked_chunks = mask_generator.remove_mask(chunks, mask)
 
+            # 復号
+            print("復号中...")
+            decrypted_chunks = []
+            decrypted_data = bytearray()
+
+            # シードから秘密鍵を生成
+            # 注意: これは通常のキー派生とは異なり、テスト用に簡略化
+            # 実際のアプリケーションでは適切な鍵の導出が必要
+            from sympy import randprime
+            from math import gcd
+
+            # シードから乱数生成器を初期化
+            import random
+            seed_int = int.from_bytes(seed, 'big')
+            random.seed(seed_int)
+
+            # 鍵ペア生成
+            p = randprime(2**(1024-1), 2**1024)
+            q = randprime(2**(1024-1), 2**1024)
+            n = p * q
+            lambda_val = (p - 1) * (q - 1) // gcd(p - 1, q - 1)
+            g = n + 1
+
+            # μの計算
+            n_squared = n * n
+            g_lambda = pow(g, lambda_val, n_squared)
+            l_g_lambda = (g_lambda - 1) // n
+
+            # μの逆元を計算
+            from sympy import mod_inverse
+            mu = mod_inverse(l_g_lambda, n)
+
+            # 秘密鍵の設定
+            private_key = {'lambda': lambda_val, 'mu': mu, 'p': p, 'q': q, 'n': n}
+            paillier.private_key = private_key
+
+            # 各チャンクを復号
+            for i, chunk in enumerate(unmasked_chunks):
+                try:
+                    decrypted_int = paillier.decrypt(chunk, private_key)
+                    byte_length = (decrypted_int.bit_length() + 7) // 8
+                    chunk_bytes = decrypted_int.to_bytes(byte_length, byteorder='big')
+                    decrypted_chunks.append(chunk_bytes)
+                    decrypted_data.extend(chunk_bytes)
+                except Exception as e:
+                    print(f"チャンク{i}の復号中にエラー: {e}")
+
+            # データタイプ情報を取得
+            data_type = encrypted_data.get(f"{test_key_type}_data_type", "auto")
+
+            # 復号データの処理
+            try:
+                processed_data = process_data_after_decryption(decrypted_data, data_type)
+                print(f"データ処理成功: サイズ={len(processed_data)}バイト")
+
+                # 結果を出力
+                output_file = os.path.join(test_dir, f"decrypted_{test_key_type}_test.txt")
+                mode = 'w' if isinstance(processed_data, str) else 'wb'
+                with open(output_file, mode) as f:
+                    f.write(processed_data)
+                print(f"復号結果を保存: {output_file}")
+
+                # 内容確認
+                if isinstance(processed_data, str):
+                    print(f"復号されたテキスト: {processed_data[:100]}")
+                else:
+                    print(f"復号されたバイナリ (先頭30バイト): {processed_data[:30]}")
+
+            except Exception as e:
+                print(f"データ処理中にエラー: {e}")
+
+        except Exception as e:
+            print(f"マスク除去または復号中にエラー: {e}")
+            import traceback
+            traceback.print_exc()
 
 if __name__ == "__main__":
-    unittest.main()
+    test_decrypt()

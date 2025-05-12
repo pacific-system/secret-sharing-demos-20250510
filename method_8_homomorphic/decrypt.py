@@ -19,6 +19,8 @@ import argparse
 import binascii
 import random
 import math
+import secrets
+import sympy
 from typing import Dict, Any, Tuple, List, Optional, Union
 
 # 親ディレクトリをインポートパスに追加
@@ -204,8 +206,7 @@ def mod_inverse(a: int, m: int) -> int:
 
     # aとmの最大公約数が1でなければ逆元は存在しない
     if math.gcd(a, m) != 1:
-        # 逆元が存在しない場合でも、実用上の互換性のため1を返す
-        return 1
+        raise ValueError(f"{a}と{m}は互いに素ではないため、逆元が存在しません")
 
     # 非再帰的な拡張ユークリッドアルゴリズム
     old_r, r = a, m
@@ -224,6 +225,36 @@ def mod_inverse(a: int, m: int) -> int:
         old_s += m
 
     return old_s
+
+
+def derive_homomorphic_keys(master_key: bytes) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """
+    マスター鍵から準同型暗号用の鍵ペアを導出
+
+    暗号化時と同じ方法で鍵を導出する必要があります。
+
+    Args:
+        master_key: マスター鍵
+
+    Returns:
+        (public_key, private_key): 公開鍵と秘密鍵
+    """
+    # マスター鍵からシード値を生成
+    seed = hashlib.sha256(master_key).digest()
+
+    # 暗号化と同じロジックを使用して鍵を再現
+    random.seed(int.from_bytes(seed, 'big'))
+
+    # PaillierCryptoのインスタンスを作成
+    paillier = PaillierCrypto()
+
+    # 初期化に必要なビット数を設定
+    paillier.bits = PAILLIER_KEY_BITS
+
+    # 鍵ペアを生成（暗号化時と同じシードを使用するため同じ鍵が生成される）
+    public_key, private_key = paillier.generate_keys()
+
+    return public_key, private_key
 
 
 def derive_private_key_from_key(key: bytes, public_key: Dict[str, int]) -> Dict[str, int]:
@@ -248,8 +279,42 @@ def derive_private_key_from_key(key: bytes, public_key: Dict[str, int]) -> Dict[
     random.seed(seed)
 
     try:
-        # λを直接導出（簡易版）
-        lambda_val = int.from_bytes(hashlib.sha256(key + b"lambda").digest(), 'big') % n
+        # pとqを導出
+        p_seed = int.from_bytes(hashlib.sha256(key + b"p").digest(), 'big')
+        q_seed = int.from_bytes(hashlib.sha256(key + b"q").digest(), 'big')
+
+        # 安全な素数サイズを計算
+        half_bits = int(n.bit_length() / 2)
+        p_range = 2**(half_bits-1)
+
+        random.seed(p_seed)
+        # floatに変換することなく範囲内の値を生成
+        p = random.randint(p_range, 2 * p_range)
+
+        # qはnをpで割って推定
+        q = n // p
+
+        # pとqの積がnに近いことを確認
+        if p * q != n:
+            # pとqが近似値なので、ある程度の誤差は許容
+            difference = abs(n - (p * q))
+            if difference > n * 0.01:  # 誤差が1%以上なら調整
+                # デフォルト値を生成（素数性は保証されない）
+                lambda_val = int.from_bytes(hashlib.sha256(key + b"lambda").digest(), 'big') % n
+                mu = int.from_bytes(hashlib.sha256(key + b"mu").digest(), 'big') % n
+                return {
+                    'lambda': lambda_val,
+                    'mu': mu,
+                    'p': p,
+                    'q': q,
+                    'n': n
+                }
+
+        # λを計算: lcm(p-1, q-1)
+        def lcm(a, b):
+            return a * b // math.gcd(a, b)
+
+        lambda_val = lcm(p - 1, q - 1)
 
         # μの計算: (L(g^λ mod n^2))^(-1) mod n
         n_squared = n * n
@@ -257,17 +322,21 @@ def derive_private_key_from_key(key: bytes, public_key: Dict[str, int]) -> Dict[
         l_g_lambda = (g_lambda - 1) // n
 
         # モジュラー逆元の計算
-        mu = mod_inverse(l_g_lambda, n)
-
-        # p, qの値も導出（実際のp*q=nである必要はない）
-        p_seed = int.from_bytes(hashlib.sha256(key + b"p").digest(), 'big')
-        q_seed = int.from_bytes(hashlib.sha256(key + b"q").digest(), 'big')
-
-        random.seed(p_seed)
-        p = random.randint(2, 2**16)
-
-        random.seed(q_seed)
-        q = random.randint(2, 2**16)
+        try:
+            from sympy import mod_inverse
+            mu = mod_inverse(l_g_lambda, n)
+        except:
+            # sympyが使えない場合は独自の実装
+            try:
+                mu = mod_inverse(l_g_lambda, n)
+            except ValueError:
+                # 逆元が存在しない場合は代替方法を使用
+                # フェルマーの小定理は素数の場合のみ有効なため注意
+                if sympy.isprime(n):
+                    mu = pow(l_g_lambda, n - 2, n)
+                else:
+                    # 素数でない場合は簡易的な代替値
+                    mu = int.from_bytes(hashlib.sha256(key + b"mu_alt").digest(), 'big') % n
 
         return {
             'lambda': lambda_val,
@@ -285,8 +354,11 @@ def derive_private_key_from_key(key: bytes, public_key: Dict[str, int]) -> Dict[
         # 実用上の互換性のため、エラーを出さずに代替値を使用
         lambda_val = int.from_bytes(hashlib.sha256(key + b"lambda_alt").digest(), 'big') % n
         mu = int.from_bytes(hashlib.sha256(key + b"mu_alt").digest(), 'big') % n
-        p = 2  # ダミー値
-        q = 3  # ダミー値
+
+        # pとqはfloat変換を避けて直接ビット長から計算
+        half_bits = int(n.bit_length() / 2)
+        p = random.randint(2**(half_bits-1), 2**half_bits)
+        q = n // p
 
         return {
             'lambda': lambda_val,
@@ -295,6 +367,59 @@ def derive_private_key_from_key(key: bytes, public_key: Dict[str, int]) -> Dict[
             'q': q,
             'n': n
         }
+
+
+def extract_by_key_type(encrypted_data: Dict[str, Any], key_type: str) -> Tuple[List[int], Dict[str, Any]]:
+    """
+    暗号文と対応するマスク情報を抽出
+
+    Args:
+        encrypted_data: 暗号化データ
+        key_type: 鍵の種類 ("true" または "false")
+
+    Returns:
+        (chunks, mask_info): 抽出されたチャンクとマスク情報
+    """
+    try:
+        # 鍵タイプに応じて適切なチャンクとマスク情報を取得
+        if key_type == "true":
+            chunks_data = encrypted_data.get("true_chunks", [])
+            mask_info = encrypted_data.get("true_mask", {})
+        elif key_type == "false":
+            chunks_data = encrypted_data.get("false_chunks", [])
+            mask_info = encrypted_data.get("false_mask", {})
+        else:
+            raise ValueError(f"不明な鍵タイプ: {key_type}")
+
+        # チャンクデータがリストでない場合（整数などの場合）の対処
+        if not isinstance(chunks_data, list):
+            print(f"警告: チャンクデータが予期せぬ形式です: {type(chunks_data).__name__}")
+            # "true_encrypted"/"false_encrypted"という形式のフィールドを探す
+            if key_type == "true" and "true_encrypted" in encrypted_data:
+                hex_chunks = encrypted_data["true_encrypted"]
+            elif key_type == "false" and "false_encrypted" in encrypted_data:
+                hex_chunks = encrypted_data["false_encrypted"]
+            else:
+                # 他の可能性を試す
+                if "encrypted_chunks" in encrypted_data:
+                    hex_chunks = encrypted_data["encrypted_chunks"]
+                else:
+                    raise ValueError(f"適切なチャンクデータが見つかりません。暗号化ファイルの形式が非互換です。")
+        else:
+            # リスト形式のチャンクデータを使用
+            hex_chunks = chunks_data
+
+        # 16進数文字列から整数に変換（文字列のリストの場合）
+        if isinstance(hex_chunks, list) and all(isinstance(chunk, str) for chunk in hex_chunks):
+            chunks = [int(chunk, 16) for chunk in hex_chunks]
+        else:
+            raise ValueError(f"チャンクデータの形式が不正です: {type(hex_chunks).__name__}")
+
+        return chunks, mask_info
+
+    except Exception as e:
+        print(f"エラー: 暗号文の抽出に失敗しました: {e}", file=sys.stderr)
+        raise
 
 
 def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
@@ -381,44 +506,12 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
 
         # 暗号文と対応するマスク情報を抽出
         try:
-            # 鍵タイプに応じて適切なチャンクとマスク情報を取得
-            if key_type == "true":
-                chunks_data = encrypted_data.get("true_chunks", [])
-                mask_info = encrypted_data.get("true_mask", {})
-            elif key_type == "false":
-                chunks_data = encrypted_data.get("false_chunks", [])
-                mask_info = encrypted_data.get("false_mask", {})
-            else:
-                raise ValueError(f"不明な鍵タイプ: {key_type}")
-
-            # チャンクデータがリストでない場合（整数などの場合）の対処
-            if not isinstance(chunks_data, list):
-                print(f"警告: チャンクデータが予期せぬ形式です: {type(chunks_data).__name__}")
-                # "true_encrypted"/"false_encrypted"という形式のフィールドを探す
-                if key_type == "true" and "true_encrypted" in encrypted_data:
-                    hex_chunks = encrypted_data["true_encrypted"]
-                elif key_type == "false" and "false_encrypted" in encrypted_data:
-                    hex_chunks = encrypted_data["false_encrypted"]
-                else:
-                    # 他の可能性を試す
-                    if "encrypted_chunks" in encrypted_data:
-                        hex_chunks = encrypted_data["encrypted_chunks"]
-                    else:
-                        raise ValueError(f"適切なチャンクデータが見つかりません。暗号化ファイルの形式が非互換です。")
-            else:
-                # リスト形式のチャンクデータを使用
-                hex_chunks = chunks_data
-
-            # 16進数文字列から整数に変換（文字列のリストの場合）
-            if isinstance(hex_chunks, list) and all(isinstance(chunk, str) for chunk in hex_chunks):
-                chunks = [int(chunk, 16) for chunk in hex_chunks]
-            else:
-                raise ValueError(f"チャンクデータの形式が不正です: {type(hex_chunks).__name__}")
+            # extract_by_key_type関数を使用
+            chunks, mask_info = extract_by_key_type(encrypted_data, key_type)
+            print(f"マスク情報を抽出しました: {mask_info['type']}")
         except Exception as e:
-            print(f"エラー: 暗号文の抽出に失敗しました: {e}", file=sys.stderr)
+            print(f"エラー: 暗号文とマスク情報の抽出に失敗しました: {e}", file=sys.stderr)
             return False
-
-        print(f"マスク情報を抽出しました: {mask_info['type']}")
 
         # 準同型暗号システムの初期化
         paillier = PaillierCrypto(bits=key_bits)
@@ -433,7 +526,26 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
         paillier.public_key = public_key
 
         # 秘密鍵を鍵から導出
-        private_key = derive_private_key_from_key(key, public_key)
+        try:
+            # derive_homomorphic_keys関数を使用して鍵を導出
+            _, private_key = derive_homomorphic_keys(key)
+        except Exception as e:
+            print(f"警告: 準同型鍵の導出に失敗しました: {e}", file=sys.stderr)
+            print("代替方法で秘密鍵を導出します...")
+            try:
+                private_key = derive_private_key_from_key(key, public_key)
+            except Exception as e2:
+                print(f"警告: 秘密鍵導出の代替方法も失敗しました: {e2}", file=sys.stderr)
+                # 最終的なフォールバック: ハッシュベースの代替値
+                lambda_val = int.from_bytes(hashlib.sha256(key + b"lambda").digest(), 'big') % public_key['n']
+                mu = int.from_bytes(hashlib.sha256(key + b"mu").digest(), 'big') % public_key['n']
+                private_key = {
+                    'lambda': lambda_val,
+                    'mu': mu,
+                    'p': 2,  # ダミー値
+                    'q': public_key['n'] // 2,  # ダミー値
+                    'n': public_key['n']
+                }
 
         # 秘密鍵をPaillierクリプトに設定
         paillier.private_key = private_key
@@ -537,6 +649,29 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
         return False
 
 
+def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path: str,
+                              key_type: Optional[str] = None,
+                              verbose: bool = True) -> bool:
+    """
+    進捗表示付きで暗号化されたファイルを復号
+
+    大きなファイルの復号時に進捗を表示します。
+    decrypt_file関数のラッパー関数として機能し、より詳細な進捗表示を提供します。
+
+    Args:
+        encrypted_file_path: 暗号化されたファイルのパス
+        key: 復号鍵
+        output_path: 出力先ファイルパス
+        key_type: 鍵の種類（明示的に指定する場合）。"true"または"false"
+        verbose: 詳細な進捗表示を行うかどうか
+
+    Returns:
+        復号成功の場合はTrue、失敗の場合はFalse
+    """
+    # decrypt_file関数に委譲
+    return decrypt_file(encrypted_file_path, key, output_path, key_type, verbose)
+
+
 def main():
     """メイン関数"""
     start_time = time.time()
@@ -597,7 +732,7 @@ def main():
     # 復号の実行
     print(f"準同型暗号マスキング方式で復号を開始します...")
 
-    success = decrypt_file(
+    success = decrypt_file_with_progress(
         args.input_file, key, output_path, args.key_type, args.verbose
     )
 

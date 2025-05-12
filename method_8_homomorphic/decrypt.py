@@ -674,32 +674,66 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
                     # 最後のチャンクは部分的かもしれない
                     bytes_in_chunk = min(chunk_size, remaining_size)
 
-                    # バイト列を整数に変換し、文字列にデコード
-                    byte_length = (decrypted_int.bit_length() + 7) // 8
-                    bytes_value = decrypted_int.to_bytes(byte_length, 'big')
+                    try:
+                        # 必要なバイト数を計算
+                        bit_length = decrypted_int.bit_length()
+                        byte_length = (bit_length + 7) // 8
 
-                    # 必要なサイズにトリミング
-                    if byte_length < bytes_in_chunk:
-                        # バイト数が足りない場合は0で埋める
-                        bytes_value = bytes_value.ljust(bytes_in_chunk, b'\x00')
-                    elif byte_length > bytes_in_chunk:
-                        # バイト数が多い場合はトリミング
-                        bytes_value = bytes_value[-bytes_in_chunk:]
+                        # バイト配列に変換
+                        if byte_length > 0:
+                            bytes_value = decrypted_int.to_bytes(byte_length, 'big')
+                        else:
+                            bytes_value = b'\x00'
 
-                except (ValueError, OverflowError) as e:
+                            # バイト長の調整
+                            if len(bytes_value) > bytes_in_chunk:
+                                # 復号されたデータが大きすぎる場合はトリミング
+                                bytes_value = bytes_value[-bytes_in_chunk:]
+                            elif len(bytes_value) < bytes_in_chunk:
+                                # 復号されたデータが小さすぎる場合はパディング
+                                bytes_value = bytes_value.rjust(bytes_in_chunk, b'\x00')
+
+                            if verbose and i < 3:  # 最初の数チャンクのみ表示
+                                print(f"\nチャンク {i} のバイト変換: {bytes_value[:10]}... ({len(bytes_value)} バイト)")
+
+                    except Exception as e:
+                        if verbose:
+                            print(f"\n警告: バイト変換エラー (チャンク {i}): {e}")
+
+                        # エラー時は0埋めで対応
+                        bytes_value = b'\x00' * bytes_in_chunk
+
+                    # バイト配列に追加
+                    decrypted_data.extend(bytes_value)
+
+                    # 残りのサイズを更新
+                    remaining_size -= bytes_in_chunk
+
+                except Exception as e:
                     if verbose:
-                        print(f"\n警告: バイト変換エラー: {e} (チャンク {i})")
-                    # エラー時は0埋めで対応
-                    bytes_value = b'\x00' * bytes_in_chunk
-
-                # バイト配列に追加
-                decrypted_data.extend(bytes_value)
-
-                # 残りのサイズを更新
-                remaining_size -= bytes_in_chunk
+                        print(f"\n警告: チャンク {i} の復号に失敗しました: {e}")
+                    # エラー時は0バイトを追加
+                    bytes_in_chunk = min(chunk_size, remaining_size)
+                    decrypted_data.extend(b'\x00' * bytes_in_chunk)
+                    remaining_size -= bytes_in_chunk
 
             # 完了表示
             show_progress(len(unmasked_chunks), len(unmasked_chunks), "復号", "完了")
+
+            # decrypt_bytesメソッドを直接使用して既存のコードを置き換える
+            try:
+                if verbose:
+                    print("\nPaillierCrypto.decrypt_bytes メソッドを使用して再復号を試みます...")
+
+                # decrypt_bytesメソッドを使用
+                decrypted_data = paillier.decrypt_bytes(unmasked_chunks, original_size, private_key, chunk_size)
+
+                if verbose:
+                    print(f"再復号に成功しました: {len(decrypted_data)} バイト")
+            except Exception as e:
+                if verbose:
+                    print(f"\n警告: decrypt_bytes メソッドによる再復号に失敗しました: {e}")
+                # 元の復号結果を維持
 
         except Exception as e:
             print(f"エラー: バイトデータの復号に失敗しました: {e}", file=sys.stderr)

@@ -104,6 +104,7 @@ class IndistinguishableWrapper:
         if self.seed is None:
             raise ValueError("シードが初期化されていません。generate_seed()を先に呼び出してください。")
 
+        # 結果をbytearrayにして各操作を行う
         result = bytearray(data)
 
         for i in range(iterations):
@@ -112,10 +113,10 @@ class IndistinguishableWrapper:
             random.seed(int.from_bytes(iter_seed, byteorder='big'))
 
             # データの各バイトに対してXOR操作を実行
-            xor_mask = bytes([random.randint(0, 255) for _ in range(len(data))])
+            xor_mask = [random.randint(0, 255) for _ in range(len(result))]
 
+            # XOR操作をbytearrayに適用
             for j in range(len(result)):
-                # XOR操作
                 result[j] ^= xor_mask[j]
 
             # バイト順序の入れ替え（置換）
@@ -123,13 +124,18 @@ class IndistinguishableWrapper:
             random.shuffle(indices)
 
             # シャッフルされた順序で新しいバイト列を作成
-            result = bytearray(result[i] for i in indices)
+            shuffled = bytearray(len(result))
+            for j, idx in enumerate(indices):
+                if idx < len(result):
+                    shuffled[j] = result[idx]
 
-            # シャッフル情報をデータに組み込む（復号時に必要）
-            # インデックスマップを追加
-            index_map = bytes([indices.index(i) for i in range(len(indices))])
-            result = index_map + result
+            # インデックスマップを生成（復号時に使用）
+            index_map = bytearray([indices.index(k) if k in indices else 0 for k in range(len(result))])
 
+            # 結果にインデックスマップを追加して更新
+            result = index_map + shuffled
+
+        # 最終的にbytesに変換して返す
         return bytes(result)
 
     def deobfuscate_data(self, data: bytes, iterations: int = 3) -> bytes:
@@ -146,7 +152,9 @@ class IndistinguishableWrapper:
         if self.seed is None:
             raise ValueError("シードが初期化されていません。generate_seed()を先に呼び出してください。")
 
+        # データをbytearrayにして操作
         result = bytearray(data)
+        original_data_size = len(data)
 
         # 反復を逆順に処理
         for i in range(iterations - 1, -1, -1):
@@ -154,26 +162,31 @@ class IndistinguishableWrapper:
             iter_seed = hashlib.sha256(self.seed + i.to_bytes(4, byteorder='big')).digest()
             random.seed(int.from_bytes(iter_seed, byteorder='big'))
 
-            # インデックスマップを取得（データの先頭部分）
-            original_len = len(result) - len(data) // iterations
-            index_map = result[:original_len]
-            result = result[original_len:]
+            # 各イテレーションで、データサイズはオリジナルより大きくなる
+            # 元のサイズを計算し、インデックスマップとデータを分離
+            actual_data_size = len(result) // (i + 2)  # 近似値
+
+            # インデックスマップとデータを分離
+            index_map = result[:actual_data_size]
+            shuffled_data = result[actual_data_size:]
 
             # シャッフルを元に戻す
-            temp_result = bytearray(len(result))
+            unshuffled = bytearray(len(shuffled_data))
             for j, idx in enumerate(index_map):
-                temp_result[idx] = result[j]
-
-            result = temp_result
+                if j < len(shuffled_data) and idx < len(unshuffled):
+                    unshuffled[idx] = shuffled_data[j]
 
             # データの各バイトに対してXOR操作を元に戻す
-            xor_mask = bytes([random.randint(0, 255) for _ in range(len(result))])
+            xor_mask = [random.randint(0, 255) for _ in range(len(unshuffled))]
 
-            for j in range(len(result)):
-                # XOR操作（同じマスクでXORすると元に戻る）
-                result[j] ^= xor_mask[j]
+            # 同じXORマスクを適用して元に戻す
+            for j in range(len(unshuffled)):
+                unshuffled[j] ^= xor_mask[j]
 
-        return bytes(result)
+            result = unshuffled
+
+        # 元のデータサイズで切り詰め
+        return bytes(result[:original_data_size // (iterations + 1)])
 
     def time_equalizer(self, func: Callable, *args, **kwargs) -> Any:
         """

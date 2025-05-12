@@ -5,7 +5,8 @@
 準同型暗号マスキング方式の暗号化実行ファイル
 
 このモジュールは、準同型暗号マスキング方式を使用してファイルを暗号化するための
-コマンドラインツールを提供します。
+コマンドラインツールを提供します。マスク関数を使って真と偽の状態を区別不可能な形式で
+暗号化します。
 """
 
 import os
@@ -29,11 +30,20 @@ from method_8_homomorphic.config import (
     SALT_SIZE,
     OUTPUT_FORMAT,
     OUTPUT_EXTENSION,
-    CRYPTO_ALGORITHM
+    CRYPTO_ALGORITHM,
+    PAILLIER_KEY_BITS,
+    ELGAMAL_KEY_BITS,
+    MASK_SEED_SIZE
 )
-from method_8_homomorphic.homomorphic import PaillierCrypto, ElGamalCrypto
-from method_8_homomorphic.crypto_mask import CryptoMask
-from method_8_homomorphic.indistinguishable import IndistinguishableWrapper
+from method_8_homomorphic.homomorphic import (
+    PaillierCrypto, ElGamalCrypto,
+    derive_key_from_password, save_keys, load_keys,
+    serialize_encrypted_data, deserialize_encrypted_data
+)
+from method_8_homomorphic.crypto_mask import (
+    MaskFunctionGenerator, AdvancedMaskFunctionGenerator,
+    transform_between_true_false, create_indistinguishable_form, extract_by_key_type
+)
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -83,6 +93,38 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        '--password', '-p',
+        type=str,
+        help='パスワードから鍵を導出（--keyよりも優先）'
+    )
+
+    parser.add_argument(
+        '--advanced-mask', '-am',
+        action='store_true',
+        help='高度なマスク関数を使用（多項式変換など）'
+    )
+
+    parser.add_argument(
+        '--key-bits', '-b',
+        type=int,
+        default=PAILLIER_KEY_BITS,
+        help=f'鍵のビット長 (デフォルト: %(default)s)'
+    )
+
+    parser.add_argument(
+        '--save-keys', '-s',
+        action='store_true',
+        help='生成した鍵をファイルに保存'
+    )
+
+    parser.add_argument(
+        '--keys-dir', '-d',
+        type=str,
+        default='keys',
+        help='鍵を保存するディレクトリ (--save-keysが指定された場合に使用)'
+    )
+
+    parser.add_argument(
         '--verbose', '-v',
         action='store_true',
         help='詳細な出力'
@@ -119,6 +161,22 @@ def generate_key(provided_key: Optional[str] = None) -> bytes:
         return os.urandom(KEY_SIZE_BYTES)
 
 
+def ensure_directory(directory: str) -> None:
+    """
+    ディレクトリの存在を確認し、なければ作成
+
+    Args:
+        directory: 確認するディレクトリパス
+    """
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+        if os.path.exists(directory):
+            print(f"ディレクトリを作成しました: {directory}")
+        else:
+            print(f"Error: ディレクトリの作成に失敗しました: {directory}")
+            sys.exit(1)
+
+
 def encrypt_files(args: argparse.Namespace) -> None:
     """
     ファイルを暗号化
@@ -129,12 +187,63 @@ def encrypt_files(args: argparse.Namespace) -> None:
     start_time = time.time()
 
     # 鍵の生成または取得
-    key = generate_key(args.key)
-    salt = os.urandom(SALT_SIZE)
+    if args.password:
+        # パスワードから鍵を導出
+        salt = os.urandom(SALT_SIZE)
+        print(f"パスワードから鍵を導出中...")
+        paillier_pub, paillier_priv, salt = derive_key_from_password(
+            args.password, salt, "paillier", bits=args.key_bits)
+
+        # PaillierCryptoインスタンスを作成
+        paillier_obj = PaillierCrypto(bits=args.key_bits)
+        paillier_obj.public_key = paillier_pub
+        paillier_obj.private_key = paillier_priv
+
+        # マスク関数生成用のシード
+        key = hashlib.pbkdf2_hmac(
+            'sha256',
+            args.password.encode(),
+            salt,
+            10000,
+            MASK_SEED_SIZE
+        )
+    else:
+        # 鍵の生成または取得
+        key = generate_key(args.key)
+        salt = os.urandom(SALT_SIZE)
+
+        # Paillier暗号システムの初期化
+        paillier_obj = PaillierCrypto(bits=args.key_bits)
+        paillier_pub, paillier_priv = paillier_obj.generate_keys()
 
     if args.verbose:
         print(f"暗号化鍵: {binascii.hexlify(key).decode()}")
         print(f"ソルト: {binascii.hexlify(salt).decode()}")
+
+    # 鍵を保存
+    if args.save_keys:
+        ensure_directory(args.keys_dir)
+
+        public_key_file = os.path.join(args.keys_dir, "paillier_public.json")
+        private_key_file = os.path.join(args.keys_dir, "paillier_private.json")
+
+        save_keys(paillier_pub, paillier_priv, public_key_file, private_key_file)
+
+        key_file = os.path.join(args.keys_dir, "encryption_key.bin")
+        salt_file = os.path.join(args.keys_dir, "salt.bin")
+
+        with open(key_file, 'wb') as f:
+            f.write(key)
+
+        with open(salt_file, 'wb') as f:
+            f.write(salt)
+
+        if args.verbose:
+            print(f"鍵を保存しました:")
+            print(f"  - 公開鍵: {public_key_file}")
+            print(f"  - 秘密鍵: {private_key_file}")
+            print(f"  - 暗号化鍵: {key_file}")
+            print(f"  - ソルト: {salt_file}")
 
     # ファイルの内容を読み込み
     try:
@@ -146,90 +255,74 @@ def encrypt_files(args: argparse.Namespace) -> None:
         print(f"Error: {e}")
         sys.exit(1)
 
-    # 準同型暗号マスクを準備
-    crypto_mask = CryptoMask()
-    crypto_params = crypto_mask.initialize()
+    # マスク関数生成器の初期化
+    if args.advanced_mask:
+        mask_generator = AdvancedMaskFunctionGenerator(paillier_obj, key)
+        if args.verbose:
+            print("高度なマスク関数を使用します（多項式変換など）")
+    else:
+        mask_generator = MaskFunctionGenerator(paillier_obj, key)
 
-    # 識別不能性ラッパーを準備
-    indist = IndistinguishableWrapper()
-    indist.generate_seed(key, salt)
+    # 真と偽のデータをPaillier暗号で暗号化
+    if args.verbose:
+        print("真と偽のデータを準同型暗号で暗号化中...")
 
-    # マスクパラメータの生成
-    mask_params = crypto_mask.generate_mask_params(key, salt)
+    # データをチャンクに分割
+    chunk_size = 64  # バイトごとの暗号化に適したサイズ
+    true_chunks = [true_content[i:i+chunk_size] for i in range(0, len(true_content), chunk_size)]
+    false_chunks = [false_content[i:i+chunk_size] for i in range(0, len(false_content), chunk_size)]
 
-    # データにマスクを適用
-    true_data = indist.obfuscate_data(true_content)
-    false_data = indist.obfuscate_data(false_content)
+    # 各チャンクを暗号化
+    true_encrypted = []
+    false_encrypted = []
 
-    # 真データと偽データをマスキング
-    true_masked = crypto_mask.apply_mask_to_data(true_data, mask_params)
-    false_masked = crypto_mask.apply_mask_to_data(false_data, mask_params)
+    for chunk in true_chunks:
+        # バイト列を整数に変換
+        chunk_int = int.from_bytes(chunk, byteorder='big')
+        # 暗号化
+        encrypted = paillier_obj.encrypt(chunk_int, paillier_pub)
+        true_encrypted.append(encrypted)
 
-    # メタデータを準備
-    metadata = {
-        'format': OUTPUT_FORMAT,
-        'version': '1.0',
-        'salt': base64.b64encode(salt).decode(),
-        'algorithm': args.algorithm,
-        'true_size': len(true_content),
-        'false_size': len(false_content),
-        'true_chunks': true_masked['chunks'],
-        'false_chunks': false_masked['chunks'],
-        'paillier_public': {
-            'n': str(crypto_params['paillier_public']['n']),
-            'g': str(crypto_params['paillier_public']['g'])
-        },
-        'elgamal_public': {
-            'p': str(crypto_params['elgamal_public']['p']),
-            'g': str(crypto_params['elgamal_public']['g']),
-            'y': str(crypto_params['elgamal_public']['y'])
-        },
-        'mask_params': {
-            'paillier': {
-                'offset': mask_params['paillier']['offset'],
-                'scale': mask_params['paillier']['scale'],
-                'transform': mask_params['paillier']['transform']
-            },
-            'elgamal': {
-                'multiplier': mask_params['elgamal']['multiplier'],
-                'power': mask_params['elgamal']['power'],
-                'transform': mask_params['elgamal']['transform']
-            }
+    for chunk in false_chunks:
+        # バイト列を整数に変換
+        chunk_int = int.from_bytes(chunk, byteorder='big')
+        # 暗号化
+        encrypted = paillier_obj.encrypt(chunk_int, paillier_pub)
+        false_encrypted.append(encrypted)
+
+    # マスク適用と真偽変換
+    if args.verbose:
+        print("マスク関数を適用し、真偽両方の状態を区別不可能な形式に変換中...")
+
+    # 真偽変換（両方の内容を区別不可能にする）
+    masked_true, masked_false, true_mask, false_mask = transform_between_true_false(
+        paillier_obj, true_encrypted, false_encrypted, mask_generator
+    )
+
+    # 区別不可能な形式に変換
+    additional_data = {
+        "true_size": len(true_content),
+        "false_size": len(false_content),
+        "true_chunks": len(true_chunks),
+        "false_chunks": len(false_chunks),
+        "salt": base64.b64encode(salt).decode('ascii'),
+        "algorithm": args.algorithm,
+        "key_bits": args.key_bits,
+        "timestamp": int(time.time()),
+        "public_key": {
+            "n": str(paillier_pub["n"]),
+            "g": str(paillier_pub["g"])
         }
     }
 
-    # 暗号化データを準備
-    encrypted_data = {
-        'metadata': metadata,
-        'paillier_private': {
-            'lambda': str(crypto_params['paillier_private']['lambda']),
-            'mu': str(crypto_params['paillier_private']['mu']),
-            'n': str(crypto_params['paillier_private']['n'])
-        },
-        'elgamal_private': {
-            'x': str(crypto_params['elgamal_private']['x']),
-            'p': str(crypto_params['elgamal_private']['p'])
-        }
-    }
-
-    # アルゴリズムに基づいて暗号文を追加
-    if args.algorithm in ['paillier', 'hybrid']:
-        encrypted_data['true_paillier'] = [str(n) for n in true_masked['paillier']]
-        encrypted_data['false_paillier'] = [str(n) for n in false_masked['paillier']]
-
-    if args.algorithm in ['elgamal', 'hybrid']:
-        # ElGamalの場合、(c1, c2)のタプルを文字列に変換
-        encrypted_data['true_elgamal'] = [
-            [str(c[0]), str(c[1])] for c in true_masked['elgamal']
-        ]
-        encrypted_data['false_elgamal'] = [
-            [str(c[0]), str(c[1])] for c in false_masked['elgamal']
-        ]
+    indistinguishable_data = create_indistinguishable_form(
+        masked_true, masked_false, true_mask, false_mask, additional_data
+    )
 
     # 出力ファイルに書き込み
     try:
         with open(args.output, 'w') as f:
-            json.dump(encrypted_data, f, indent=2)
+            json.dump(indistinguishable_data, f, indent=2)
     except IOError as e:
         print(f"Error: ファイルの書き込みに失敗しました: {e}")
         sys.exit(1)
@@ -245,8 +338,15 @@ def encrypt_files(args: argparse.Namespace) -> None:
         print(f"真ファイルサイズ: {len(true_content)} バイト")
         print(f"偽ファイルサイズ: {len(false_content)} バイト")
         print(f"暗号化後ファイルサイズ: {os.path.getsize(args.output)} バイト")
+        print(f"真チャンク数: {len(true_chunks)}")
+        print(f"偽チャンク数: {len(false_chunks)}")
+
+
+def main():
+    """メイン関数"""
+    args = parse_arguments()
+    encrypt_files(args)
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
-    encrypt_files(args)
+    main()

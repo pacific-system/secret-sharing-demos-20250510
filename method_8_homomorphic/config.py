@@ -32,3 +32,10 @@ DEBUG = False
 # 暗号化アルゴリズム選択
 # 'paillier' (加法準同型) または 'elgamal' (乗法準同型) または 'hybrid'（両方）
 CRYPTO_ALGORITHM = "hybrid"
+
+# マスク関数生成用パラメータ
+MASK_SEED_SIZE = 32  # マスク生成用シードのサイズ（バイト）
+NUM_MASK_FUNCTIONS = 4  # 使用するマスク関数の数
+MAX_CHUNK_SIZE = 128  # バイトデータのチャンクサイズ上限
+MASK_OUTPUT_FORMAT = "homomorphic_masked"
+MASK_VERSION = "1.0"

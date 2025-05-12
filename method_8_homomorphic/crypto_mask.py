@@ -507,16 +507,20 @@ class AdvancedMaskFunctionGenerator(MaskFunctionGenerator):
         Returns:
             マスク適用後の暗号化チャンク
         """
-        # 基本的なマスクを適用
-        masked_chunks = self.apply_mask(encrypted_chunks, mask)
+        # 実装をシンプル化し、基本マスク関数との互換性を確保するために
+        # 基本的なマスク適用のみを行います
 
-        # マスクパラメータが完全に設定されていないか、非互換形式の場合は基本マスクのみ適用
-        params = self._derive_mask_parameters(base64.b64decode(mask["seed"]))
+        # バグ防止のために、除去関数と同じメカニズムを使用
+        seed = base64.b64decode(mask["seed"])
         mask_type = "true" if mask["type"] == "true_mask" else "false"
-        advanced_params = params[mask_type]
 
-        # 基本マスクを返す（多項式変換は適用しない）
-        return masked_chunks
+        # 基本マスク生成器を作成
+        basic_mask_gen = MaskFunctionGenerator(self.paillier, seed)
+        true_mask, false_mask = basic_mask_gen.generate_mask_pair()
+        basic_mask = true_mask if mask_type == "true" else false_mask
+
+        # 基本マスクを適用（上記のremove_advanced_maskと一貫性を持たせる）
+        return basic_mask_gen.apply_mask(encrypted_chunks, basic_mask)
 
     def remove_advanced_mask(self,
                              masked_chunks: List[int],
@@ -531,8 +535,23 @@ class AdvancedMaskFunctionGenerator(MaskFunctionGenerator):
         Returns:
             マスク除去後の暗号化チャンク
         """
-        # 基本的なマスクの除去のみを行う
-        return self.remove_mask(masked_chunks, mask)
+        # 多項式変換は非常に複雑な逆変換が必要になるため、
+        # 高度なマスク関数を適用した場合の除去は、適用時と同じシードからマスクを生成し、
+        # 基本的なマスク関数の除去操作を行うことでシンプルに実現します。
+
+        # マスクパラメータ取得
+        seed = base64.b64decode(mask["seed"])
+
+        # 基本的なマスク関数生成器を使ってマスクを除去
+        basic_mask_gen = MaskFunctionGenerator(self.paillier, seed)
+
+        # 鍵タイプに応じたマスクを再生成
+        mask_type = "true" if mask["type"] == "true_mask" else "false"
+        true_mask, false_mask = basic_mask_gen.generate_mask_pair()
+        basic_mask = true_mask if mask_type == "true" else false_mask
+
+        # 基本的なマスク除去を適用
+        return basic_mask_gen.remove_mask(masked_chunks, basic_mask)
 
 
 # 暗号文変換関数

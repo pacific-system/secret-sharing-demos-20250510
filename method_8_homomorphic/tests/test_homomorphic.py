@@ -35,6 +35,8 @@ class TestPaillierCrypto(unittest.TestCase):
 
     def setUp(self):
         """テスト前の準備"""
+        # テスト出力ディレクトリの作成
+        os.makedirs("test_output", exist_ok=True)
         self.paillier = PaillierCrypto(bits=1024)  # テスト用に小さいビット数
         self.public_key, self.private_key = self.paillier.generate_keys()
 
@@ -181,6 +183,8 @@ class TestElGamalCrypto(unittest.TestCase):
 
     def setUp(self):
         """テスト前の準備"""
+        # テスト出力ディレクトリの作成
+        os.makedirs("test_output", exist_ok=True)
         self.elgamal = ElGamalCrypto(bits=512)  # テスト用に小さいビット数
         self.public_key, self.private_key = self.elgamal.generate_keys()
 
@@ -440,7 +444,13 @@ class TestPerformance(unittest.TestCase):
                 self.elgamal_times[size]['pow_const'].append(time.time() - start_time)
 
     def test_generate_performance_graph(self):
-        """パフォーマンスグラフの生成"""
+        """性能グラフの生成テスト"""
+        # ディレクトリの作成
+        os.makedirs("test_output", exist_ok=True)
+
+        # タイムスタンプを生成（ファイル名に使用）
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
+
         # Paillierのパフォーマンステスト
         self.test_paillier_performance()
 
@@ -490,10 +500,20 @@ class TestPerformance(unittest.TestCase):
         plt.tight_layout()
 
         # グラフの保存
-        plt.savefig("test_output/cryptography_performance.png")
+        output_filename = f'cryptography_performance_{timestamp}.png'
+        output_path = os.path.join("test_output", output_filename)
+        plt.savefig(output_path)
+
+        # コピーを作成（最新版としても保存）
+        latest_path = os.path.join("test_output", "cryptography_performance.png")
+        plt.savefig(latest_path)
+
+        print(f"テスト用性能グラフを保存しました: {output_path}")
+        print(f"最新版として保存しました: {latest_path}")
 
         # グラフが生成されていることを確認
-        self.assertTrue(os.path.exists("test_output/cryptography_performance.png"))
+        self.assertTrue(os.path.exists(output_path))
+        self.assertTrue(os.path.exists(latest_path))
 
 
 class TestCryptoMask(unittest.TestCase):
@@ -702,6 +722,9 @@ def visualize_homomorphic_encryption():
     output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'test_output')
     os.makedirs(output_dir, exist_ok=True)
 
+    # タイムスタンプを生成（ファイル名に使用）
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+
     # Paillier暗号の初期化
     paillier = PaillierCrypto(1024)
     public_key, private_key = paillier.generate_keys()
@@ -827,8 +850,17 @@ def visualize_homomorphic_encryption():
     # 全体のレイアウト調整
     plt.tight_layout()
 
-    # 画像を保存
-    plt.savefig(os.path.join(output_dir, 'homomorphic_operations.png'))
+    # 画像を保存（タイムスタンプ付きファイル名）
+    output_filename = f'homomorphic_operations_{timestamp}.png'
+    output_path = os.path.join(output_dir, output_filename)
+    plt.savefig(output_path)
+
+    # コピーを作成（最新版としても保存）
+    latest_path = os.path.join(output_dir, 'homomorphic_operations.png')
+    plt.savefig(latest_path)
+
+    print(f"画像を保存しました: {output_path}")
+    print(f"最新版として保存しました: {latest_path}")
 
     # 性能測定の可視化
     visualize_performance()
@@ -839,6 +871,9 @@ def visualize_performance():
     # 結果を格納するディレクトリを確認・作成
     output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'test_output')
     os.makedirs(output_dir, exist_ok=True)
+
+    # タイムスタンプを生成（ファイル名に使用）
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
 
     # Paillier暗号の初期化
     paillier = PaillierCrypto(1024)
@@ -968,8 +1003,18 @@ def visualize_performance():
     # 全体のレイアウト調整
     plt.tight_layout()
 
-    # 画像を保存
-    plt.savefig(os.path.join(output_dir, 'cryptography_performance.png'))
+    # 画像を保存（タイムスタンプ付きファイル名）
+    output_filename = f'cryptography_performance_{timestamp}.png'
+    output_path = os.path.join(output_dir, output_filename)
+    plt.savefig(output_path)
+
+    # コピーを作成（最新版としても保存）
+    latest_path = os.path.join(output_dir, 'cryptography_performance.png')
+    plt.savefig(latest_path)
+
+    print(f"画像を保存しました: {output_path}")
+    print(f"最新版として保存しました: {latest_path}")
+
     plt.close()
 
 

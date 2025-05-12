@@ -74,7 +74,13 @@ class TestEncrypt(unittest.TestCase):
         })()
 
         # 暗号化実行
-        encrypt_files(args)
+        key, metadata = encrypt_files(args)
+
+        # 鍵とメタデータが正しく返されていることを確認
+        self.assertIsInstance(key, bytes)
+        self.assertIsInstance(metadata, dict)
+        self.assertIn('format', metadata)
+        self.assertIn('version', metadata)
 
         # 出力ファイルが存在することを確認
         self.assertTrue(os.path.exists(self.output_file))
@@ -108,7 +114,11 @@ class TestEncrypt(unittest.TestCase):
         })()
 
         # 暗号化実行
-        encrypt_files(args)
+        key, metadata = encrypt_files(args)
+
+        # 鍵とメタデータが正しく返されていることを確認
+        self.assertIsInstance(key, bytes)
+        self.assertIsInstance(metadata, dict)
 
         # 出力ファイルが存在することを確認
         self.assertTrue(os.path.exists(self.output_file))
@@ -139,7 +149,11 @@ class TestEncrypt(unittest.TestCase):
         })()
 
         # 暗号化実行
-        encrypt_files(args)
+        key, metadata = encrypt_files(args)
+
+        # 鍵とメタデータが正しく返されていることを確認
+        self.assertIsInstance(key, bytes)
+        self.assertIsInstance(metadata, dict)
 
         # 出力ファイルが存在することを確認
         self.assertTrue(os.path.exists(self.output_file))
@@ -169,7 +183,11 @@ class TestEncrypt(unittest.TestCase):
         })()
 
         # 暗号化実行
-        encrypt_files(args)
+        key, metadata = encrypt_files(args)
+
+        # 鍵とメタデータが正しく返されていることを確認
+        self.assertIsInstance(key, bytes)
+        self.assertIsInstance(metadata, dict)
 
         # 鍵ディレクトリが作成されていることを確認
         self.assertTrue(os.path.exists(self.keys_dir))
@@ -185,8 +203,18 @@ class TestEncrypt(unittest.TestCase):
         """コマンドラインインターフェースのテスト"""
         # パッチを適用してコマンドライン引数を模擬
         with patch('method_8_homomorphic.encrypt.encrypt_files') as mock_encrypt:
-            # メイン関数を実行
-            main()
+            # モックが(key, metadata)タプルを返すよう設定
+            mock_key = b'dummy_key_for_test'
+            mock_metadata = {'format': 'test', 'version': '1.0'}
+            mock_encrypt.return_value = (mock_key, mock_metadata)
+
+            # sys.exitをパッチして終了を防止
+            with patch('sys.exit') as mock_exit:
+                # メイン関数を実行
+                main()
+
+                # 正常終了コード(0)で終了しようとしたことを確認
+                mock_exit.assert_called_once_with(0)
 
             # encrypt_filesが呼び出されたことを確認
             mock_encrypt.assert_called_once()
@@ -213,7 +241,11 @@ class TestEncrypt(unittest.TestCase):
             'verbose': False
         })()
 
-        encrypt_files(args)
+        key, metadata = encrypt_files(args)
+
+        # 鍵とメタデータが正しく返されていることを確認
+        self.assertIsInstance(key, bytes)
+        self.assertIsInstance(metadata, dict)
 
         # 出力ファイルを読み込み
         with open(self.output_file, 'r') as f:

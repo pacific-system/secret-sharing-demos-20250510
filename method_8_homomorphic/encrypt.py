@@ -177,12 +177,15 @@ def ensure_directory(directory: str) -> None:
             sys.exit(1)
 
 
-def encrypt_files(args: argparse.Namespace) -> None:
+def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     """
     ファイルを暗号化
 
     Args:
         args: コマンドライン引数
+
+    Returns:
+        (master_key, metadata): マスター鍵とメタデータ
     """
     start_time = time.time()
 
@@ -328,24 +331,51 @@ def encrypt_files(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     end_time = time.time()
+    elapsed_time = end_time - start_time
 
     # 結果出力
     print(f"暗号化が完了しました！")
     print(f"出力ファイル: {args.output}")
     print(f"鍵（安全に保管してください）: {binascii.hexlify(key).decode()}")
+    print(f"処理時間: {elapsed_time:.2f}秒")
+
     if args.verbose:
-        print(f"処理時間: {end_time - start_time:.2f}秒")
         print(f"真ファイルサイズ: {len(true_content)} バイト")
         print(f"偽ファイルサイズ: {len(false_content)} バイト")
         print(f"暗号化後ファイルサイズ: {os.path.getsize(args.output)} バイト")
         print(f"真チャンク数: {len(true_chunks)}")
         print(f"偽チャンク数: {len(false_chunks)}")
 
+    # メタデータを作成
+    metadata = {
+        "format": OUTPUT_FORMAT,
+        "version": "1.0",
+        "algorithm": args.algorithm,
+        "key_bits": args.key_bits,
+        "timestamp": additional_data["timestamp"],
+        "true_size": len(true_content),
+        "false_size": len(false_content),
+        "chunk_size": chunk_size,
+        "salt": additional_data["salt"]
+    }
+
+    return key, metadata
+
 
 def main():
     """メイン関数"""
     args = parse_arguments()
-    encrypt_files(args)
+    try:
+        key, metadata = encrypt_files(args)
+
+        # save_keysオプションが有効な場合は既にencrypt_files内で保存済み
+
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error: 暗号化中に問題が発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":

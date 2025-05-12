@@ -24,7 +24,9 @@
 
 [要求の完了方法]
 
+- 全て完了するまでレポートを作成しないでください
 - 実装レポートを'docs/issue'に MD 形式で生成
+- テストスクリプトで生成される画像を添付
 - gh コマンドを実行し(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/11)にMDファイルをコメント投稿して実装レポートをチームで共有
 
 - 'git commit'（パシ子スタイル。readme を含めること）

@@ -1,0 +1,34 @@
+"""
+準同型暗号マスキング方式の設定ファイル
+"""
+
+# ファイルパス設定
+TRUE_TEXT_PATH = "common/true-false-text/true.text"
+FALSE_TEXT_PATH = "common/true-false-text/false.text"
+
+# 暗号化パラメータ
+KEY_SIZE_BYTES = 32  # 256ビット鍵
+PRIME_BITS = 2048    # 準同型暗号の法（素数）のビット長
+SALT_SIZE = 16       # ソルトサイズ
+MASK_SIZE = 256      # マスクサイズ（ビット）
+
+# 鍵導出パラメータ
+KDF_ITERATIONS = 10000  # 鍵導出関数の反復回数
+
+# Paillier準同型暗号パラメータ
+PAILLIER_KEY_BITS = 2048  # Paillier鍵サイズ
+PAILLIER_PRECISION = 1024 # 準同型演算の精度
+
+# ElGamal準同型暗号パラメータ
+ELGAMAL_KEY_BITS = 2048  # ElGamal鍵サイズ
+
+# 出力ファイル形式
+OUTPUT_FORMAT = "homomorphic"
+OUTPUT_EXTENSION = ".hmc"
+
+# デバッグフラグ（本番では必ずFalseにする）
+DEBUG = False
+
+# 暗号化アルゴリズム選択
+# 'paillier' (加法準同型) または 'elgamal' (乗法準同型) または 'hybrid'（両方）
+CRYPTO_ALGORITHM = "hybrid"

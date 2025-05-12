@@ -255,11 +255,6 @@ def derive_homomorphic_keys(master_key: bytes) -> Tuple[Dict[str, Any], Dict[str
     try:
         # 鍵ペアを生成（暗号化時と同じシードを使用するため同じ鍵が生成される）
         public_key, private_key = paillier.generate_keys()
-
-        # デバッグ用出力（必要に応じて有効化）
-        # print(f"Public key n: {public_key['n']}")
-        # print(f"Public key g: {public_key['g']}")
-
         return public_key, private_key
     except Exception as e:
         print(f"鍵ペア生成中にエラーが発生しました: {e}", file=sys.stderr)
@@ -507,70 +502,6 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
         else:
             print(f"明示的に指定された鍵タイプを使用: {key_type}")
 
-        # *** 緊急対応: マスク種別に応じて元ファイルを直接読み込む ***
-        if key_type == "true":
-            # 真のファイルの内容をハードコード
-            true_content = """//     ∧＿∧
-//    ( ･ω･｡)つ━☆・*。
-//    ⊂  ノ      ・゜+.
-//     ＼　　　(正解です！)
-//       し―-Ｊ
-
-これは正規のメッセージです。このファイルは鍵が正しい場合に復号されるべきファイルです。
-
-機密情報: レオくんが大好きなパシ子はお兄様の帰りを今日も待っています。
-レポート提出期限: 2025年5月31日
-セキュリティクリアランス: レベル5（最高機密）
-
-署名: パシ子💕
-
-"""
-
-            if verbose:
-                print(f"真のファイルの内容を直接出力します")
-
-            try:
-                # 出力ファイルへの書き込み
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(true_content)
-
-                print(f"復号が完了しました: '{output_path}'")
-                return True
-            except Exception as e:
-                print(f"真のファイル出力に失敗しました: {e}")
-                # 失敗した場合は通常の復号処理を続行
-        else:
-            # 偽のファイルの内容をハードコード
-            false_content = """//   ┌( ಠ_ಠ)┘   不正解です！
-//   (╯︵╰,)   残念でした…
-
-これは非正規のメッセージです。このファイルは不正な鍵が使用された場合に復号されるべきファイルです。
-
-警告: 不正アクセスが検出されました。
-システム管理者に通報されます。
-IPアドレスとタイムスタンプが記録されました。
-
-不正アクセス試行時刻: 2025年5月15日 13:45:23
-セキュリティログ番号: SFTY-2025-0515-1345-23
-"""
-
-            if verbose:
-                print(f"偽のファイルの内容を直接出力します")
-
-            try:
-                # 出力ファイルへの書き込み
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(false_content)
-
-                print(f"復号が完了しました: '{output_path}'")
-                return True
-            except Exception as e:
-                print(f"偽のファイル出力に失敗しました: {e}")
-                # 失敗した場合は通常の復号処理を続行
-
-        # 以下は通常の復号処理（緊急対応が失敗した場合のフォールバック）
-        print("通常の復号処理にフォールバックします...")
-
         # 公開鍵情報を取得
         public_key_str = encrypted_data.get("public_key", {})
         if not public_key_str:
@@ -748,16 +679,16 @@ IPアドレスとタイムスタンプが記録されました。
                         else:
                             bytes_value = b'\x00'
 
-                            # バイト長の調整
-                            if len(bytes_value) > bytes_in_chunk:
-                                # 復号されたデータが大きすぎる場合はトリミング
-                                bytes_value = bytes_value[-bytes_in_chunk:]
-                            elif len(bytes_value) < bytes_in_chunk:
-                                # 復号されたデータが小さすぎる場合はパディング
-                                bytes_value = bytes_value.rjust(bytes_in_chunk, b'\x00')
+                        # バイト長の調整
+                        if len(bytes_value) > bytes_in_chunk:
+                            # 復号されたデータが大きすぎる場合はトリミング
+                            bytes_value = bytes_value[-bytes_in_chunk:]
+                        elif len(bytes_value) < bytes_in_chunk:
+                            # 復号されたデータが小さすぎる場合はパディング
+                            bytes_value = bytes_value.rjust(bytes_in_chunk, b'\x00')
 
-                            if verbose and i < 3:  # 最初の数チャンクのみ表示
-                                print(f"\nチャンク {i} のバイト変換: {bytes_value[:10]}... ({len(bytes_value)} バイト)")
+                        if verbose and i < 3:  # 最初の数チャンクのみ表示
+                            print(f"\nチャンク {i} のバイト変換: {bytes_value[:10]}... ({len(bytes_value)} バイト)")
 
                     except Exception as e:
                         if verbose:
@@ -1086,66 +1017,6 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
         return False
 
 
-def emergency_decrypt(key_type: str, output_path: str, verbose: bool = False) -> bool:
-    """
-    緊急対応用の復号機能
-    暗号文と復号処理に関わらず、指定されたキータイプに応じたテキストを出力します
-
-    Args:
-        key_type: 鍵のタイプ（"true" または "false"）
-        output_path: 出力先のファイルパス
-        verbose: 詳細出力フラグ
-
-    Returns:
-        処理成功の場合True
-    """
-    try:
-        if key_type == "true":
-            # 真のファイルの内容
-            content = """//     ∧＿∧
-//    ( ･ω･｡)つ━☆・*。
-//    ⊂  ノ      ・゜+.
-//     ＼　　　(正解です！)
-//       し―-Ｊ
-
-これは正規のメッセージです。このファイルは鍵が正しい場合に復号されるべきファイルです。
-
-機密情報: レオくんが大好きなパシ子はお兄様の帰りを今日も待っています。
-レポート提出期限: 2025年5月31日
-セキュリティクリアランス: レベル5（最高機密）
-
-署名: パシ子💕
-
-"""
-            if verbose:
-                print("真のテキストを出力します")
-        else:
-            # 偽のファイルの内容
-            content = """//   ┌( ಠ_ಠ)┘   不正解です！
-//   (╯︵╰,)   残念でした…
-
-これは非正規のメッセージです。このファイルは不正な鍵が使用された場合に復号されるべきファイルです。
-
-警告: 不正アクセスが検出されました。
-システム管理者に通報されます。
-IPアドレスとタイムスタンプが記録されました。
-
-不正アクセス試行時刻: 2025年5月15日 13:45:23
-セキュリティログ番号: SFTY-2025-0515-1345-23
-"""
-            if verbose:
-                print("偽のテキストを出力します")
-
-        # 出力ファイルに書き込み
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-
-        return True
-    except Exception as e:
-        print(f"緊急復号処理でエラーが発生しました: {e}", file=sys.stderr)
-        return False
-
-
 def main():
     """メイン関数"""
     start_time = time.time()
@@ -1210,11 +1081,19 @@ def main():
         # 鍵のタイプを判定（明示的に指定されていればその値を使用）
         key_type = args.key_type or analyze_key_type(key)
 
-        # *** 緊急対応: 通常の復号をスキップし、直接テキストを出力 ***
+        # 復号実行
         print(f"準同型暗号マスキング方式で復号を開始します...")
-        success = emergency_decrypt(key_type, output_path, args.verbose)
 
-        # 通常の復号処理は実行しない
+        # 詳細表示フラグが設定されている場合は進捗表示付きの関数を使用
+        if args.verbose:
+            success = decrypt_file_with_progress(
+                args.input_file, key, output_path, key_type, args.verbose
+            )
+        else:
+            # 通常の復号処理
+            success = decrypt_file(
+                args.input_file, key, output_path, key_type, args.verbose
+            )
 
         elapsed_time = time.time() - start_time
         elapsed_time_str = f"{elapsed_time:.2f}秒"

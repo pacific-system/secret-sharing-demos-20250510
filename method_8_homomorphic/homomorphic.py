@@ -86,7 +86,7 @@ class PaillierCrypto:
         self.mu = mu
 
         public_key = {'n': n, 'g': g}
-        private_key = {'lambda': lambda_val, 'mu': mu, 'n': n, 'p': p, 'q': q}
+        private_key = {'lambda': lambda_val, 'mu': mu, 'p': p, 'q': q, 'n': n}
 
         self.public_key = public_key
         self.private_key = private_key
@@ -768,18 +768,65 @@ def derive_key_from_password(password: str, salt: Optional[bytes] = None, crypto
     )
     seed = int.from_bytes(seed_bytes, 'big')
 
-    # シード値から疑似乱数生成器を初期化
-    random.seed(seed)
+    # パスワードから直接素数を導出する関数
+    def derive_prime(base_seed: int, index: int, prime_bits: int) -> int:
+        """決定的に素数を導出する"""
+        # シードとインデックスを組み合わせて新しいシードを生成
+        combined_seed = hashlib.sha256(f"{base_seed}:{index}".encode()).digest()
+        combined_seed_int = int.from_bytes(combined_seed, 'big')
+
+        # 開始数を設定（必要なビット数を持つ奇数）
+        start_num = (combined_seed_int | (1 << (prime_bits - 1))) | 1
+
+        # 候補数から開始して素数を探す
+        candidate = start_num
+        while True:
+            if sympy.isprime(candidate):
+                return candidate
+            # 次の奇数に移動
+            candidate += 2
 
     # 暗号方式に応じて鍵を生成
     if crypto_type.lower() == "paillier":
         bits = bits or PAILLIER_KEY_BITS
-        paillier = PaillierCrypto(bits=bits)
-        public_key, private_key = paillier.generate_keys()
+        half_bits = bits // 2
+
+        # 2つの異なる素数を決定的に生成
+        p = derive_prime(seed, 1, half_bits)
+        q = derive_prime(seed, 2, half_bits)
+
+        # 鍵パラメータの計算
+        n = p * q
+        lambda_val = (p - 1) * (q - 1) // math.gcd(p - 1, q - 1)
+        g = n + 1
+        mu = mod_inverse(lambda_val, n)
+
+        public_key = {'n': n, 'g': g}
+        private_key = {'lambda': lambda_val, 'mu': mu, 'p': p, 'q': q, 'n': n}
+
     elif crypto_type.lower() == "elgamal":
         bits = bits or ELGAMAL_KEY_BITS
-        elgamal = ElGamalCrypto(bits=bits)
-        public_key, private_key = elgamal.generate_keys()
+
+        # 素数pを決定的に生成
+        p = derive_prime(seed, 1, bits)
+
+        # 原始根gを決定的に選択
+        # 通常は試行錯誤で見つけるが、ここでは簡略化のため決定的な方法で選ぶ
+        g_seed = hashlib.sha256(f"{seed}:generator".encode()).digest()
+        g_seed_int = int.from_bytes(g_seed, 'big')
+        g = 2 + (g_seed_int % (p - 3))  # 2 <= g < p-1 の範囲で選択
+
+        # 秘密鍵xを決定的に生成
+        x_seed = hashlib.sha256(f"{seed}:private_key".encode()).digest()
+        x_seed_int = int.from_bytes(x_seed, 'big')
+        x = 2 + (x_seed_int % (p - 3))  # 2 <= x < p-1 の範囲で選択
+
+        # 公開鍵yを計算
+        y = pow(g, x, p)
+
+        public_key = {'p': p, 'g': g, 'y': y}
+        private_key = {'x': x, 'p': p}
+
     else:
         raise ValueError(f"サポートされていない暗号方式: {crypto_type}")
 

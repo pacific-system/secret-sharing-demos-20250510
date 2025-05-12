@@ -28,7 +28,7 @@
 
 - 全て完了するまでレポートを作成しないでください
 - 実装レポートを'docs/issue'に MD 形式で生成
-- テストスクリプトで生成される画像を添付
+- テストスクリプトで生成される画像を添付(path例：https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/cryptography_performance.png)
 - gh コマンドを実行し(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/12)にMDファイルをコメント投稿して実装レポートをチームで共有
 
 - 'git commit'（パシ子スタイル。readme を含めること）

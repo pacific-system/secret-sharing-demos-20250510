@@ -189,6 +189,9 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     """
     start_time = time.time()
 
+    # 処理開始メッセージ
+    print(f"準同型暗号マスキング方式による暗号化を開始します...")
+
     # 鍵の生成または取得
     if args.password:
         # パスワードから鍵を導出
@@ -216,6 +219,7 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
         salt = os.urandom(SALT_SIZE)
 
         # Paillier暗号システムの初期化
+        print(f"準同型暗号鍵を生成中...")
         paillier_obj = PaillierCrypto(bits=args.key_bits)
         paillier_pub, paillier_priv = paillier_obj.generate_keys()
 
@@ -226,6 +230,7 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     # 鍵を保存
     if args.save_keys:
         ensure_directory(args.keys_dir)
+        print(f"鍵ファイルを保存中...")
 
         public_key_file = os.path.join(args.keys_dir, "paillier_public.json")
         private_key_file = os.path.join(args.keys_dir, "paillier_private.json")
@@ -249,6 +254,7 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
             print(f"  - ソルト: {salt_file}")
 
     # ファイルの内容を読み込み
+    print(f"入力ファイルを読み込み中...")
     try:
         with open(args.true_file, 'rb') as f:
             true_content = f.read()
@@ -261,14 +267,13 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     # マスク関数生成器の初期化
     if args.advanced_mask:
         mask_generator = AdvancedMaskFunctionGenerator(paillier_obj, key)
-        if args.verbose:
-            print("高度なマスク関数を使用します（多項式変換など）")
+        print("高度なマスク関数を使用します（多項式変換など）")
     else:
         mask_generator = MaskFunctionGenerator(paillier_obj, key)
+        print("基本マスク関数を使用します")
 
     # 真と偽のデータをPaillier暗号で暗号化
-    if args.verbose:
-        print("真と偽のデータを準同型暗号で暗号化中...")
+    print("真と偽のデータを準同型暗号で暗号化中...")
 
     # データをチャンクに分割
     chunk_size = 64  # バイトごとの暗号化に適したサイズ
@@ -279,14 +284,20 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     true_encrypted = []
     false_encrypted = []
 
-    for chunk in true_chunks:
+    for i, chunk in enumerate(true_chunks):
+        # 進行状況表示
+        if args.verbose and i % 5 == 0:
+            print(f"真データ暗号化中: {i+1}/{len(true_chunks)} チャンク")
         # バイト列を整数に変換
         chunk_int = int.from_bytes(chunk, byteorder='big')
         # 暗号化
         encrypted = paillier_obj.encrypt(chunk_int, paillier_pub)
         true_encrypted.append(encrypted)
 
-    for chunk in false_chunks:
+    for i, chunk in enumerate(false_chunks):
+        # 進行状況表示
+        if args.verbose and i % 5 == 0:
+            print(f"偽データ暗号化中: {i+1}/{len(false_chunks)} チャンク")
         # バイト列を整数に変換
         chunk_int = int.from_bytes(chunk, byteorder='big')
         # 暗号化
@@ -294,8 +305,7 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
         false_encrypted.append(encrypted)
 
     # マスク適用と真偽変換
-    if args.verbose:
-        print("マスク関数を適用し、真偽両方の状態を区別不可能な形式に変換中...")
+    print("マスク関数を適用し、真偽両方の状態を区別不可能な形式に変換中...")
 
     # 真偽変換（両方の内容を区別不可能にする）
     masked_true, masked_false, true_mask, false_mask = transform_between_true_false(
@@ -318,11 +328,13 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
         }
     }
 
+    print("暗号文を区別不可能な形式に変換中...")
     indistinguishable_data = create_indistinguishable_form(
         masked_true, masked_false, true_mask, false_mask, additional_data
     )
 
     # 出力ファイルに書き込み
+    print(f"暗号化ファイルを出力中: {args.output}")
     try:
         with open(args.output, 'w') as f:
             json.dump(indistinguishable_data, f, indent=2)
@@ -334,12 +346,13 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     elapsed_time = end_time - start_time
 
     # 結果出力
-    print(f"暗号化が完了しました！")
+    print(f"\n暗号化が完了しました！")
     print(f"出力ファイル: {args.output}")
     print(f"鍵（安全に保管してください）: {binascii.hexlify(key).decode()}")
     print(f"処理時間: {elapsed_time:.2f}秒")
 
     if args.verbose:
+        print(f"\n詳細情報:")
         print(f"真ファイルサイズ: {len(true_content)} バイト")
         print(f"偽ファイルサイズ: {len(false_content)} バイト")
         print(f"暗号化後ファイルサイズ: {os.path.getsize(args.output)} バイト")

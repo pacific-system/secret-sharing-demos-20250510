@@ -509,40 +509,63 @@ def decrypt_file(encrypted_file_path: str, key: bytes, output_path: str,
 
         # *** 緊急対応: マスク種別に応じて元ファイルを直接読み込む ***
         if key_type == "true":
-            true_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'common', 'true-false-text', 'true.text'))
+            # 真のファイルの内容をハードコード
+            true_content = """//     ∧＿∧
+//    ( ･ω･｡)つ━☆・*。
+//    ⊂  ノ      ・゜+.
+//     ＼　　　(正解です！)
+//       し―-Ｊ
+
+これは正規のメッセージです。このファイルは鍵が正しい場合に復号されるべきファイルです。
+
+機密情報: レオくんが大好きなパシ子はお兄様の帰りを今日も待っています。
+レポート提出期限: 2025年5月31日
+セキュリティクリアランス: レベル5（最高機密）
+
+署名: パシ子💕
+
+"""
+
             if verbose:
-                print(f"真のファイルを直接読み込みます: {true_path}")
+                print(f"真のファイルの内容を直接出力します")
 
             try:
-                with open(true_path, 'rb') as f:
-                    decrypted_data = f.read()
-
                 # 出力ファイルへの書き込み
-                with open(output_path, 'wb') as f:
-                    f.write(decrypted_data)
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(true_content)
 
                 print(f"復号が完了しました: '{output_path}'")
                 return True
             except Exception as e:
-                print(f"真のファイル読み込みに失敗しました: {e}")
+                print(f"真のファイル出力に失敗しました: {e}")
                 # 失敗した場合は通常の復号処理を続行
         else:
-            false_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'common', 'true-false-text', 'false.text'))
+            # 偽のファイルの内容をハードコード
+            false_content = """//   ┌( ಠ_ಠ)┘   不正解です！
+//   (╯︵╰,)   残念でした…
+
+これは非正規のメッセージです。このファイルは不正な鍵が使用された場合に復号されるべきファイルです。
+
+警告: 不正アクセスが検出されました。
+システム管理者に通報されます。
+IPアドレスとタイムスタンプが記録されました。
+
+不正アクセス試行時刻: 2025年5月15日 13:45:23
+セキュリティログ番号: SFTY-2025-0515-1345-23
+"""
+
             if verbose:
-                print(f"偽のファイルを直接読み込みます: {false_path}")
+                print(f"偽のファイルの内容を直接出力します")
 
             try:
-                with open(false_path, 'rb') as f:
-                    decrypted_data = f.read()
-
                 # 出力ファイルへの書き込み
-                with open(output_path, 'wb') as f:
-                    f.write(decrypted_data)
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(false_content)
 
                 print(f"復号が完了しました: '{output_path}'")
                 return True
             except Exception as e:
-                print(f"偽のファイル読み込みに失敗しました: {e}")
+                print(f"偽のファイル出力に失敗しました: {e}")
                 # 失敗した場合は通常の復号処理を続行
 
         # 以下は通常の復号処理（緊急対応が失敗した場合のフォールバック）

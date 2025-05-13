@@ -1,0 +1,220 @@
+{
+  "start_time": 1747121250.043234,
+  "end_time": 1747121402.677254,
+  "total_elapsed": 152.63401985168457,
+  "test_modules": {
+    "method_8_homomorphic.tests.test_crypto_mask": {
+      "tests": 6,
+      "passed": 5,
+      "failed": 0,
+      "errors": 1,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": [
+        {
+          "test": "test_apply_mask_and_remove_mask (method_8_homomorphic.tests.test_crypto_mask.TestCryptoMask.test_apply_mask_and_remove_mask)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_crypto_mask.py\", line 90, in test_apply_mask_and_remove_mask\n    unmasked_false = self.crypto_mask.remove_mask_from_data(masked_data, mask_params, 'false')\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/crypto_mask.py\", line 226, in remove_mask_from_data\n    exp = mod_inverse(transform % 50 + 1, self.elgamal_private_key['p'] - 1)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/crypto_mask.py\", line 719, in mod_inverse\n    return sympy_mod_inverse(a, m)\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/dev/Library/Python/3.12/lib/python/site-packages/sympy/core/intfunc.py\", line 450, in mod_inverse\n    raise ValueError(\"inverse of %s (mod %s) does not exist\" % (a, m))\nValueError: inverse of 38 (mod 30399026067857859631778040984059472289636217212805181969827192120442253366714284731445524565546228933086952066725136461797578400672224147703697030200147090436289743399172152296717128740796625500361570262291572831445279448169584549846301852736681578552454752148047516142466454091983101366731109482085266207996003372780719323737776351388154947006188159105256009925696564813732806898103561836570168072062213387971357497410289473731886304560998266221915902936874503337863106349872044038821533085111600013132263650935473029951024194774379797399942856745132667405113332124071628223459962784556686203328337301210144444627860) does not exist\n"
+        }
+      ]
+    },
+    "method_8_homomorphic.tests.test_decrypt": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_encrypt": {
+      "tests": 6,
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_encrypt_decrypt": {
+      "tests": 1,
+      "passed": 1,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_encrypt_decrypt_integration": {
+      "tests": 6,
+      "passed": 0,
+      "failed": 4,
+      "errors": 2,
+      "skipped": 0,
+      "failures": [
+        {
+          "test": "test_basic_encrypt_decrypt (method_8_homomorphic.tests.test_encrypt_decrypt_integration.TestEncryptDecryptIntegration.test_basic_encrypt_decrypt)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_encrypt_decrypt_integration.py\", line 213, in test_basic_encrypt_decrypt\n    self.assertEqual(self.test_data_true, true_decrypted)\nAssertionError: 'This is a true message with important inf[215 chars]n.\\n' != ''\n- This is a true message with important information.\n- This is a true message with important information.\n- This is a true message with important information.\n- This is a true message with important information.\n- This is a true message with important information.\n\n"
+        },
+        {
+          "test": "test_different_crypto_types (method_8_homomorphic.tests.test_encrypt_decrypt_integration.TestEncryptDecryptIntegration.test_different_crypto_types)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_encrypt_decrypt_integration.py\", line 284, in test_different_crypto_types\n    self.assertEqual(self.test_data_true, true_decrypted, f\"Failed with {crypto_type}\")\nAssertionError: 'This is a true message with important inf[215 chars]n.\\n' != ''\n- This is a true message with important information.\n- This is a true message with important information.\n- This is a true message with important information.\n- This is a true message with important information.\n- This is a true message with important information.\n : Failed with paillier\n"
+        },
+        {
+          "test": "test_edge_cases (method_8_homomorphic.tests.test_encrypt_decrypt_integration.TestEncryptDecryptIntegration.test_edge_cases)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_encrypt_decrypt_integration.py\", line 441, in test_edge_cases\n    self.assertTrue(true_decrypt_result[\"success\"])\nAssertionError: False is not true\n"
+        },
+        {
+          "test": "test_file_sizes (method_8_homomorphic.tests.test_encrypt_decrypt_integration.TestEncryptDecryptIntegration.test_file_sizes)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_encrypt_decrypt_integration.py\", line 381, in test_file_sizes\n    self.assertEqual(true_text, true_decrypted)\nAssertionError: 'ygYnNHIquzonjZzrPLmcQOTfCJZSkLXbBfiCuBvCI[55 chars]cWav' != ''\n- ygYnNHIquzonjZzrPLmcQOTfCJZSkLXbBfiCuBvCIriHIs PNMqdcEEsfXtcyApSgFsJVsNGOLmDEhhwonAwdEwiKcetLOVtcWav\n\n"
+        }
+      ],
+      "errors_list": [
+        {
+          "test": "test_error_handling (method_8_homomorphic.tests.test_encrypt_decrypt_integration.TestEncryptDecryptIntegration.test_error_handling)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/encrypt.py\", line 276, in encrypt_files\n    with open(args.true_file, 'rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: '/var/folders/c8/z476f47n44j13znkk293p0mh0000gn/T/tmpidgvvf23/non_existent_file.txt'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_encrypt_decrypt_integration.py\", line 538, in test_error_handling\n    encrypt_files(args)\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/encrypt.py\", line 282, in encrypt_files\n    sys.exit(1)\nSystemExit: 1\n"
+        },
+        {
+          "test": "test_real_file_encrypt_decrypt (method_8_homomorphic.tests.test_encrypt_decrypt_integration.TestRealFileEncryptDecrypt.test_real_file_encrypt_decrypt)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/encrypt.py\", line 276, in encrypt_files\n    with open(args.true_file, 'rb') as f:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'common/true-false-text/true.text'\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_encrypt_decrypt_integration.py\", line 675, in test_real_file_encrypt_decrypt\n    encrypt_result = encrypt_file(\n                     ^^^^^^^^^^^^^\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_encrypt_decrypt_integration.py\", line 90, in encrypt_file\n    key, metadata = encrypt_files(args)\n                    ^^^^^^^^^^^^^^^^^^^\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/encrypt.py\", line 282, in encrypt_files\n    sys.exit(1)\nSystemExit: 1\n"
+        }
+      ]
+    },
+    "method_8_homomorphic.tests.test_enhanced_security": {
+      "tests": 3,
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_homomorphic": {
+      "tests": 25,
+      "passed": 25,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_homomorphic_crypto": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_homomorphic_modules": {
+      "tests": 16,
+      "passed": 15,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [
+        {
+          "test": "test_encrypt_decrypt_float (method_8_homomorphic.tests.test_homomorphic_modules.TestPaillierCrypto.test_encrypt_decrypt_float)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_homomorphic_modules.py\", line 54, in test_encrypt_decrypt_float\n    self.assertAlmostEqual(plaintext, decrypted, places=3)\nAssertionError: 3.14159 != 3.140625 within 3 places (0.0009649999999998826 difference)\n"
+        }
+      ],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_indistinguishability": {
+      "tests": 6,
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_indistinguishability_analysis": {
+      "tests": 7,
+      "passed": 6,
+      "failed": 0,
+      "errors": 1,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": [
+        {
+          "test": "test_comprehensive_indistinguishability (method_8_homomorphic.tests.test_indistinguishability_analysis.CryptanalyticTests.test_comprehensive_indistinguishability)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_indistinguishability_analysis.py\", line 565, in test_comprehensive_indistinguishability\n    json.dump(test_results, f, indent=2)\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/__init__.py\", line 179, in dump\n    for chunk in iterable:\n                 ^^^^^^^^\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py\", line 432, in _iterencode\n    yield from _iterencode_dict(o, _current_indent_level)\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py\", line 406, in _iterencode_dict\n    yield from chunks\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py\", line 406, in _iterencode_dict\n    yield from chunks\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py\", line 439, in _iterencode\n    o = _default(o)\n        ^^^^^^^^^^^\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py\", line 180, in default\n    raise TypeError(f'Object of type {o.__class__.__name__} '\nTypeError: Object of type bool is not JSON serializable\n"
+        }
+      ]
+    },
+    "method_8_homomorphic.tests.test_indistinguishable": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_key_analysis": {
+      "tests": 12,
+      "passed": 11,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [
+        {
+          "test": "test_cryptic_vs_integrated_analysis (method_8_homomorphic.tests.test_key_analysis.KeyStatisticalTest.test_cryptic_vs_integrated_analysis)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_key_analysis.py\", line 269, in test_cryptic_vs_integrated_analysis\n    self.assertGreaterEqual(match_ratio, 0.8)\nAssertionError: 0.46 not greater than or equal to 0.8\n"
+        }
+      ],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_key_analyzer": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_key_identification": {
+      "tests": 8,
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_report": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_simple_debug": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    }
+  },
+  "performance": {},
+  "summary": {
+    "total_tests": 96,
+    "passed": 86,
+    "failed": 6,
+    "errors": 4,
+    "skipped": 0,
+    "success_rate": 89.58333333333334
+  },
+  "timestamp": "2025-05-13 16:30:02",
+  "environment": {
+    "python_version": "3.12.8 (v3.12.8:2dc476bcb91, Dec  3 2024, 14:43:20) [Clang 13.0.0 (clang-1300.0.29.30)]",
+    "platform": "darwin"
+  }
+}

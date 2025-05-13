@@ -352,6 +352,72 @@ def derive_homomorphic_keys(master_key: bytes, public_key: Optional[Dict[str, An
         return public_key, private_key
 
 
+def decrypt_file(input_file: str, output_file: str, key_type: str, key_file: str = None,
+                password: str = None, force_binary: bool = False, force_text: bool = False,
+                verbose: bool = False, data_type: str = 'auto') -> Dict[str, Any]:
+    """
+    暗号化されたファイルを復号する
+
+    Args:
+        input_file: 入力ファイルのパス
+        output_file: 出力ファイルのパス
+        key_type: キーの種類（"true"または"false"）
+        key_file: キーファイルのパス（オプション）
+        password: パスワード（オプション、key_fileが指定されていない場合に使用）
+        force_binary: バイナリ出力を強制するかどうか
+        force_text: テキスト出力を強制するかどうか
+        verbose: 詳細な出力を表示するかどうか
+        data_type: データ型（'auto', 'text', 'binary', 'json', 'base64'）
+
+    Returns:
+        処理結果の辞書
+    """
+    start_time = time.time()
+    result = {
+        "success": False,
+        "input_file": input_file,
+        "output_file": output_file,
+        "key_type": key_type,
+        "time": 0
+    }
+
+    try:
+        # キーの取得
+        if key_file:
+            key = parse_key(key_file)
+        elif password:
+            key = hashlib.sha256(password.encode()).digest()
+        else:
+            raise ValueError("鍵ファイルまたはパスワードが必要です")
+
+        # 復号処理
+        success = decrypt_file_with_progress(
+            encrypted_file_path=input_file,
+            key=key,
+            output_path=output_file,
+            key_type=key_type,
+            verbose=verbose,
+            force_binary=force_binary,
+            force_text=force_text,
+            data_type=data_type
+        )
+
+        result["success"] = success
+
+    except Exception as e:
+        print(f"復号中にエラーが発生しました: {e}")
+        result["error"] = str(e)
+        if verbose:
+            import traceback
+            traceback.print_exc()
+
+    # 処理時間を記録
+    end_time = time.time()
+    result["time"] = end_time - start_time
+
+    return result
+
+
 def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path: str,
                               key_type: Optional[str] = None,
                               verbose: bool = True,
@@ -377,6 +443,15 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
     try:
         # 進捗表示関数
         def show_progress(current, total, description=None):
+            if total == 0:
+                bar_length = 40
+                bar = '█' * bar_length
+                prefix = description or "処理中"
+                print(f"\r{prefix}: [{bar}] 100.0% (0/0)", end='')
+                if current == total:
+                    print()
+                return
+
             percent = current / total * 100
             bar_length = 40
             filled_length = int(bar_length * current // total)

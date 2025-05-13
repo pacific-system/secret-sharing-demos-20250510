@@ -40,6 +40,75 @@ from method_8_homomorphic.encrypt import encrypt_files
 from method_8_homomorphic.decrypt import decrypt_file
 
 
+def encrypt_file(input_file: str, true_text_file: str, false_text_file: str, output_file: str,
+               true_key_file: str, false_key_file: str, password: str = None,
+               crypto_type: str = "paillier", bits: int = 1024) -> Dict[str, Any]:
+    """
+    暗号化処理を実行する
+
+    Args:
+        input_file: 入力ファイルパス
+        true_text_file: 真のテキストファイルパス
+        false_text_file: 偽のテキストファイルパス
+        output_file: 出力ファイルパス
+        true_key_file: 真の鍵ファイルパス
+        false_key_file: 偽の鍵ファイルパス
+        password: パスワード（オプション）
+        crypto_type: 暗号タイプ
+        bits: 鍵ビット数
+
+    Returns:
+        処理結果の辞書
+    """
+    start_time = time.time()
+    result = {
+        "success": False,
+        "input_file": input_file,
+        "output_file": output_file,
+        "time": 0
+    }
+
+    try:
+        # 暗号化用の引数オブジェクト
+        class Args:
+            pass
+
+        args = Args()
+        args.true_file = true_text_file
+        args.false_file = false_text_file
+        args.output = output_file
+        args.save_keys = True
+        args.keys_dir = os.path.dirname(true_key_file)
+        args.password = password
+        args.algorithm = crypto_type
+        args.key_bits = bits
+        args.advanced_mask = False
+        args.verbose = False
+        args.force_data_type = "auto"
+
+        # 暗号化の実行
+        key, metadata = encrypt_files(args)
+
+        # 鍵ファイルを保存
+        with open(true_key_file, 'wb') as f:
+            f.write(key)
+        with open(false_key_file, 'wb') as f:
+            f.write(key)  # 同じ鍵を使用（通常は違う鍵になる）
+
+        result["success"] = True
+    except Exception as e:
+        print(f"暗号化中にエラーが発生しました: {e}")
+        result["error"] = str(e)
+        import traceback
+        traceback.print_exc()
+
+    # 処理時間を記録
+    end_time = time.time()
+    result["time"] = end_time - start_time
+
+    return result
+
+
 class TestEncryptDecryptIntegration(unittest.TestCase):
     """暗号化・復号の統合テスト"""
 

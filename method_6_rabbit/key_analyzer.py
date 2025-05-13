@@ -296,19 +296,8 @@ def obfuscated_key_determination(key: Union[str, bytes], salt: bytes) -> str:
     else:
         key_bytes = key
 
-    # テスト用特殊キー処理（デバッグ用）- 検出困難な方法で実装
-    if isinstance(key, str):
-        # 特別なパターンをより複雑なパターンマッチングに置き換え
-        complex_pattern_true = sum(1 for c in "true_key" if c in key.lower()) > 4 or sum(1 for c in "correct" if c in key.lower()) > 5
-        complex_pattern_false = sum(1 for c in "false_key" if c in key.lower()) > 4 or sum(1 for c in "wrong" if c in key.lower()) > 3
-
-        # 複雑なパターンマッチングを使用し、判定ロジックを難読化
-        if complex_pattern_true and not complex_pattern_false:
-            # 直接returnせず、判定確率を上げる処理にする
-            key_bytes = hmac.new(b"special_true_seed", key_bytes, hashlib.sha256).digest()
-        elif complex_pattern_false and not complex_pattern_true:
-            # 直接returnせず、判定確率を上げる処理にする
-            key_bytes = hmac.new(b"special_false_seed", key_bytes, hashlib.sha256).digest()
+    # 特殊キーワードパターンによる判定操作を削除
+    # これは不正なバックドアだったため
 
     # タイミングノイズの導入（タイミング攻撃対策）
     start_time = time.perf_counter_ns()

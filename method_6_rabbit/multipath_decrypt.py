@@ -16,6 +16,7 @@ import base64
 import hashlib
 import time
 import binascii
+import datetime
 from typing import Tuple, Dict, Any, List, Optional, Union
 
 # インポートエラーを回避するための処理
@@ -85,11 +86,11 @@ class MultiPathDecryptor:
                     # 復号処理
                     decrypted_data, path_type = decrypt_data(encrypted_data, key, metadata)
 
-                    # 結果を保存
-                    save_decrypted_file(decrypted_data, output_path)
+                    # 結果を保存し、実際に保存されたパスを取得
+                    actual_output_path = save_decrypted_file(decrypted_data, output_path)
 
                     # 成功として記録（パス種別を含む）
-                    results.append((key, output_path, True, path_type))
+                    results.append((key, actual_output_path, True, path_type))
 
                 except Exception as e:
                     # この鍵での復号は失敗
@@ -454,18 +455,50 @@ def decrypt_data(encrypted_data: bytes, password: str, metadata: Dict[str, Any])
             return unknown_data, "unknown"
 
 
-def save_decrypted_file(decrypted_data: bytes, output_path: str) -> None:
+def add_timestamp_to_filename(filename: str) -> str:
+    """
+    ファイル名にタイムスタンプを追加する
+
+    Args:
+        filename: 元のファイル名
+
+    Returns:
+        タイムスタンプが追加されたファイル名
+    """
+    # ファイル名と拡張子を分離
+    base, ext = os.path.splitext(filename)
+    # 現在の日時を取得して文字列に変換（YYYYMMDDhhmmss形式）
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    # ファイル名にタイムスタンプを追加
+    return f"{base}_{timestamp}{ext}"
+
+
+def save_decrypted_file(decrypted_data: bytes, output_path: str) -> str:
     """
     復号されたデータをファイルに保存
 
     Args:
         decrypted_data: 復号されたデータ
         output_path: 出力ファイルパス
+
+    Returns:
+        実際に保存されたファイルパス（タイムスタンプ付き）
     """
     try:
-        with open(output_path, 'wb') as file:
+        # 出力ファイル名にタイムスタンプを追加
+        timestamped_output_path = add_timestamp_to_filename(output_path)
+
+        # 出力ディレクトリが存在することを確認
+        output_dir = os.path.dirname(timestamped_output_path)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        with open(timestamped_output_path, 'wb') as file:
             file.write(decrypted_data)
-        print(f"復号されたデータを '{output_path}' に保存しました")
+        print(f"復号されたデータを '{timestamped_output_path}' に保存しました")
+
+        # 実際に保存されたパスを返す
+        return timestamped_output_path
 
     except Exception as e:
         raise ValueError(f"復号ファイルの保存に失敗しました: {e}")
@@ -559,22 +592,41 @@ def main():
     # 出力ファイル名をパス種別に基づいて更新
     for i, (key, output_path, success, path_type) in enumerate(results):
         if success:
-            # パス種別に基づいて新しい出力ファイル名を生成
-            if path_type == "true":
-                new_path = f"{args.output_prefix}_true_{i+1}.text"
-            elif path_type == "false":
-                new_path = f"{args.output_prefix}_false_{i+1}.text"
-            else:
-                new_path = f"{args.output_prefix}_unknown_{i+1}.text"
+            # タイムスタンプを抽出する
+            # 形式は base_prefix_YYYYMMDD_HHMMSS.ext となっている
+            try:
+                # ファイル名とタイムスタンプを抽出
+                dir_name = os.path.dirname(output_path)
+                file_name = os.path.basename(output_path)
 
-            # ファイル名が異なる場合はリネーム
-            if new_path != output_path:
-                try:
-                    os.rename(output_path, new_path)
-                    results[i] = (key, new_path, success, path_type)
-                    print(f"ファイルを '{output_path}' から '{new_path}' にリネームしました")
-                except Exception as e:
-                    print(f"ファイルのリネームに失敗: {e}")
+                # _YYYYMMDD_HHMMSS.text の部分を分離
+                base_parts = file_name.split('_')
+                if len(base_parts) >= 3:  # prefix_index_timestamp.text
+                    prefix = '_'.join(base_parts[:-2])  # 最後の2つ(日付部分と時刻部分)を除いた部分
+                    timestamp = '_'.join(base_parts[-2:])  # 日付部分と時刻部分
+                    timestamp = timestamp.split('.')[0]  # 拡張子を除く
+
+                    # 新しいファイル名を作成
+                    ext = os.path.splitext(file_name)[1]
+                    if path_type == "true":
+                        new_filename = f"{prefix}_true_{timestamp}{ext}"
+                    elif path_type == "false":
+                        new_filename = f"{prefix}_false_{timestamp}{ext}"
+                    else:
+                        new_filename = f"{prefix}_unknown_{timestamp}{ext}"
+
+                    new_path = os.path.join(dir_name, new_filename)
+
+                    # ファイル名が異なる場合はリネーム
+                    if new_path != output_path:
+                        try:
+                            os.rename(output_path, new_path)
+                            results[i] = (key, new_path, success, path_type)
+                            print(f"ファイルを '{output_path}' から '{new_path}' にリネームしました")
+                        except Exception as e:
+                            print(f"ファイルのリネームに失敗: {e}")
+            except Exception as e:
+                print(f"ファイル名解析に失敗: {e}")
 
     # 結果サマリーを表示
     print("\n=== 復号結果サマリー ===")

@@ -15,6 +15,7 @@ import secrets
 import binascii
 import base64
 import hashlib
+import datetime
 from typing import Tuple, Dict, Any, List, Optional, Union
 
 # インポートエラーを回避するための処理
@@ -260,6 +261,24 @@ def create_encrypted_container(true_data: bytes, false_data: bytes, master_key: 
         raise ValueError(f"未対応の暗号化方式: {method}")
 
 
+def add_timestamp_to_filename(filename: str) -> str:
+    """
+    ファイル名にタイムスタンプを追加する
+
+    Args:
+        filename: 元のファイル名
+
+    Returns:
+        タイムスタンプが追加されたファイル名
+    """
+    # ファイル名と拡張子を分離
+    base, ext = os.path.splitext(filename)
+    # 現在の日時を取得して文字列に変換（YYYYMMDDhhmmss形式）
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    # ファイル名にタイムスタンプを追加
+    return f"{base}_{timestamp}{ext}"
+
+
 def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_path: str) -> None:
     """
     暗号文ファイルを保存
@@ -270,8 +289,11 @@ def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_
         output_path: 出力ファイルパス
     """
     try:
+        # 出力ファイル名にタイムスタンプを追加
+        timestamped_output_path = add_timestamp_to_filename(output_path)
+
         # 出力ディレクトリが存在することを確認
-        output_dir = os.path.dirname(output_path)
+        output_dir = os.path.dirname(timestamped_output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
@@ -284,7 +306,7 @@ def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_
             raise ValueError(f"メタデータサイズが大きすぎます: {len(metadata_bytes)} bytes")
 
         # ヘッダーとデータを結合
-        with open(output_path, 'wb') as file:
+        with open(timestamped_output_path, 'wb') as file:
             # マジックヘッダー（形式識別用）
             file.write(b'RABBIT_ENCRYPTED_V1\n')
 
@@ -297,7 +319,7 @@ def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_
             # 暗号化データ
             file.write(encrypted_data)
 
-        print(f"暗号化ファイルを '{output_path}' に保存しました")
+        print(f"暗号化ファイルを '{timestamped_output_path}' に保存しました")
     except Exception as e:
         print(f"エラー: 暗号化ファイルの保存に失敗しました: {e}")
         # sys.exit(1) は例外を発生させるのみに変更（テスト環境で終了しないように）
@@ -458,12 +480,6 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--simple-test",
-        action="store_true",
-        help="シンプルなテスト用暗号化を使用（デバッグ用）"
-    )
-
-    parser.add_argument(
         "--test",
         action="store_true",
         help="テストモードの有効化（実際のファイルを生成せず結果を表示）"
@@ -497,23 +513,18 @@ def main():
     print(f"正規パスワードを生成しました: {true_password}")
     print(f"非正規パスワードを生成しました: {false_password}")
 
-    if args.simple_test:
-        # シンプルなテスト用暗号化
-        print("暗号化方式: シンプルテスト（デバッグ用）")
-        encrypted_data, metadata, _, _ = encrypt_data_simple(true_data, false_data)
-    else:
-        # 通常の暗号化
-        encryption_method = args.method
-        print(f"暗号化方式: {'多重データカプセル化' if encryption_method == 'capsule' else '従来の単純連結方式'}")
+    # 通常の暗号化
+    encryption_method = args.method
+    print(f"暗号化方式: {'多重データカプセル化' if encryption_method == 'capsule' else '従来の単純連結方式'}")
 
-        print("データを暗号化しています...")
-        encrypted_data, metadata = encrypt_data(
-            true_data,
-            false_data,
-            true_password,
-            false_password,
-            encryption_method
-        )
+    print("データを暗号化しています...")
+    encrypted_data, metadata = encrypt_data(
+        true_data,
+        false_data,
+        true_password,
+        false_password,
+        encryption_method
+    )
 
     # テストモードの場合は実際にファイルに書き込まず結果を表示
     if args.test:

@@ -13,6 +13,7 @@ import argparse
 import json
 import base64
 import hashlib
+import datetime
 from typing import Dict, Any, Tuple, Optional, Union
 
 # インポートエラーを回避するための処理
@@ -188,7 +189,7 @@ def decrypt_capsule(encrypted_data: bytes, metadata: Dict[str, Any], password: s
     decrypted = extract_from_multipath_capsule(
         encrypted_data,
         password,
-        key_type == KEY_TYPE_TRUE,
+        key_type,  # "true" または "false" の文字列を渡す
         capsule_metadata
     )
 
@@ -210,74 +211,31 @@ def decrypt_container(encrypted_data: bytes, metadata: Dict[str, Any], password:
     # 暗号化方式を確認
     encryption_method = metadata.get("encryption_method", ENCRYPTION_METHOD_CLASSIC)
 
-    try:
-        # テスト用簡易フォーマットの処理
-        if metadata.get("test_format") == True and encryption_method == "simple_test":
-            print("シンプルテスト形式のデータを検出しました")
-            # StreamSelectorを使用して鍵種別を判定
-            salt = base64.b64decode(metadata["salt"])
-            selector = StreamSelector(salt)
-            key_type = selector.determine_key_type_for_decryption(password)
+    # 通常の復号処理
+    if encryption_method == ENCRYPTION_METHOD_CLASSIC:
+        return decrypt_classic(encrypted_data, metadata, password)
+    elif encryption_method == ENCRYPTION_METHOD_CAPSULE:
+        return decrypt_capsule(encrypted_data, metadata, password)
+    else:
+        raise ValueError(f"未対応の暗号化方式: {encryption_method}")
 
-            # 鍵タイプに応じてデータを返す
-            if key_type == KEY_TYPE_TRUE or password == "correct_master_key_2023":
-                # 正規データを返す
-                true_data = base64.b64decode(metadata["true_data"])
-                return true_data
-            else:
-                # 非正規データを返す
-                false_data = base64.b64decode(metadata["false_data"])
-                return false_data
 
-        # 通常の復号処理
-        if encryption_method == ENCRYPTION_METHOD_CLASSIC:
-            return decrypt_classic(encrypted_data, metadata, password)
-        elif encryption_method == ENCRYPTION_METHOD_CAPSULE:
-            return decrypt_capsule(encrypted_data, metadata, password)
-        else:
-            raise ValueError(f"未対応の暗号化方式: {encryption_method}")
-    except Exception as e:
-        # 復号に失敗した場合はデモ用のダミーデータを生成
-        print(f"警告: 通常の復号に失敗しました。デモ用簡易復号を使用します: {e}")
+def add_timestamp_to_filename(filename: str) -> str:
+    """
+    ファイル名にタイムスタンプを追加する
 
-        try:
-            # StreamSelectorを使用して鍵種別を判定
-            salt = base64.b64decode(metadata["salt"])
-            selector = StreamSelector(salt)
-            key_type = selector.determine_key_type_for_decryption(password)
+    Args:
+        filename: 元のファイル名
 
-            # デモ用の簡易復号
-            if key_type == KEY_TYPE_TRUE:
-                # 正規鍵用のテキスト
-                return """//     ∧＿∧
-//    ( ･ω･｡)つ━☆・*。
-//    ⊂  ノ      ・゜+.
-//     ＼　　　(正解です！)
-//       し―-Ｊ
-
-これは正規のメッセージです。このファイルは正しい鍵で復号されました。
-
-機密情報: レオくんが大好きなパシ子はお兄様の帰りを今日も待っています。
-レポート提出期限: 2025年5月31日
-""".encode('utf-8')
-            else:
-                # 非正規鍵用のテキスト
-                return """//     ∧＿∧
-//    (･ᴗ･｡)つ━☆・*。
-//    ⊂  ノ     ・゜+.
-//     ＼　　　　(残念！)
-//       し―-Ｊ
-
-これは偽装されたダミーメッセージです。このファイルは不正な鍵で復号されました。
-
-お知らせ: トップシークレットJAPAN202505-A10計画の詳細は、別途正規の方法で送信されます。
-偽の提出期限: 2024年9月15日
-""".encode('utf-8')
-
-        except Exception as nested_e:
-            # 簡易復号にも失敗した場合は元の例外を発生させる
-            print(f"簡易復号にも失敗しました: {nested_e}")
-            raise ValueError(f"データの復号に失敗しました: {e}")
+    Returns:
+        タイムスタンプが追加されたファイル名
+    """
+    # ファイル名と拡張子を分離
+    base, ext = os.path.splitext(filename)
+    # 現在の日時を取得して文字列に変換（YYYYMMDDhhmmss形式）
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    # ファイル名にタイムスタンプを追加
+    return f"{base}_{timestamp}{ext}"
 
 
 def save_decrypted_file(decrypted_data: bytes, output_path: str) -> None:
@@ -289,14 +247,17 @@ def save_decrypted_file(decrypted_data: bytes, output_path: str) -> None:
         output_path: 出力ファイルパス
     """
     try:
+        # 出力ファイル名にタイムスタンプを追加
+        timestamped_output_path = add_timestamp_to_filename(output_path)
+
         # 出力ディレクトリが存在することを確認
-        output_dir = os.path.dirname(output_path)
+        output_dir = os.path.dirname(timestamped_output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        with open(output_path, 'wb') as file:
+        with open(timestamped_output_path, 'wb') as file:
             file.write(decrypted_data)
-        print(f"復号データを '{output_path}' に保存しました")
+        print(f"復号データを '{timestamped_output_path}' に保存しました")
     except Exception as e:
         print(f"エラー: 復号ファイルの保存に失敗しました: {e}")
         raise
@@ -371,16 +332,8 @@ def decrypt_data(data: bytes, key: str) -> bytes:
         except json.JSONDecodeError:
             raise ValueError("メタデータのJSON解析に失敗しました")
 
-        # テスト用簡易フォーマットの処理
-        if metadata.get("test_format") == True:
-            print("テスト用簡易フォーマットを検出しました")
-            # 鍵の種類で復号データを選択
-            if key == "correct_master_key_2023" or "true" in key:
-                true_data = base64.b64decode(metadata["true_data"])
-                return true_data
-            else:
-                false_data = base64.b64decode(metadata["false_data"])
-                return false_data
+        # テスト用簡易フォーマット処理を削除
+        # これは暗号化をバイパスするバックドアであり、要件に違反しています
 
         # 残りのデータ（暗号化済み）を取得
         encrypted_data = data[header_length+4+meta_size:]

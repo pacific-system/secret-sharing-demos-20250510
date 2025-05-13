@@ -1,0 +1,27 @@
+{
+  "\u6697\u53f7\u5316": {
+    "success": true,
+    "time": 4.361234903335571,
+    "hash": "b3158a654c89df9c1dddf468d53a8d8dad277c40cf74e02e6bee598ba0e42ff5"
+  },
+  "TRUE\u30ad\u30fc\u5fa9\u53f7": {
+    "success": true,
+    "time": 5.336174964904785,
+    "match": true
+  },
+  "FALSE\u30ad\u30fc\u5fa9\u53f7": {
+    "success": true,
+    "time": 5.341952085494995,
+    "match": true
+  },
+  "\u30c6\u30ad\u30b9\u30c8\u5f37\u5236": {
+    "success": true,
+    "time": 5.4361488819122314,
+    "match": true
+  },
+  "\u30d0\u30a4\u30ca\u30ea\u5f37\u5236": {
+    "success": true,
+    "time": 5.2709879875183105,
+    "size": 362
+  }
+}

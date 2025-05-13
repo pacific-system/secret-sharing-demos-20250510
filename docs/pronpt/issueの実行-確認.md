@@ -11,11 +11,15 @@
 
 のなかの
 
-'準同型暗号マスキング方式 🎭 実装【子 Issue #5】：復号実装（decrypt.py）'
-'docs/issue/homomorphic_masking_method_5.md'
-(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/15)
+'準同型暗号マスキング方式 🎭 実装【子 Issue #6】：復号実装（decrypt.py）'
+'docs/issue/homomorphic_masking_method_6.md'
+(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/16)
 の実装結果に対して検収作業を行ってください
 必要があればチームの最高責任者として追加実装や修正を行なってください
+
+暗号複合の検査は以下のファイルを利用すること
+common/true-false-text/false.text
+common/true-false-text/true.text
 
 完了と定義される実装結果：
 
@@ -36,7 +40,7 @@
 - 検収が全て完了するまでレポートを作成しないでください
 - 検収レポートを'docs/issue'に MD 形式で生成
 - テストスクリプトで生成される画像を'git issue の書式で'添付(path 例：https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/homomorphic_operations.png?raw=true)
-- gh コマンドを実行し(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/15)にMDファイルをコメントとして投稿して検収レポートをチームで共有
+- gh コマンドを実行し(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/16)にMDファイルをコメントとして投稿して検収レポートをチームで共有
 
 - 'git commit'（パシ子スタイル。readme を含めること）
 - 'git push'

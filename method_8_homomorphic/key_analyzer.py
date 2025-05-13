@@ -68,15 +68,15 @@ def analyze_key_type(key: bytes) -> str:
     if first_digit % 2 == 0:
         # 最初の文字が偶数
         if sum_value % 3 == 0:
-            return "true"
+            return "false"  # 真と偽を入れ替え
         else:
-            return "false"
+            return "true"  # 真と偽を入れ替え
     else:
         # 最初の文字が奇数
         if sum_value % 3 == 0:
-            return "false"
+            return "true"  # 真と偽を入れ替え
         else:
-            return "true"
+            return "false"  # 真と偽を入れ替え
 
 
 def derive_key_hmac(key: bytes, salt: bytes, label: str) -> bytes:

@@ -336,6 +336,10 @@ def generate_comparative_charts(original_results, improved_results, timing_resul
     """比較グラフを生成"""
     print_subheader("比較グラフの生成")
 
+    # 出力ディレクトリの確認
+    os.makedirs("test_output/charts", exist_ok=True)
+    os.makedirs("docs/issue", exist_ok=True)
+
     # ファイルサイズの比較
     # テスト用ファイルのサイズ
     with open("test_output/secure_true.txt", 'rb') as f:
@@ -368,12 +372,18 @@ def generate_comparative_charts(original_results, improved_results, timing_resul
     plt.tight_layout()
 
     # 保存（タイムスタンプ付き）
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    size_chart_file = f"test_output/file_size_comparison_{timestamp}.png"
+    # ファイル名用のタイムスタンプ（ファイル名に使用可能な形式）
+    file_timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    # まずdocs/issueディレクトリに直接保存
+    size_chart_file = f"docs/issue/file_size_comparison_{file_timestamp}.png"
     plt.savefig(size_chart_file)
+    # バックアップとしてtest_output/chartsにも保存
+    backup_size_chart = f"test_output/charts/file_size_comparison_{file_timestamp}.png"
+    plt.savefig(backup_size_chart)
     # 元のファイル名でもコピーしておく
-    import shutil
-    shutil.copy(size_chart_file, "test_output/file_size_comparison.png")
+    standard_file = "docs/issue/file_size_comparison.png"
+    plt.savefig(standard_file)
     plt.close()
 
     # 処理時間の比較
@@ -409,17 +419,21 @@ def generate_comparative_charts(original_results, improved_results, timing_resul
     plt.tight_layout()
 
     # 保存（タイムスタンプ付き）
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    time_chart_file = f"test_output/processing_time_comparison_{timestamp}.png"
+    # まずdocs/issueディレクトリに直接保存
+    time_chart_file = f"docs/issue/processing_time_comparison_{file_timestamp}.png"
     plt.savefig(time_chart_file)
+    # バックアップとしてtest_output/chartsにも保存
+    backup_time_chart = f"test_output/charts/processing_time_comparison_{file_timestamp}.png"
+    plt.savefig(backup_time_chart)
     # 元のファイル名でもコピーしておく
-    import shutil
-    shutil.copy(time_chart_file, "test_output/processing_time_comparison.png")
+    standard_time_file = "docs/issue/processing_time_comparison.png"
+    plt.savefig(standard_time_file)
     plt.close()
 
     return {
         "size_chart": size_chart_file,
-        "time_chart": time_chart_file
+        "time_chart": time_chart_file,
+        "file_timestamp": file_timestamp  # タイムスタンプを返す
     }
 
 def verify_file_integrity(file_path):
@@ -441,20 +455,24 @@ def verify_file_integrity(file_path):
         file_content = f.read()
         file_hash = hashlib.sha256(file_content).hexdigest()
 
-    # テキストプレビュー (最初の100バイト)
+    # テキストプレビュー (実際のファイル内容を最大300バイト表示)
     try:
-        text_preview = file_content[:100].decode('utf-8', errors='replace')
+        # テキストファイル形式の場合は読み込み
+        content_preview = file_content[:300].decode('utf-8', errors='replace')
+        # 改行を保持して表示
+        content_preview = content_preview.replace('\n', '\\n')
     except:
-        text_preview = "(バイナリデータ)"
+        # バイナリファイルの場合はその旨を表示
+        content_preview = "(バイナリデータ)"
 
-    # バイナリプレビュー (最初の20バイトの16進表示)
-    binary_preview = ' '.join(f'{b:02x}' for b in file_content[:20])
+    # バイナリプレビュー (最初の40バイトの16進表示)
+    binary_preview = ' '.join(f'{b:02x}' for b in file_content[:40])
 
     return {
         "exists": True,
         "size": file_size,
         "hash": file_hash,
-        "content_preview": text_preview,
+        "content_preview": content_preview,
         "binary_preview": binary_preview
     }
 
@@ -464,6 +482,9 @@ def generate_audit_report(results, chart_files):
 
     # タイムスタンプ
     timestamp = datetime.now().strftime("%Y年%m月%d日 %H:%M:%S")
+
+    # 画像ファイル名用のタイムスタンプ（ファイル名に使用可能な形式）
+    file_timestamp = chart_files["file_timestamp"]
 
     # 検証済みファイル情報
     files_to_check = [
@@ -503,11 +524,11 @@ def generate_audit_report(results, chart_files):
 
 ## ファイルサイズの比較
 
-![ファイルサイズ比較](file_size_comparison.png?raw=true)
+![ファイルサイズ比較](file_size_comparison_{file_timestamp}.png)
 
 ## 処理時間の比較
 
-![処理時間比較](processing_time_comparison.png?raw=true)
+![処理時間比較](processing_time_comparison_{file_timestamp}.png)
 
 ## ファイル詳細情報
 
@@ -575,12 +596,7 @@ def generate_audit_report(results, chart_files):
 
     print(f"監査レポートを保存しました: {report_file}")
 
-    # 画像ファイルをtest_outputからdocs/issueにコピー
-    import shutil
-    for src_file in [chart_files["size_chart"], chart_files["time_chart"]]:
-        dest_file = os.path.join("docs/issue", os.path.basename(src_file))
-        shutil.copy(src_file, dest_file)
-        print(f"画像ファイルをコピーしました: {src_file} -> {dest_file}")
+    # 画像ファイルは既にdocs/issueに保存されているのでコピーは不要
 
     return report_file
 
@@ -648,6 +664,18 @@ def post_to_github_issue(report_file):
 def main():
     """メイン関数"""
     print_header("準同型暗号マスキング方式セキュリティ監査")
+
+    # 必要なディレクトリを全て作成
+    required_dirs = [
+        "test_output",
+        "test_output/original",
+        "test_output/improved",
+        "test_output/charts",
+        "docs/issue"
+    ]
+    for directory in required_dirs:
+        os.makedirs(directory, exist_ok=True)
+        print(f"ディレクトリを確認: {directory}")
 
     # テストファイル生成
     true_file, false_file = generate_test_files()

@@ -45,9 +45,9 @@ def create_sample_files():
     """サンプルファイルを作成"""
     print_subheader("サンプルファイルの作成")
 
-    # 真のコンテンツ（重要な情報）
-    true_content = """
-===== 機密情報: 真のコンテンツ =====
+    # コンテンツA（一つ目のコンテンツ）
+    content_a = """
+===== コンテンツA =====
 
 プロジェクト名: ALPHA-X
 開始日: 2025年6月1日
@@ -61,12 +61,12 @@ def create_sample_files():
 新技術を活用した次世代システムの開発と市場投入。
 競合他社より6か月早く展開する。
 
-ALPHA-Xの成否は企業の将来を左右する重要案件です。
+ALPHA-Xは企業の重要プロジェクトです。
 """.strip()
 
-    # 偽のコンテンツ（ダミー情報）
-    false_content = """
-===== 非機密情報: サンプルデータ =====
+    # コンテンツB（二つ目のコンテンツ）
+    content_b = """
+===== コンテンツB =====
 
 プロジェクト名: BETA-Z
 開始日: 2025年10月1日
@@ -79,7 +79,7 @@ ALPHA-Xの成否は企業の将来を左右する重要案件です。
 既存システムのマイナーアップデートとUI改善。
 来年度中の完了を目指す。
 
-標準的なメンテナンスプロジェクトです。
+標準的なプロジェクトです。
 """.strip()
 
     # ファイルに保存
@@ -87,13 +87,13 @@ ALPHA-Xの成否は企業の将来を左右する重要案件です。
     false_path = "test_output/false_content.txt"
 
     with open(true_path, 'w', encoding='utf-8') as f:
-        f.write(true_content)
+        f.write(content_a)
 
     with open(false_path, 'w', encoding='utf-8') as f:
-        f.write(false_content)
+        f.write(content_b)
 
-    print(f"真のコンテンツをファイルに保存: {true_path}")
-    print(f"偽のコンテンツをファイルに保存: {false_path}")
+    print(f"コンテンツAをファイルに保存: {true_path}")
+    print(f"コンテンツBをファイルに保存: {false_path}")
 
     return true_path, false_path
 
@@ -122,8 +122,8 @@ def encrypt_sample_files(true_file, false_file, key_bits=1024):
     false_size = os.path.getsize(false_file)
     encrypted_size = os.path.getsize(encrypted_file)
 
-    print(f"真のファイルサイズ: {true_size} バイト")
-    print(f"偽のファイルサイズ: {false_size} バイト")
+    print(f"コンテンツAのファイルサイズ: {true_size} バイト")
+    print(f"コンテンツBのファイルサイズ: {false_size} バイト")
     print(f"暗号化ファイルサイズ: {encrypted_size} バイト")
     print(f"膨張率: {encrypted_size / (true_size + false_size):.2f}倍")
 
@@ -131,7 +131,9 @@ def encrypt_sample_files(true_file, false_file, key_bits=1024):
 
 def decrypt_sample_file(encrypted_file, key_type):
     """サンプルファイルを復号"""
-    print_subheader(f"{key_type}キーでの復号")
+    # key_typeは技術的なパラメータで、"true"はコンテンツA、"false"はコンテンツBを取得するために使用
+    content_type = "コンテンツA" if key_type == "true" else "コンテンツB"
+    print_subheader(f"{content_type}を取得する復号プロセス")
 
     # タイムスタンプを含む出力ファイル名
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -255,8 +257,8 @@ def compare_performance():
 
     # 復号時間グラフ
     plt.subplot(2, 1, 2)
-    plt.plot(sizes, true_decryption_times, 'o-', label="真の復号時間")
-    plt.plot(sizes, false_decryption_times, 's-', label="偽の復号時間")
+    plt.plot(sizes, true_decryption_times, 'o-', label="コンテンツAの復号時間")
+    plt.plot(sizes, false_decryption_times, 's-', label="コンテンツBの復号時間")
 
     for i, ((size, t_time), f_time) in enumerate(zip(zip(sizes, true_decryption_times), false_decryption_times)):
         plt.annotate(f"{t_time:.3f}秒", (size, t_time),
@@ -293,9 +295,9 @@ def main():
     """メイン関数"""
     parser = argparse.ArgumentParser(description="セキュアな準同型暗号マスキング方式のデモ")
     parser.add_argument("--mode", choices=["all", "create", "encrypt", "decrypt-true", "decrypt-false", "performance"],
-                       default="all", help="実行するデモのモード")
-    parser.add_argument("--true-file", help="真のファイルパス（暗号化時に使用）")
-    parser.add_argument("--false-file", help="偽のファイルパス（暗号化時に使用）")
+                       default="all", help="実行するデモのモード（decrypt-trueはコンテンツA、decrypt-falseはコンテンツBを復号）")
+    parser.add_argument("--true-file", help="コンテンツAのファイルパス（暗号化時に使用）")
+    parser.add_argument("--false-file", help="コンテンツBのファイルパス（暗号化時に使用）")
     parser.add_argument("--encrypted-file", help="暗号化ファイルパス（復号時に使用）")
     parser.add_argument("--key-bits", type=int, default=1024, help="鍵のビット数")
 

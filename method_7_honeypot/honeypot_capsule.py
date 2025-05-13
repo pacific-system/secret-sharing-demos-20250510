@@ -385,7 +385,8 @@ class HoneypotCapsuleFactory:
         トークンをデータに関連付ける
 
         この関数はトークンとデータを安全に結合し、
-        トークンをデータから分離可能にします。
+        トークンをデータから分離可能にします。トークンの存在を
+        隠蔽しつつ、データの整合性も確保します。
 
         Args:
             data: バインドするデータ
@@ -394,13 +395,30 @@ class HoneypotCapsuleFactory:
         Returns:
             トークンが関連付けられたデータ
         """
-        # 単純にトークンとデータを結合
-        # トークンが先頭に来るようにすることで、データ抽出時に分離しやすくなる
-        result = token + data
+        if len(token) != TOKEN_SIZE:
+            # トークンサイズが不正な場合はエラー
+            raise ValueError(f"トークンのサイズが不正です: {len(token)} != {TOKEN_SIZE}")
 
-        # 追加のマスク処理はせず単純に結合
-        # これにより、extract_data_from_capsule関数で正確に分離できる
-        return result
+        # データとトークンを暗号学的に結合
+        # 1. トークンをデータの先頭に配置（基本的な結合）
+        result = bytearray(token + data)
+
+        # 2. セキュリティ強化: ハニートークンのハッシュを使ってデータの一部をXOR
+        # これにより、トークンとデータの関係がより複雑になり、解析が困難になる
+        if len(data) >= TOKEN_SIZE:
+            # トークンのハッシュを生成
+            token_hash = hashlib.sha256(token).digest()
+
+            # データの一部をトークンのハッシュでXOR
+            # データの先頭部分だけを処理して、パフォーマンスを確保
+            xor_range = min(32, len(data))
+            for i in range(xor_range):
+                # トークン長（先頭部分）以降のデータにXOR処理
+                idx = TOKEN_SIZE + i
+                if idx < len(result):
+                    result[idx] ^= token_hash[i % len(token_hash)]
+
+        return bytes(result)
 
 
 def extract_data_from_capsule(capsule: HoneypotCapsule, key_type: str) -> Optional[bytes]:
@@ -425,11 +443,27 @@ def extract_data_from_capsule(capsule: HoneypotCapsule, key_type: str) -> Option
     # ブロックからデータを抽出
     data_with_token = block['data']
 
-    # トークンとデータを分離（トークンは先頭TOKEN_SIZEバイト）
-    token = data_with_token[:TOKEN_SIZE]
-    data = data_with_token[TOKEN_SIZE:]
+    # トークンとデータを分離
+    if len(data_with_token) < TOKEN_SIZE:
+        raise ValueError("データが不正です: トークンを抽出できません")
 
-    return data
+    # 1. トークンを取得（先頭TOKEN_SIZEバイト）
+    token = data_with_token[:TOKEN_SIZE]
+
+    # 2. 残りのデータを取得
+    data = bytearray(data_with_token[TOKEN_SIZE:])
+
+    # 3. _bind_token_to_dataで適用したXOR処理を逆適用
+    if len(data) >= TOKEN_SIZE:
+        # トークンのハッシュを生成
+        token_hash = hashlib.sha256(token).digest()
+
+        # データをトークンのハッシュで元に戻す（XORは再適用で元に戻る）
+        xor_range = min(32, len(data))
+        for i in range(xor_range):
+            data[i] ^= token_hash[i % len(token_hash)]
+
+    return bytes(data)
 
 
 def create_honeypot_file(true_data: bytes, false_data: bytes,

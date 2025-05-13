@@ -132,7 +132,7 @@ def create_symmetric_encrypted_container(path_a_data: bytes, path_b_data: bytes)
     # ソルトを生成
     salt = os.urandom(SALT_SIZE)
 
-    # データ長を揃える
+    # データ長を揃える（データは完全に保持）
     max_length = max(len(path_a_data), len(path_b_data))
 
     # パディングを追加
@@ -326,7 +326,7 @@ def main():
         path_a_key, path_a_iv, _ = derive_key(path_a_password, salt)
         path_b_key, path_b_iv, _ = derive_key(path_b_password, salt)
 
-        # データ長を揃える
+        # データ長を揃える（データは完全に保持）
         max_length = max(len(path_a_data), len(path_b_data))
 
         # パディングを追加

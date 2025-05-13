@@ -250,8 +250,11 @@ def save_decrypted_file(decrypted_data: bytes, output_path: str, path_type: str)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
+        # NULL終端文字があれば取り除く（必要な場合のみ）
+        cleaned_data = decrypted_data.rstrip(b'\x00')
+
         with open(timestamped_output_path, 'wb') as file:
-            file.write(decrypted_data)
+            file.write(cleaned_data)
         print(f"復号データを '{timestamped_output_path}' に保存しました")
         return timestamped_output_path
     except Exception as e:

@@ -156,9 +156,17 @@ class SecureHomomorphicCrypto:
         true_seed = self._derive_mask_seed(true_content, "true")
         false_seed = self._derive_mask_seed(false_content, "false")
 
+        # 正確な元のバイト長を保存 (改善点)
+        true_byte_length = len(true_content)
+        false_byte_length = len(false_content)
+
+        # Base64でエンコードしてから整数に変換（改善点）
+        true_b64 = base64.b64encode(true_content)
+        false_b64 = base64.b64encode(false_content)
+
         # 各コンテンツを整数に変換
-        true_int = int.from_bytes(true_content, 'big')
-        false_int = int.from_bytes(false_content, 'big')
+        true_int = int.from_bytes(true_b64, 'big')
+        false_int = int.from_bytes(false_b64, 'big')
 
         # 暗号化（まだマスクなし）
         true_encrypted = self.paillier.encrypt(true_int, self.public_key)
@@ -210,7 +218,10 @@ class SecureHomomorphicCrypto:
             "public_key": self.public_key,
             # プライベートキーは含めない! これはテスト用途でのみ保存
             "content_size": max(len(true_content), len(false_content)),
-            "advanced_masks": self.use_advanced_masks
+            "true_byte_length": true_byte_length,  # 追加: 真のファイルの正確なバイト長
+            "false_byte_length": false_byte_length,  # 追加: 偽のファイルの正確なバイト長
+            "advanced_masks": self.use_advanced_masks,
+            "b64_encoded": True  # Base64エンコードを使用していることを明示
         }
 
         # IDマッピングを内部的に保持（復号時に必要）
@@ -292,16 +303,68 @@ class SecureHomomorphicCrypto:
 
         decrypted_int = self.paillier.decrypt(unmasked, self.private_key)
 
-        # 整数をバイト列に変換
-        content_size = metadata.get("content_size", 0)
-        byte_length = max((decrypted_int.bit_length() + 7) // 8, content_size)
-        decrypted_bytes = decrypted_int.to_bytes(byte_length, 'big')
+        # Base64エンコードされていた場合
+        if metadata.get("b64_encoded", False):
+            # 整数をバイト列に変換
+            try:
+                # 整数からBase64エンコードされたバイト列に戻す
+                byte_length = (decrypted_int.bit_length() + 7) // 8
+                encoded_bytes = decrypted_int.to_bytes(byte_length, 'big')
 
-        # 余分なゼロバイトを除去
-        while decrypted_bytes.startswith(b'\x00') and len(decrypted_bytes) > content_size:
-            decrypted_bytes = decrypted_bytes[1:]
+                # Base64デコード
+                try:
+                    decrypted_bytes = base64.b64decode(encoded_bytes)
+                    return decrypted_bytes
+                except Exception as e:
+                    # Base64デコードに失敗した場合
+                    print(f"Base64デコード失敗: {e}")
+                    # そのまま返す
+                    return encoded_bytes
+            except OverflowError as e:
+                print(f"整数からバイト列への変換に失敗: {e}")
+                # フォールバック: 元のサイズをバイト列に変換
+                if key_type == "true" and "true_byte_length" in metadata:
+                    byte_length = metadata["true_byte_length"]
+                elif key_type == "false" and "false_byte_length" in metadata:
+                    byte_length = metadata["false_byte_length"]
+                else:
+                    byte_length = metadata.get("content_size", 0)
 
-        return decrypted_bytes
+                # ゼロで埋めたバイト列を返す
+                return b'\x00' * byte_length
+        else:
+            # 従来の方法
+            # 正確なバイト長を取得
+            if key_type == "true" and "true_byte_length" in metadata:
+                byte_length = metadata["true_byte_length"]
+            elif key_type == "false" and "false_byte_length" in metadata:
+                byte_length = metadata["false_byte_length"]
+            else:
+                # 後方互換性のために残す
+                content_size = metadata.get("content_size", 0)
+                byte_length = max((decrypted_int.bit_length() + 7) // 8, content_size)
+
+            # 整数をバイト列に変換
+            try:
+                # 指定された長さでバイトに変換を試みる
+                decrypted_bytes = decrypted_int.to_bytes(byte_length, 'big')
+            except OverflowError:
+                # バイト長が足りない場合は、最小限必要なバイト長を計算
+                min_bytes_needed = (decrypted_int.bit_length() + 7) // 8
+                decrypted_bytes = decrypted_int.to_bytes(min_bytes_needed, 'big')
+
+                # バイト長が元のファイルサイズより小さい場合は、パディングを追加
+                if len(decrypted_bytes) < byte_length:
+                    padding = b'\x00' * (byte_length - len(decrypted_bytes))
+                    decrypted_bytes = padding + decrypted_bytes
+
+            # 余分なゼロバイトを除去する処理を改善
+            # 先頭の\x00バイトをすべて除去するのではなく、
+            # 元のファイルサイズになるまで調整
+            while len(decrypted_bytes) > byte_length:
+                decrypted_bytes = decrypted_bytes[1:]
+
+            return decrypted_bytes
 
     def save_encrypted_data(self, encrypted_data: Dict[str, Any], filename: str) -> None:
         """

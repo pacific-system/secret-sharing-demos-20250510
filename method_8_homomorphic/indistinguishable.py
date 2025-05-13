@@ -14,13 +14,17 @@ import hashlib
 import random
 import time
 import binascii
-from typing import Dict, List, Tuple, Union, Any, Callable
+import secrets
+import numpy as np
+from typing import Dict, List, Tuple, Union, Any, Callable, Optional
 
 from method_8_homomorphic.config import (
     KEY_SIZE_BYTES,
     SALT_SIZE,
-    KDF_ITERATIONS
+    KDF_ITERATIONS,
+    SECURITY_PARAMETER
 )
+from method_8_homomorphic.homomorphic import PaillierCrypto
 
 
 class IndistinguishableWrapper:
@@ -220,6 +224,143 @@ class IndistinguishableWrapper:
             time.sleep(min_execution_time - elapsed)
 
         return result
+
+
+# 準同型暗号の識別不能性機能
+def randomize_ciphertext(paillier: PaillierCrypto, ciphertext: int) -> int:
+    """
+    暗号文のランダム化（準同型再ランダム化）
+
+    同じ平文を暗号化しても毎回異なる暗号文が生成されるようにします。
+    準同型性を維持したまま、暗号文にランダム性を加えます。
+
+    Args:
+        paillier: 準同型暗号システムのインスタンス
+        ciphertext: ランダム化する暗号文
+
+    Returns:
+        ランダム化された暗号文
+    """
+    if paillier.public_key is None:
+        raise ValueError("公開鍵が設定されていません")
+
+    n = paillier.public_key['n']
+    n_squared = n * n
+
+    # ランダムな値 r (0 < r < n)
+    r = random.randint(1, n - 1)
+
+    # r^n mod n^2
+    rn = pow(r, n, n_squared)
+
+    # ランダム化: c' = c * r^n mod n^2
+    # これにより平文は変わらず、暗号文だけが変化する
+    return (ciphertext * rn) % n_squared
+
+
+def batch_randomize_ciphertexts(paillier: PaillierCrypto,
+                               ciphertexts: List[int]) -> List[int]:
+    """
+    複数の暗号文をまとめてランダム化
+
+    Args:
+        paillier: 準同型暗号システムのインスタンス
+        ciphertexts: ランダム化する暗号文のリスト
+
+    Returns:
+        ランダム化された暗号文のリスト
+    """
+    randomized = []
+    for ct in ciphertexts:
+        randomized.append(randomize_ciphertext(paillier, ct))
+    return randomized
+
+
+def interleave_ciphertexts(true_chunks: List[int],
+                          false_chunks: List[int],
+                          shuffle_seed: Optional[bytes] = None) -> Tuple[List[int], Dict[str, Any]]:
+    """
+    正規と非正規の暗号文チャンクを交互に配置し、ランダムに並べ替え
+
+    Args:
+        true_chunks: 正規の暗号文チャンク
+        false_chunks: 非正規の暗号文チャンク
+        shuffle_seed: シャッフルのシード値（省略時はランダム生成）
+
+    Returns:
+        (mixed_chunks, metadata): 混合された暗号文チャンクとメタデータ
+    """
+    # 両方のチャンクリストが同じ長さであることを確認
+    if len(true_chunks) != len(false_chunks):
+        # 長さが異なる場合は同じ長さにする（短い方を拡張）
+        max_len = max(len(true_chunks), len(false_chunks))
+        if len(true_chunks) < max_len:
+            true_chunks = true_chunks + true_chunks[:max_len - len(true_chunks)]
+        if len(false_chunks) < max_len:
+            false_chunks = false_chunks + false_chunks[:max_len - len(false_chunks)]
+
+    # インデックスのリストを作成
+    indices = list(range(len(true_chunks) * 2))
+
+    # シード値の設定
+    if shuffle_seed is None:
+        shuffle_seed = secrets.token_bytes(16)
+
+    # シードを使用してインデックスをシャッフル
+    rng = random.Random(int.from_bytes(shuffle_seed, 'big'))
+    rng.shuffle(indices)
+
+    # チャンクを結合してシャッフル後の順序に並べ替え
+    combined = []
+    mapping = []
+
+    for idx in indices:
+        chunk_type = "true" if idx < len(true_chunks) else "false"
+        original_idx = idx if idx < len(true_chunks) else idx - len(true_chunks)
+
+        if chunk_type == "true":
+            combined.append(true_chunks[original_idx])
+        else:
+            combined.append(false_chunks[original_idx])
+
+        mapping.append({"type": chunk_type, "index": original_idx})
+
+    # メタデータ（復号時に必要）
+    metadata = {
+        "shuffle_seed": shuffle_seed.hex(),
+        "mapping": mapping,
+        "original_true_length": len(true_chunks),
+        "original_false_length": len(false_chunks)
+    }
+
+    return combined, metadata
+
+
+def deinterleave_ciphertexts(mixed_chunks: List[int],
+                            metadata: Dict[str, Any],
+                            key_type: str) -> List[int]:
+    """
+    混合された暗号文チャンクから特定の種類のチャンクを抽出
+
+    Args:
+        mixed_chunks: 混合された暗号文チャンク
+        metadata: interleave_ciphertextsで生成されたメタデータ
+        key_type: 取得するチャンクの種類（"true" または "false"）
+
+    Returns:
+        抽出されたチャンク
+    """
+    mapping = metadata["mapping"]
+
+    # 鍵タイプに対応するチャンクだけを抽出
+    chunks = []
+    for i, entry in enumerate(mapping):
+        if entry["type"] == key_type:
+            chunks.append((entry["index"], mixed_chunks[i]))
+
+    # 元の順序に戻す
+    chunks.sort(key=lambda x: x[0])
+    return [chunk[1] for chunk in chunks]
 
 
 # 実装テスト用コード

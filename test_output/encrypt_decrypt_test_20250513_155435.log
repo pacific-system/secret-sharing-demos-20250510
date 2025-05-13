@@ -1,0 +1,42 @@
+=== 暗号学的ハニーポット方式 - 暗号化・復号テスト ===
+実行日時: 2025-05-13 15:54:35
+Python バージョン: 3.12.8 (v3.12.8:2dc476bcb91, Dec  3 2024, 14:43:20) [Clang 13.0.0 (clang-1300.0.29.30)]
+テスト開始...
+
+
+=== 基本的な暗号化と復号のテスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpuf2kx2fn/encrypted.hpot' に暗号文を書き込みました。
+暗号化ファイル: /var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpuf2kx2fn/encrypted.hpot
+正規鍵: 47cb3cec24073d6c43a4ad5b95a031337a0a635eef8b8e766d4abc27a84f0cc4
+非正規鍵: 0274ee1c68e686595604b5fc3c959a9bb06a2fe7afc73a4cffb8efdcf5a37291
+
+正規鍵での復号:
+
+非正規鍵での復号:
+復号結果:
+正規データ: これは正規の平文です。正しい鍵で読み取られるべきデータです。
+非正規データ: これは非正規の平文です。不正な鍵で読み取られるデータです。
+
+=== 不正な鍵でのエラー処理のテスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpalpz5xyk/encrypted.hpot' に暗号文を書き込みました。
+不正な鍵: cd448291083d96651b7dbd5c20f202882136a338d20b836883b1590cea9bfe64
+不正な鍵での復号: 期待通りにエラーが発生しました
+
+=== パフォーマンステスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpa1i2j49y/large_encrypted.hpot' に暗号文を書き込みました。
+1MBファイルの暗号化時間: 0.09秒
+1MBファイルの正規鍵復号時間: 0.14秒
+1MBファイルの非正規鍵復号時間: 0.13秒
+
+=== 実際のファイルを使用した暗号化と復号のテスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpzk_jrpow/real_encrypted.hpot' に暗号文を書き込みました。
+実際のファイルでのテスト: 成功
+
+=== タイミング攻撃耐性のテスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpr0hoogd_/encrypted.hpot' に暗号文を書き込みました。
+正規鍵の復号時間: 0.149937秒
+非正規鍵の復号時間: 0.121821秒
+時間差: 0.028116秒
+タイミング攻撃耐性: 良好（時間差が小さい）
+
+テスト完了。

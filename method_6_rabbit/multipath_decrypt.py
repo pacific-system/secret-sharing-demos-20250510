@@ -326,46 +326,7 @@ def decrypt_data_capsule(encrypted_data: bytes, password: str, metadata: Dict[st
             import traceback
             traceback.print_exc()
 
-        # エラー時はStreamSelectorで鍵種別を基にデモ用の簡易復号を試みる
-        try:
-            # StreamSelectorを使用して鍵種別を判定
-            selector = StreamSelector(base64.b64decode(metadata['salt']))
-            key_type = selector.determine_key_type_for_decryption(password)
-
-            # デモ用のダミーデータ生成
-            if key_type == KEY_TYPE_TRUE:
-                # trueの場合は正規データを返す
-                dummy_data = """//     ∧＿∧
-//    ( ･ω･｡)つ━☆・*。
-//    ⊂  ノ      ・゜+.
-//     ＼　　　(正解です！)
-//       し―-Ｊ
-
-これは正規のメッセージです。このファイルは鍵が正しい場合に復号されるべきファイルです。
-
-機密情報: レオくんが大好きなパシ子はお兄様の帰りを今日も待っています。
-レポート提出期限: 2025年5月31日
-""".encode('utf-8')
-                return dummy_data, "true"
-            else:
-                # falseの場合は非正規データを返す
-                dummy_data = """//     ∧＿∧
-//    (･ᴗ･｡)つ━☆・*。
-//    ⊂  ノ     ・゜+.
-//     ＼　　　　(残念！)
-//       し―-Ｊ
-
-これは偽装されたダミーメッセージです。このファイルは不正な鍵を使用した場合に表示されるべきファイルです。
-
-お知らせ: トップシークレットJAPAN202505-A10計画の詳細は、別途正規の方法で送信されます。
-偽の提出期限: 2024年9月15日
-""".encode('utf-8')
-                return dummy_data, "false"
-        except Exception as nested_e:
-            # 二次的な例外が発生した場合は元の例外を報告
-            print(f"デモ用復号にも失敗しました: {nested_e}")
-
-        # 最終的に例外を発生させる
+        # 例外を再発生させる
         raise ValueError(f"データの復号に失敗しました: {e}")
 
 
@@ -385,23 +346,8 @@ def decrypt_data(encrypted_data: bytes, password: str, metadata: Dict[str, Any])
     encryption_method = metadata.get('encryption_method', ENCRYPTION_METHOD_CLASSIC)
 
     try:
-        # テスト用簡易フォーマットの処理
-        if metadata.get("test_format") == True and encryption_method == "simple_test":
-            print("シンプルテスト形式のデータを検出しました")
-            # StreamSelectorを使用して鍵種別を判定
-            salt = base64.b64decode(metadata["salt"])
-            selector = StreamSelector(salt)
-            key_type = selector.determine_key_type_for_decryption(password)
-
-            # 鍵タイプに応じてデータを返す
-            if key_type == KEY_TYPE_TRUE or password == "correct_master_key_2023":
-                # 正規データを返す
-                true_data = base64.b64decode(metadata["true_data"])
-                return true_data, "true"
-            else:
-                # 非正規データを返す
-                false_data = base64.b64decode(metadata["false_data"])
-                return false_data, "false"
+        # テスト用簡易フォーマット処理は削除
+        # 不正なバックドア実装のため
 
         if encryption_method == ENCRYPTION_METHOD_CAPSULE:
             return decrypt_data_capsule(encrypted_data, password, metadata)
@@ -409,50 +355,11 @@ def decrypt_data(encrypted_data: bytes, password: str, metadata: Dict[str, Any])
             # デフォルトまたは明示的なclassic方式
             return decrypt_data_classic(encrypted_data, password, metadata)
     except Exception as e:
-        # 通常の復号に失敗した場合はデモ用のダミーデータを生成
-        print(f"警告: 通常の復号に失敗しました。デモ用簡易復号を使用します: {e}")
-
-        try:
-            # StreamSelectorを使用して鍵種別を判定
-            salt = base64.b64decode(metadata["salt"])
-            selector = StreamSelector(salt)
-            key_type = selector.determine_key_type_for_decryption(password)
-
-            # デモ用の簡易復号
-            if key_type == KEY_TYPE_TRUE:
-                # 正規鍵用のテキスト
-                dummy_data = """//     ∧＿∧
-//    ( ･ω･｡)つ━☆・*。
-//    ⊂  ノ      ・゜+.
-//     ＼　　　(正解です！)
-//       し―-Ｊ
-
-これは正規のメッセージです。このファイルは鍵が正しい場合に復号されるべきファイルです。
-
-機密情報: レオくんが大好きなパシ子はお兄様の帰りを今日も待っています。
-レポート提出期限: 2025年5月31日
-""".encode('utf-8')
-                return dummy_data, "true"
-            else:
-                # 非正規鍵用のテキスト
-                dummy_data = """//     ∧＿∧
-//    (･ᴗ･｡)つ━☆・*。
-//    ⊂  ノ     ・゜+.
-//     ＼　　　　(残念！)
-//       し―-Ｊ
-
-これは偽装されたダミーメッセージです。このファイルは不正な鍵を使用した場合に表示されるべきファイルです。
-
-お知らせ: トップシークレットJAPAN202505-A10計画の詳細は、別途正規の方法で送信されます。
-偽の提出期限: 2024年9月15日
-""".encode('utf-8')
-                return dummy_data, "false"
-
-        except Exception as nested_e:
-            # 簡易復号にも失敗した場合は不明なデータを返す
-            print(f"簡易復号にも失敗しました: {nested_e}")
-            unknown_data = f"復号に失敗しました: {e}\n追加エラー: {nested_e}".encode('utf-8')
-            return unknown_data, "unknown"
+        # エラーを伝播させる
+        print(f"警告: データの復号中にエラーが発生しました: {e}")
+        # エラー時のダミーデータ生成は削除
+        # 要件に違反するコードであったため
+        raise ValueError(f"データの復号に失敗しました: {e}")
 
 
 def add_timestamp_to_filename(filename: str) -> str:

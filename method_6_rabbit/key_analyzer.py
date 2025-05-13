@@ -251,29 +251,19 @@ def determine_key_type_advanced(key: Union[str, bytes], salt: bytes) -> str:
     else:
         key_bytes = key
 
-    # 特定のテストパスワードに対する特別処理を削除
-    # 本番環境でセキュリティリスクになるため
+    # ソルトを使ったHMACハッシュを計算して最初の4バイトを取得
+    hmac_hash = hmac.new(salt, key_bytes, hashlib.sha256).digest()[:4]
 
-    # 特徴抽出
-    features = compute_key_features(key_bytes, salt)
+    # 最初の4バイトを整数に変換して偶数/奇数判定
+    value = int.from_bytes(hmac_hash, byteorder='big')
 
-    # スコア評価
-    scores = evaluate_key_type(features, salt)
-
-    # 定数時間比較（タイミング攻撃対策）
-    # 注: 実際には両方のスコアを常に計算し、最後に一度だけ比較
-    result_true = scores[KEY_TYPE_TRUE]
-    result_false = scores[KEY_TYPE_FALSE]
-
-    # 硬いビットをソルトから導出（解析をさらに困難に）
-    hard_bit = hmac.new(salt, key_bytes + b"hard_bit", hashlib.sha256).digest()[0] % 2
-
-    # スコアが非常に近い場合（差が1%未満）はハードビットを使用
-    if abs(result_true - result_false) / max(result_true, result_false) < 0.01:
-        return KEY_TYPE_TRUE if hard_bit == 1 else KEY_TYPE_FALSE
-
-    # 通常の比較
-    return KEY_TYPE_TRUE if result_true > result_false else KEY_TYPE_FALSE
+    # 数学的に安定した判定: ハッシュ値が偶数ならtrue、奇数ならfalse
+    # これは確率的に約50%ずつに分かれるため、ランダムなパスワードに対して
+    # true/falseは均等に分布します
+    if value % 2 == 0:
+        return KEY_TYPE_TRUE
+    else:
+        return KEY_TYPE_FALSE
 
 
 def obfuscated_key_determination(key: Union[str, bytes], salt: bytes) -> str:
@@ -296,19 +286,8 @@ def obfuscated_key_determination(key: Union[str, bytes], salt: bytes) -> str:
     else:
         key_bytes = key
 
-    # テスト用特殊キー処理（デバッグ用）- 検出困難な方法で実装
-    if isinstance(key, str):
-        # 特別なパターンをより複雑なパターンマッチングに置き換え
-        complex_pattern_true = sum(1 for c in "true_key" if c in key.lower()) > 4 or sum(1 for c in "correct" if c in key.lower()) > 5
-        complex_pattern_false = sum(1 for c in "false_key" if c in key.lower()) > 4 or sum(1 for c in "wrong" if c in key.lower()) > 3
-
-        # 複雑なパターンマッチングを使用し、判定ロジックを難読化
-        if complex_pattern_true and not complex_pattern_false:
-            # 直接returnせず、判定確率を上げる処理にする
-            key_bytes = hmac.new(b"special_true_seed", key_bytes, hashlib.sha256).digest()
-        elif complex_pattern_false and not complex_pattern_true:
-            # 直接returnせず、判定確率を上げる処理にする
-            key_bytes = hmac.new(b"special_false_seed", key_bytes, hashlib.sha256).digest()
+    # 特殊キーワードパターンによる判定操作を削除
+    # これは不正なバックドアだったため
 
     # タイミングノイズの導入（タイミング攻撃対策）
     start_time = time.perf_counter_ns()

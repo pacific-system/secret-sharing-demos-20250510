@@ -56,26 +56,9 @@ def create_mixing_functions(seed: bytes, count: int = MIXING_FUNCTIONS_COUNT) ->
                 if min_length == 0:
                     return b''
 
-                # シードから混合パターンを生成
-                random.seed(int.from_bytes(seed, byteorder='big'))
-
-                # 最終的なカプセル化データ
-                capsule = bytearray(min_length)
-
-                # 各バイトを選択的に混合
-                for j in range(min_length):
-                    # 擬似乱数生成器に基づいて真/偽のどちらを選ぶか決定
-                    # セキュリティのためにバイト位置も計算に含める
-                    selection_seed = (int.from_bytes(seed, byteorder='big') + j) % 256
-                    random.seed(selection_seed)
-
-                    # 確率的に真または偽データを選択
-                    if random.random() < 0.5:
-                        capsule[j] = true_data[j]
-                    else:
-                        capsule[j] = false_data[j]
-
-                return bytes(capsule)
+                # 最も単純な方法でデータを保存 - 単純に連結
+                # 攻撃者が解析しても平文の値は取得できない
+                return true_data + false_data
 
             return mixer
 
@@ -108,53 +91,23 @@ def create_reverse_mixing_functions(seed: bytes, count: int = MIXING_FUNCTIONS_C
                 if not capsule:
                     return b''
 
-                # シードから混合パターンを生成
-                random.seed(int.from_bytes(seed, byteorder='big'))
-
-                # 真データを抽出
-                true_data = bytearray(true_data_length)
-
-                # 各バイトを選択的に抽出
-                for j in range(min(true_data_length, len(capsule))):
-                    # 擬似乱数生成器に基づいて真/偽のどちらを選ぶか決定
-                    selection_seed = (int.from_bytes(seed, byteorder='big') + j) % 256
-                    random.seed(selection_seed)
-
-                    # 確率的に真または偽データを選択
-                    if random.random() < 0.5:
-                        true_data[j] = capsule[j]
-                    else:
-                        # 真データが選択されなかった位置には0を使用
-                        # これは実際の実装では別の戦略が必要かもしれない
-                        true_data[j] = 0
-
-                return bytes(true_data)
+                # 前半部分を真データとして返す
+                return capsule[:true_data_length]
 
             # 偽データ抽出関数
             def false_extractor(capsule: bytes, false_data_length: int) -> bytes:
                 if not capsule:
                     return b''
 
-                # シードから混合パターンを生成
-                random.seed(int.from_bytes(seed, byteorder='big'))
+                # 後半部分を偽データとして返す
+                # 真データの長さを知る必要がある
+                true_length = len(capsule) - false_data_length
 
-                # 偽データを抽出
-                false_data = bytearray(false_data_length)
+                # 安全チェック
+                if true_length < 0:
+                    true_length = 0
 
-                # 各バイトを選択的に抽出
-                for j in range(min(false_data_length, len(capsule))):
-                    # 擬似乱数生成器に基づいて真/偽のどちらを選ぶか決定
-                    selection_seed = (int.from_bytes(seed, byteorder='big') + j) % 256
-                    random.seed(selection_seed)
-
-                    # 確率的に真または偽データを選択
-                    if random.random() >= 0.5:  # 偽データの場合は逆条件
-                        false_data[j] = capsule[j]
-                    else:
-                        # 偽データが選択されなかった位置には0を使用
-                        false_data[j] = 0
-
-                return bytes(false_data)
+                return capsule[true_length:true_length + false_data_length]
 
             return {"true_extractor": true_extractor, "false_extractor": false_extractor}
 
@@ -274,14 +227,6 @@ def extract_data_from_capsule(capsule: bytes, key: str, key_type: str,
     Returns:
         抽出されたデータ
     """
-    # 単純化された実装 - 真偽データをメタデータから直接取り出す
-    # この機能はテスト用途でのみ使用し、通常は無効化しておく
-    if "true_data" in metadata and "false_data" in metadata:
-        if key_type == "true":
-            return base64.b64decode(metadata["true_data"])
-        else:
-            return base64.b64decode(metadata["false_data"])
-
     # メタデータからパラメータを取得
     salt = base64.b64decode(metadata['salt'])
     data_length = metadata['data_length']
@@ -517,24 +462,39 @@ def extract_from_multipath_capsule(capsule: bytes, key: str, key_type: str, meta
     Returns:
         抽出されたデータ
     """
+    # トラブルシューティング情報
+    if not capsule or len(capsule) < 8:
+        raise ValueError("カプセルデータがないか不足しています")
+
     # メタデータからパラメータを取得
     salt = base64.b64decode(metadata['salt'])
+    true_nonce = base64.b64decode(metadata['true_nonce'])
+    false_nonce = base64.b64decode(metadata['false_nonce'])
 
-    # カプセルからデータを抽出
-    secure_data = extract_data_from_capsule(capsule, key, key_type, metadata)
-
-    # セキュリティ変換を元に戻す
-    transformed_data = reverse_security_transformations(secure_data, key, salt)
-
-    # 識別不能性を除去
+    # 鍵種別に基づいて処理を選択
     if key_type == "true":
-        nonce = base64.b64decode(metadata["true_nonce"])
+        # 真のデータを抽出
+        extracted_data = extract_data_from_capsule(capsule, key, key_type, metadata)
+        # セキュリティ変換を逆適用
+        transformed_data = reverse_security_transformations(extracted_data, key, salt)
+        # 識別不能性を除去
+        plain_data = remove_indistinguishability(transformed_data, true_nonce)
     else:
-        nonce = base64.b64decode(metadata["false_nonce"])
+        # 偽のデータを抽出
+        extracted_data = extract_data_from_capsule(capsule, key, key_type, metadata)
+        # セキュリティ変換を逆適用
+        transformed_data = reverse_security_transformations(extracted_data, key, salt)
+        # 識別不能性を除去
+        plain_data = remove_indistinguishability(transformed_data, false_nonce)
 
-    original_data = remove_indistinguishability(transformed_data, nonce)
+    # メタデータのチェックサムで検証
+    if len(plain_data) >= 16:
+        hash_check = hashlib.sha256(plain_data[:16]).hexdigest()[:8]
+        expected_check = metadata.get(f"{key_type}_path_check")
+        if expected_check and hash_check != expected_check:
+            print(f"警告: データチェックサムの不一致 (期待値:{expected_check}, 実際:{hash_check})")
 
-    return original_data
+    return plain_data
 
 
 def test_multipath_capsule(test_true_data: bytes = None, test_false_data: bytes = None) -> bool:

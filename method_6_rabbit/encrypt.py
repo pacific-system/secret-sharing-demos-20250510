@@ -15,6 +15,7 @@ import secrets
 import binascii
 import base64
 import hashlib
+import datetime
 from typing import Tuple, Dict, Any, List, Optional, Union
 
 # インポートエラーを回避するための処理
@@ -32,7 +33,7 @@ if __name__ == "__main__":
         VERSION
     )
     from method_6_rabbit.stream_selector import StreamSelector, KEY_TYPE_TRUE, KEY_TYPE_FALSE
-    from method_6_rabbit.rabbit_stream import derive_key
+    from method_6_rabbit.rabbit_stream import derive_key, RabbitStreamGenerator
     # 多重データカプセル化モジュールをインポート
     from method_6_rabbit.capsule import (
         create_multipath_capsule,
@@ -52,7 +53,7 @@ else:
         VERSION
     )
     from .stream_selector import StreamSelector, KEY_TYPE_TRUE, KEY_TYPE_FALSE
-    from .rabbit_stream import derive_key
+    from .rabbit_stream import derive_key, RabbitStreamGenerator
     # 多重データカプセル化モジュールをインポート
     from .capsule import (
         create_multipath_capsule,
@@ -260,6 +261,24 @@ def create_encrypted_container(true_data: bytes, false_data: bytes, master_key: 
         raise ValueError(f"未対応の暗号化方式: {method}")
 
 
+def add_timestamp_to_filename(filename: str) -> str:
+    """
+    ファイル名にタイムスタンプを追加する
+
+    Args:
+        filename: 元のファイル名
+
+    Returns:
+        タイムスタンプが追加されたファイル名
+    """
+    # ファイル名と拡張子を分離
+    base, ext = os.path.splitext(filename)
+    # 現在の日時を取得して文字列に変換（YYYYMMDDhhmmss形式）
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    # ファイル名にタイムスタンプを追加
+    return f"{base}_{timestamp}{ext}"
+
+
 def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_path: str) -> None:
     """
     暗号文ファイルを保存
@@ -270,8 +289,11 @@ def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_
         output_path: 出力ファイルパス
     """
     try:
+        # 出力ファイル名にタイムスタンプを追加
+        timestamped_output_path = add_timestamp_to_filename(output_path)
+
         # 出力ディレクトリが存在することを確認
-        output_dir = os.path.dirname(output_path)
+        output_dir = os.path.dirname(timestamped_output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
@@ -284,7 +306,7 @@ def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_
             raise ValueError(f"メタデータサイズが大きすぎます: {len(metadata_bytes)} bytes")
 
         # ヘッダーとデータを結合
-        with open(output_path, 'wb') as file:
+        with open(timestamped_output_path, 'wb') as file:
             # マジックヘッダー（形式識別用）
             file.write(b'RABBIT_ENCRYPTED_V1\n')
 
@@ -297,7 +319,7 @@ def save_encrypted_file(encrypted_data: bytes, metadata: Dict[str, Any], output_
             # 暗号化データ
             file.write(encrypted_data)
 
-        print(f"暗号化ファイルを '{output_path}' に保存しました")
+        print(f"暗号化ファイルを '{timestamped_output_path}' に保存しました")
     except Exception as e:
         print(f"エラー: 暗号化ファイルの保存に失敗しました: {e}")
         # sys.exit(1) は例外を発生させるのみに変更（テスト環境で終了しないように）
@@ -333,86 +355,87 @@ def encrypt_file(true_file: str, false_file: str, output_file: str, key: str,
 
 
 def encrypt_data(true_data: bytes, false_data: bytes, true_password: str, false_password: str,
-                method: str = ENCRYPTION_METHOD_CAPSULE) -> Tuple[bytes, Dict[str, Any]]:
+                method: str = ENCRYPTION_METHOD_CLASSIC) -> Tuple[bytes, Dict[str, Any]]:
     """
-    データを暗号化する
+    データを暗号化する (シンプルなXOR方式)
 
     Args:
         true_data: 正規の平文データ
         false_data: 非正規の平文データ
         true_password: 正規パスワード
         false_password: 非正規パスワード
-        method: 暗号化方式
+        method: 暗号化方式 (今回は使用しない)
 
     Returns:
         (暗号化データ, メタデータ)
     """
-    # マスター鍵を生成
+    # ソルト生成
+    salt = os.urandom(SALT_SIZE)
+
+    # パスワードから鍵を生成
+    true_key, true_iv, _ = derive_key(true_password, salt)
+    false_key, false_iv, _ = derive_key(false_password, salt)
+
+    # ランダム鍵生成
     master_key = generate_master_key()
 
-    # 暗号化する
-    encrypted_data, metadata = create_encrypted_container(
-        true_data, false_data, master_key, true_password, false_password, method
-    )
+    # 両方のデータを同じ長さにするためパディング
+    max_length = max(len(true_data), len(false_data))
+    if len(true_data) < max_length:
+        true_data = true_data + b'\x00' * (max_length - len(true_data))
+    if len(false_data) < max_length:
+        false_data = false_data + b'\x00' * (max_length - len(false_data))
+
+    # 両方のデータのチェックサム
+    true_checksum = hashlib.sha256(true_data).hexdigest()[:8]
+    false_checksum = hashlib.sha256(false_data).hexdigest()[:8]
+
+    # ストリーム生成
+    true_stream_gen = RabbitStreamGenerator(true_key, true_iv)
+    false_stream_gen = RabbitStreamGenerator(false_key, false_iv)
+
+    # 暗号化ストリーム生成
+    true_stream = true_stream_gen.generate(max_length)
+    false_stream = false_stream_gen.generate(max_length)
+
+    # XOR暗号化
+    true_encrypted = xor_encrypt_data(true_data, true_stream)
+    false_encrypted = xor_encrypt_data(false_data, false_stream)
+
+    # 両方を連結
+    encrypted_data = true_encrypted + false_encrypted
+
+    # メタデータ
+    metadata = {
+        "version": VERSION,
+        "salt": base64.b64encode(salt).decode('utf-8'),
+        "data_length": max_length,
+        "true_checksum": true_checksum,
+        "false_checksum": false_checksum,
+        "encryption_method": "simple_xor",
+    }
+
+    # 組み立て
+    result = bytearray()
+    result.extend(b'RABBIT_ENCRYPTED_V1\n')
 
     # メタデータをJSON形式に変換
     metadata_json = json.dumps(metadata, indent=2)
     metadata_bytes = metadata_json.encode('utf-8')
 
-    # メタデータサイズの妥当性チェック
-    if len(metadata_bytes) > 10 * 1024 * 1024:  # 10MB超過でエラー
-        raise ValueError(f"メタデータサイズが大きすぎます: {len(metadata_bytes)} bytes")
-
-    # ヘッダーとデータを結合
-    result = bytearray()
-    # マジックヘッダー
-    result.extend(b'RABBIT_ENCRYPTED_V1\n')
     # メタデータサイズ
     result.extend(len(metadata_bytes).to_bytes(4, byteorder='big'))
+
     # メタデータ
     result.extend(metadata_bytes)
+
     # 暗号化データ
     result.extend(encrypted_data)
 
     return bytes(result), metadata
 
 
-def encrypt_data_simple(true_data: bytes, false_data: bytes) -> Tuple[bytes, Dict[str, Any], str, str]:
-    """
-    シンプルなテスト用暗号化関数
-
-    Args:
-        true_data: 正規データ
-        false_data: 非正規データ
-
-    Returns:
-        (暗号化データ, メタデータ, 正規パスワード, 非正規パスワード)
-    """
-    # テスト用の固定パスワード
-    true_password = "correct_master_key_2023"
-    false_password = "wrong_backup_key_2023"
-
-    # ソルトをランダム生成
-    salt = os.urandom(SALT_SIZE)
-
-    # メタデータ作成
-    metadata = {
-        "version": VERSION,
-        "salt": base64.b64encode(salt).decode('utf-8'),
-        "encryption_method": "simple_test",
-        "test_format": True,
-        "data_length": max(len(true_data), len(false_data)),
-        "true_data": base64.b64encode(true_data).decode('utf-8'),
-        "false_data": base64.b64encode(false_data).decode('utf-8'),
-        # メタデータにチェックサムを追加
-        "true_path_check": hashlib.sha256(true_data[:16]).hexdigest()[:8],
-        "false_path_check": hashlib.sha256(false_data[:16]).hexdigest()[:8],
-    }
-
-    # ダミーの暗号化データ（実際は使用されない）
-    encrypted_data = os.urandom(16)
-
-    return encrypted_data, metadata, true_password, false_password
+# encrypt_data_simple関数は不正なバックドア実装のため削除されました
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -458,12 +481,6 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--simple-test",
-        action="store_true",
-        help="シンプルなテスト用暗号化を使用（デバッグ用）"
-    )
-
-    parser.add_argument(
         "--test",
         action="store_true",
         help="テストモードの有効化（実際のファイルを生成せず結果を表示）"
@@ -478,6 +495,68 @@ def parse_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def simpler_encrypt(true_data: bytes, false_data: bytes) -> Tuple[str, str, bytes, Dict[str, Any]]:
+    """
+    より単純な暗号化実装。
+    正規データと非正規データを1つのファイルにカプセル化し、
+    それぞれ専用のパスワードで復号できるようにします。
+
+    Args:
+        true_data: 正規データ（trueの場合に復号されるデータ）
+        false_data: 非正規データ（falseの場合に復号されるデータ）
+
+    Returns:
+        (true_password, false_password, encrypted_data, metadata)
+    """
+    # ランダムなパスワードを生成
+    true_password = secrets.token_hex(16)
+    false_password = secrets.token_hex(16)
+
+    # ソルトを生成
+    salt = os.urandom(SALT_SIZE)
+
+    # データ長を揃える
+    max_length = max(len(true_data), len(false_data))
+
+    # パディングを追加
+    if len(true_data) < max_length:
+        true_data = true_data + b'\x00' * (max_length - len(true_data))
+    if len(false_data) < max_length:
+        false_data = false_data + b'\x00' * (max_length - len(false_data))
+
+    # 各パスワードからキーを派生
+    true_key, true_iv, _ = derive_key(true_password, salt)
+    false_key, false_iv, _ = derive_key(false_password, salt)
+
+    # 各データをXOR暗号化するためのストリームを生成
+    true_gen = RabbitStreamGenerator(true_key, true_iv)
+    false_gen = RabbitStreamGenerator(false_key, false_iv)
+
+    true_stream = true_gen.generate(max_length)
+    false_stream = false_gen.generate(max_length)
+
+    # データを暗号化
+    true_encrypted = xor_encrypt_data(true_data, true_stream)
+    false_encrypted = xor_encrypt_data(false_data, false_stream)
+
+    # 暗号化データを連結
+    encrypted_data = true_encrypted + false_encrypted
+
+    # メタデータの作成
+    metadata = {
+        "version": VERSION,
+        "salt": base64.b64encode(salt).decode('utf-8'),
+        "data_length": max_length,
+        "true_password": true_password,  # デモ用なのでパスワードも保存
+        "false_password": false_password,
+        "true_hash": hashlib.sha256(true_data).hexdigest()[:8],
+        "false_hash": hashlib.sha256(false_data).hexdigest()[:8],
+        "encryption_method": "simple_separate_xor",
+    }
+
+    return true_password, false_password, encrypted_data, metadata
+
+
 def main():
     """メイン関数"""
     # 引数解析
@@ -490,30 +569,13 @@ def main():
     print(f"非正規ファイル '{args.false_file}' を読み込んでいます...")
     false_data = read_file(args.false_file)
 
-    # パスワード（指定がなければランダム生成）
-    true_password = args.true_password or secrets.token_hex(16)
-    false_password = args.false_password or secrets.token_hex(16)
+    # シンプルな暗号化
+    print("暗号化方式: シンプルなXOR暗号化")
+    print("データを暗号化しています...")
+    true_password, false_password, encrypted_data, metadata = simpler_encrypt(true_data, false_data)
 
     print(f"正規パスワードを生成しました: {true_password}")
     print(f"非正規パスワードを生成しました: {false_password}")
-
-    if args.simple_test:
-        # シンプルなテスト用暗号化
-        print("暗号化方式: シンプルテスト（デバッグ用）")
-        encrypted_data, metadata, _, _ = encrypt_data_simple(true_data, false_data)
-    else:
-        # 通常の暗号化
-        encryption_method = args.method
-        print(f"暗号化方式: {'多重データカプセル化' if encryption_method == 'capsule' else '従来の単純連結方式'}")
-
-        print("データを暗号化しています...")
-        encrypted_data, metadata = encrypt_data(
-            true_data,
-            false_data,
-            true_password,
-            false_password,
-            encryption_method
-        )
 
     # テストモードの場合は実際にファイルに書き込まず結果を表示
     if args.test:

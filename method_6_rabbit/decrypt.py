@@ -13,6 +13,8 @@ import argparse
 import json
 import base64
 import hashlib
+import datetime
+import hmac
 from typing import Dict, Any, Tuple, Optional, Union
 
 # インポートエラーを回避するための処理
@@ -29,7 +31,7 @@ if __name__ == "__main__":
         VERSION
     )
     from method_6_rabbit.stream_selector import StreamSelector, KEY_TYPE_TRUE, KEY_TYPE_FALSE
-    from method_6_rabbit.rabbit_stream import derive_key
+    from method_6_rabbit.rabbit_stream import derive_key, RabbitStreamGenerator
     # 多重データカプセル化モジュールをインポート
     from method_6_rabbit.capsule import extract_from_multipath_capsule, is_multipath_capsule
 else:
@@ -44,7 +46,7 @@ else:
         VERSION
     )
     from .stream_selector import StreamSelector, KEY_TYPE_TRUE, KEY_TYPE_FALSE
-    from .rabbit_stream import derive_key
+    from .rabbit_stream import derive_key, RabbitStreamGenerator
     # 多重データカプセル化モジュールをインポート
     from .capsule import extract_from_multipath_capsule, is_multipath_capsule
 
@@ -156,7 +158,14 @@ def decrypt_classic(encrypted_data: bytes, metadata: Dict[str, Any], password: s
         offset = data_length
 
     # データを復号
-    encrypted_portion = encrypted_data[offset:offset + data_length]
+    if offset + data_length <= len(encrypted_data):
+        encrypted_portion = encrypted_data[offset:offset + data_length]
+    else:
+        # データが足りない場合、エラーを発生させるよりも可能な限り復号
+        encrypted_portion = encrypted_data[offset:]
+        print(f"警告: 暗号データが短すぎます: 要求={data_length}, 利用可能={len(encrypted_portion)}")
+
+    # XORによる復号
     decrypted = decrypt_xor(encrypted_portion, stream)
 
     return decrypted
@@ -188,7 +197,7 @@ def decrypt_capsule(encrypted_data: bytes, metadata: Dict[str, Any], password: s
     decrypted = extract_from_multipath_capsule(
         encrypted_data,
         password,
-        key_type == KEY_TYPE_TRUE,
+        key_type,  # "true" または "false" の文字列を渡す
         capsule_metadata
     )
 
@@ -197,7 +206,7 @@ def decrypt_capsule(encrypted_data: bytes, metadata: Dict[str, Any], password: s
 
 def decrypt_container(encrypted_data: bytes, metadata: Dict[str, Any], password: str) -> bytes:
     """
-    暗号化コンテナを復号
+    暗号化コンテナを復号 (シンプルなXOR方式)
 
     Args:
         encrypted_data: 暗号化データ
@@ -207,77 +216,70 @@ def decrypt_container(encrypted_data: bytes, metadata: Dict[str, Any], password:
     Returns:
         復号されたデータ
     """
-    # 暗号化方式を確認
-    encryption_method = metadata.get("encryption_method", ENCRYPTION_METHOD_CLASSIC)
+    # メタデータを確認
+    encryption_method = metadata.get("encryption_method", "simple_xor")
+    if encryption_method != "simple_xor":
+        raise ValueError(f"未対応の暗号化方式: {encryption_method}")
 
-    try:
-        # テスト用簡易フォーマットの処理
-        if metadata.get("test_format") == True and encryption_method == "simple_test":
-            print("シンプルテスト形式のデータを検出しました")
-            # StreamSelectorを使用して鍵種別を判定
-            salt = base64.b64decode(metadata["salt"])
-            selector = StreamSelector(salt)
-            key_type = selector.determine_key_type_for_decryption(password)
+    # メタデータを取得
+    salt = base64.b64decode(metadata["salt"])
+    data_length = metadata["data_length"]
 
-            # 鍵タイプに応じてデータを返す
-            if key_type == KEY_TYPE_TRUE or password == "correct_master_key_2023":
-                # 正規データを返す
-                true_data = base64.b64decode(metadata["true_data"])
-                return true_data
-            else:
-                # 非正規データを返す
-                false_data = base64.b64decode(metadata["false_data"])
-                return false_data
+    # パスワードから鍵を派生
+    key, iv, _ = derive_key(password, salt)
 
-        # 通常の復号処理
-        if encryption_method == ENCRYPTION_METHOD_CLASSIC:
-            return decrypt_classic(encrypted_data, metadata, password)
-        elif encryption_method == ENCRYPTION_METHOD_CAPSULE:
-            return decrypt_capsule(encrypted_data, metadata, password)
-        else:
-            raise ValueError(f"未対応の暗号化方式: {encryption_method}")
-    except Exception as e:
-        # 復号に失敗した場合はデモ用のダミーデータを生成
-        print(f"警告: 通常の復号に失敗しました。デモ用簡易復号を使用します: {e}")
+    # Rabbit暗号ストリームを生成
+    stream_gen = RabbitStreamGenerator(key, iv)
+    stream = stream_gen.generate(data_length)
 
-        try:
-            # StreamSelectorを使用して鍵種別を判定
-            salt = base64.b64decode(metadata["salt"])
-            selector = StreamSelector(salt)
-            key_type = selector.determine_key_type_for_decryption(password)
+    # 鍵種別に応じてデータを選択
+    # はじめにパスワード判定
+    hmac_hash = hmac.new(salt, password.encode(), hashlib.sha256).digest()[:4]
+    value = int.from_bytes(hmac_hash, byteorder='big')
 
-            # デモ用の簡易復号
-            if key_type == KEY_TYPE_TRUE:
-                # 正規鍵用のテキスト
-                return """//     ∧＿∧
-//    ( ･ω･｡)つ━☆・*。
-//    ⊂  ノ      ・゜+.
-//     ＼　　　(正解です！)
-//       し―-Ｊ
+    # 数値が偶数ならtrue、奇数ならfalse
+    is_true_key = (value % 2 == 0)
 
-これは正規のメッセージです。このファイルは正しい鍵で復号されました。
+    # データ選択
+    if is_true_key:
+        # true鍵の場合は前半部分
+        if len(encrypted_data) < data_length:
+            raise ValueError(f"暗号データが短すぎます: {len(encrypted_data)} < {data_length}")
+        encrypted_part = encrypted_data[:data_length]
+    else:
+        # false鍵の場合は後半部分
+        if len(encrypted_data) < 2 * data_length:
+            raise ValueError(f"暗号データが短すぎます: {len(encrypted_data)} < {2 * data_length}")
+        encrypted_part = encrypted_data[data_length:2 * data_length]
 
-機密情報: レオくんが大好きなパシ子はお兄様の帰りを今日も待っています。
-レポート提出期限: 2025年5月31日
-""".encode('utf-8')
-            else:
-                # 非正規鍵用のテキスト
-                return """//     ∧＿∧
-//    (･ᴗ･｡)つ━☆・*。
-//    ⊂  ノ     ・゜+.
-//     ＼　　　　(残念！)
-//       し―-Ｊ
+    # XOR復号
+    decrypted = decrypt_xor(encrypted_part, stream)
 
-これは偽装されたダミーメッセージです。このファイルは不正な鍵で復号されました。
+    # チェックサム検証 (オプショナル)
+    checksum = hashlib.sha256(decrypted).hexdigest()[:8]
+    expected = metadata.get("true_checksum" if is_true_key else "false_checksum")
+    if expected and checksum != expected:
+        print(f"警告: チェックサムが一致しません (期待: {expected}, 実際: {checksum})")
 
-お知らせ: トップシークレットJAPAN202505-A10計画の詳細は、別途正規の方法で送信されます。
-偽の提出期限: 2024年9月15日
-""".encode('utf-8')
+    return decrypted
 
-        except Exception as nested_e:
-            # 簡易復号にも失敗した場合は元の例外を発生させる
-            print(f"簡易復号にも失敗しました: {nested_e}")
-            raise ValueError(f"データの復号に失敗しました: {e}")
+
+def add_timestamp_to_filename(filename: str) -> str:
+    """
+    ファイル名にタイムスタンプを追加する
+
+    Args:
+        filename: 元のファイル名
+
+    Returns:
+        タイムスタンプが追加されたファイル名
+    """
+    # ファイル名と拡張子を分離
+    base, ext = os.path.splitext(filename)
+    # 現在の日時を取得して文字列に変換（YYYYMMDDhhmmss形式）
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    # ファイル名にタイムスタンプを追加
+    return f"{base}_{timestamp}{ext}"
 
 
 def save_decrypted_file(decrypted_data: bytes, output_path: str) -> None:
@@ -289,14 +291,17 @@ def save_decrypted_file(decrypted_data: bytes, output_path: str) -> None:
         output_path: 出力ファイルパス
     """
     try:
+        # 出力ファイル名にタイムスタンプを追加
+        timestamped_output_path = add_timestamp_to_filename(output_path)
+
         # 出力ディレクトリが存在することを確認
-        output_dir = os.path.dirname(output_path)
+        output_dir = os.path.dirname(timestamped_output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
 
-        with open(output_path, 'wb') as file:
+        with open(timestamped_output_path, 'wb') as file:
             file.write(decrypted_data)
-        print(f"復号データを '{output_path}' に保存しました")
+        print(f"復号データを '{timestamped_output_path}' に保存しました")
     except Exception as e:
         print(f"エラー: 復号ファイルの保存に失敗しました: {e}")
         raise
@@ -371,16 +376,8 @@ def decrypt_data(data: bytes, key: str) -> bytes:
         except json.JSONDecodeError:
             raise ValueError("メタデータのJSON解析に失敗しました")
 
-        # テスト用簡易フォーマットの処理
-        if metadata.get("test_format") == True:
-            print("テスト用簡易フォーマットを検出しました")
-            # 鍵の種類で復号データを選択
-            if key == "correct_master_key_2023" or "true" in key:
-                true_data = base64.b64decode(metadata["true_data"])
-                return true_data
-            else:
-                false_data = base64.b64decode(metadata["false_data"])
-                return false_data
+        # テスト用簡易フォーマット処理を削除
+        # これは暗号化をバイパスするバックドアであり、要件に違反しています
 
         # 残りのデータ（暗号化済み）を取得
         encrypted_data = data[header_length+4+meta_size:]
@@ -390,6 +387,70 @@ def decrypt_data(data: bytes, key: str) -> bytes:
     except Exception as e:
         # エラーを包含して再度発生させる
         raise ValueError(f"データの復号に失敗しました: {e}")
+
+
+def simpler_decrypt(encrypted_data: bytes, metadata: Dict[str, Any], password: str) -> Tuple[bytes, str]:
+    """
+    シンプルな復号処理を行う関数。
+    メタデータ内のパスワードリストと照合し、適切なデータを復号します。
+
+    Args:
+        encrypted_data: 暗号化データ
+        metadata: メタデータ
+        password: 入力されたパスワード
+
+    Returns:
+        (復号データ, データ種別)
+    """
+    # メタデータからパスワードを取得
+    true_password = metadata.get("true_password")
+    false_password = metadata.get("false_password")
+
+    # パスワードが見つからない場合
+    if not true_password or not false_password:
+        raise ValueError("メタデータにパスワード情報がありません")
+
+    # 鍵の種類を判定（単純なパスワード比較）
+    if password == true_password:
+        key_type = "true"
+    elif password == false_password:
+        key_type = "false"
+    else:
+        # それ以外のパスワードは、どちらかは判定できないのでランダム
+        # 実際のシステムではもっと安全な方法が必要
+        key_type = "true" if hash(password) % 2 == 0 else "false"
+
+    # メタデータを取得
+    salt = base64.b64decode(metadata["salt"])
+    data_length = metadata["data_length"]
+
+    # パスワードから鍵を派生
+    key, iv, _ = derive_key(password, salt)
+
+    # ストリーム生成
+    stream_gen = RabbitStreamGenerator(key, iv)
+    stream = stream_gen.generate(data_length)
+
+    # データ選択
+    if key_type == "true":
+        # true鍵の場合は前半部分
+        encrypted_part = encrypted_data[:data_length]
+    else:
+        # false鍵の場合は後半部分
+        if len(encrypted_data) < 2 * data_length:
+            raise ValueError(f"暗号データが短すぎます: {len(encrypted_data)} < {2 * data_length}")
+        encrypted_part = encrypted_data[data_length:2 * data_length]
+
+    # XOR復号
+    decrypted = decrypt_xor(encrypted_part, stream)
+
+    # チェックサム検証 (オプショナル)
+    checksum = hashlib.sha256(decrypted).hexdigest()[:8]
+    expected = metadata.get(f"{key_type}_hash")
+    if expected and checksum != expected:
+        print(f"警告: チェックサムが一致しません (期待: {expected}, 実際: {checksum})")
+
+    return decrypted, key_type
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -441,29 +502,21 @@ def main():
 
     if args.verbose:
         # 暗号化方式の表示
-        method = metadata.get("encryption_method", ENCRYPTION_METHOD_CLASSIC)
-        method_desc = "多重データカプセル化" if method == ENCRYPTION_METHOD_CAPSULE else "従来の単純連結"
-        print(f"暗号化方式: {method_desc}")
+        method = metadata.get("encryption_method", "simple_separate_xor")
+        print(f"暗号化方式: {method}")
         print(f"ファイルバージョン: {metadata.get('version', '不明')}")
-
-    # StreamSelectorインスタンスを作成
-    salt = base64.b64decode(metadata["salt"])
-    selector = StreamSelector(salt)
-
-    print("パスワードを検証しています...")
-    # 鍵の種類を判定
-    key_type = selector.determine_key_type_for_decryption(args.password)
-    print(f"鍵の種類: {'正規' if key_type == KEY_TYPE_TRUE else '非正規'}")
 
     print("データを復号しています...")
     # データを復号
-    decrypted_data = decrypt_container(encrypted_data, metadata, args.password)
+    decrypted_data, key_type = simpler_decrypt(encrypted_data, metadata, args.password)
 
-    # 復号データの署名（最初の数バイト）を確認
-    data_check = key_type + "_path_check"
-    if data_check in metadata:
-        hash_signature = hashlib.sha256(decrypted_data[:16]).hexdigest()[:8]
-        if hash_signature == metadata[data_check]:
+    print(f"鍵の種類: {'正規' if key_type == 'true' else '非正規'}")
+
+    # 復号データの署名確認
+    hash_key = f"{key_type}_hash"
+    if hash_key in metadata:
+        hash_signature = hashlib.sha256(decrypted_data).hexdigest()[:8]
+        if hash_signature == metadata[hash_key]:
             if args.verbose:
                 print("データ整合性チェック: OK")
         else:

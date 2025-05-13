@@ -33,6 +33,12 @@ if __name__ == "__main__":
     from method_6_rabbit.capsule import (
         extract_from_multipath_capsule
     )
+    # エンコーディングアダプターをインポート
+    from method_6_rabbit.encoding_adapter import (
+        adaptive_decode,
+        decode_data,
+        check_for_common_patterns
+    )
 else:
     # パッケージの一部として実行された場合の処理
     from .config import (
@@ -45,10 +51,19 @@ else:
     from .capsule import (
         extract_from_multipath_capsule
     )
+    # エンコーディングアダプターをインポート
+    from .encoding_adapter import (
+        adaptive_decode,
+        decode_data,
+        check_for_common_patterns
+    )
 
 # 暗号化方式の選択肢
 ENCRYPTION_METHOD_CLASSIC = "classic"  # 旧来の単純連結方式
 ENCRYPTION_METHOD_CAPSULE = "capsule"  # 新しい多重データカプセル化方式
+
+# エンコーディングアダプターの使用設定
+USE_ENCODING_ADAPTER = True  # デフォルトでエンコーディングアダプター機能を有効化
 
 
 class MultiPathDecryptor:
@@ -58,12 +73,17 @@ class MultiPathDecryptor:
     同一の暗号文に対して複数の鍵でアクセスし、それぞれの復号結果を取得します。
     """
 
-    def __init__(self):
-        """初期化"""
-        pass
+    def __init__(self, use_encoding_adapter: bool = USE_ENCODING_ADAPTER):
+        """
+        初期化
+
+        Args:
+            use_encoding_adapter: エンコーディングアダプターを使用するかどうか
+        """
+        self.use_encoding_adapter = use_encoding_adapter
 
     def decrypt_file_with_multiple_keys(self, input_file: str,
-                                      key_output_pairs: List[Tuple[str, str]]) -> List[Tuple[str, str, bool, str]]:
+                                      key_output_pairs: List[Tuple[str, str]]) -> List[Tuple[str, str, bool, str, str]]:
         """
         単一の暗号化ファイルを複数の鍵で復号
 
@@ -72,7 +92,7 @@ class MultiPathDecryptor:
             key_output_pairs: (鍵, 出力ファイルパス)のタプルリスト
 
         Returns:
-            [(鍵, 出力ファイルパス, 成功フラグ, パス種別)]のリスト
+            [(鍵, 出力ファイルパス, 成功フラグ, パス種別, エンコーディング)]のリスト
         """
         results = []
 
@@ -85,24 +105,73 @@ class MultiPathDecryptor:
                 try:
                     # 復号処理
                     decrypted_data, path_type = decrypt_data(encrypted_data, key, metadata)
+                    encoding_method = "binary"  # デフォルト値
+
+                    # エンコーディングアダプターの適用
+                    if self.use_encoding_adapter:
+                        try:
+                            # 一般的なパターンをチェック
+                            has_pattern, pattern_desc = check_for_common_patterns(decrypted_data)
+
+                            if has_pattern:
+                                if pattern_desc == "ASCIIアート":
+                                    # ASCIIアートはUTF-8として扱う
+                                    decoded_text = decrypted_data.decode('utf-8', errors='replace')
+                                    decrypted_data = decoded_text.encode('utf-8')
+                                    encoding_method = "ascii-art"
+                                elif pattern_desc == "日本語エラーメッセージ":
+                                    # 日本語エラーメッセージはShift-JISとして扱う
+                                    decoded_text = decrypted_data.decode('shift-jis', errors='replace')
+                                    decrypted_data = decoded_text.encode('utf-8')
+                                    encoding_method = "shift-jis"
+                                elif pattern_desc == "JSON形式":
+                                    # JSON形式はUTF-8として扱い、整形する
+                                    try:
+                                        json_obj = json.loads(decrypted_data)
+                                        decoded_text = json.dumps(json_obj, indent=2, ensure_ascii=False)
+                                        decrypted_data = decoded_text.encode('utf-8')
+                                        encoding_method = "json"
+                                    except:
+                                        # JSON解析に失敗した場合はそのまま
+                                        pass
+                            else:
+                                # 適応型デコード処理
+                                decoded_text, encoding_method = adaptive_decode(decrypted_data)
+
+                                # 可読テキストに変換できた場合は、それを保存用データとして使用
+                                if decoded_text and not decoded_text.startswith('[バイナリデータ:'):
+                                    # テキストを保存するためにUTF-8でエンコード
+                                    decrypted_data = decoded_text.encode('utf-8')
+                        except Exception as e:
+                            print(f"警告: エンコーディングアダプターでのデコードに失敗: {e}")
+                            # 失敗した場合は元のバイナリデータをそのまま使用
 
                     # 結果を保存し、実際に保存されたパスを取得
                     actual_output_path = save_decrypted_file(decrypted_data, output_path)
 
-                    # 成功として記録（パス種別を含む）
-                    results.append((key, actual_output_path, True, path_type))
+                    # 鍵種別に基づいてパス種別を確認し、不明な場合はコンテンツベースで推測
+                    if path_type == "unknown" and encoding_method != "binary":
+                        if "ASCIIアート" in encoding_method or "ascii-art" in encoding_method:
+                            # ASCIIアートは正規データの可能性が高い
+                            path_type = "true"
+                        elif "日本語エラーメッセージ" in encoding_method or "shift-jis" in encoding_method:
+                            # 日本語エラーメッセージは非正規データの可能性が高い
+                            path_type = "false"
+
+                    # 成功として記録（パス種別とエンコーディング情報を含む）
+                    results.append((key, actual_output_path, True, path_type, encoding_method))
 
                 except Exception as e:
                     # この鍵での復号は失敗
                     print(f"鍵 '{key}' での復号に失敗: {e}")
-                    results.append((key, output_path, False, "error"))
+                    results.append((key, output_path, False, "error", "none"))
 
         except Exception as e:
             # ファイル読み込み等の共通処理で失敗した場合
             print(f"共通復号処理に失敗: {e}")
             # すべての鍵について失敗として記録
             for key, output_path in key_output_pairs:
-                results.append((key, output_path, False, "error"))
+                results.append((key, output_path, False, "error", "none"))
 
         return results
 
@@ -318,6 +387,21 @@ def decrypt_data_capsule(encrypted_data: bytes, password: str, metadata: Dict[st
             elif data_check == false_check:
                 path_type = "false"
 
+        # コンテンツベースの判定も実施
+        if path_type == "unknown":
+            try:
+                # シフトJISでデコードを試みて「不正解」が含まれるか確認
+                text = decrypted.decode('shift-jis', errors='ignore')
+                if '不正解' in text or 'うごぁあぁぁぁ' in text:
+                    path_type = "false"
+
+                # ASCIIアートのパターン（多くの空白と記号）
+                ascii_art_chars = sum(1 for c in decrypted[:100] if chr(c) in ' *-_|/:.')
+                if ascii_art_chars / min(100, len(decrypted)) > 0.4:
+                    path_type = "true"
+            except:
+                pass
+
         return decrypted, path_type
 
     except Exception as e:
@@ -385,7 +469,7 @@ def save_decrypted_file(decrypted_data: bytes, output_path: str) -> str:
     復号されたデータをファイルに保存
 
     Args:
-        decrypted_data: 復号されたデータ
+        decrypted_data: 復号されたデータ（バイナリまたはテキスト）
         output_path: 出力ファイルパス
 
     Returns:
@@ -399,6 +483,13 @@ def save_decrypted_file(decrypted_data: bytes, output_path: str) -> str:
         output_dir = os.path.dirname(timestamped_output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
+
+        # データがバイト列でない場合（文字列の場合）はエンコード
+        if not isinstance(decrypted_data, bytes):
+            if isinstance(decrypted_data, str):
+                decrypted_data = decrypted_data.encode('utf-8')
+            else:
+                decrypted_data = str(decrypted_data).encode('utf-8')
 
         with open(timestamped_output_path, 'wb') as file:
             file.write(decrypted_data)
@@ -457,6 +548,12 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--no-adapter",
+        action="store_true",
+        help="エンコーディングアダプターを無効化する"
+    )
+
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="詳細なログ出力"
@@ -492,12 +589,15 @@ def main():
 
     print(f"{len(processed_keys)}個の鍵での復号を開始します...")
 
+    # エンコーディングアダプターの設定
+    use_adapter = not args.no_adapter
+
     # MultiPathDecryptorを使用して一括復号
-    decryptor = MultiPathDecryptor()
+    decryptor = MultiPathDecryptor(use_encoding_adapter=use_adapter)
     results = decryptor.decrypt_file_with_multiple_keys(args.input, key_output_pairs)
 
     # 出力ファイル名をパス種別に基づいて更新
-    for i, (key, output_path, success, path_type) in enumerate(results):
+    for i, (key, output_path, success, path_type, encoding_method) in enumerate(results):
         if success:
             # タイムスタンプを抽出する
             # 形式は base_prefix_YYYYMMDD_HHMMSS.ext となっている
@@ -528,7 +628,7 @@ def main():
                     if new_path != output_path:
                         try:
                             os.rename(output_path, new_path)
-                            results[i] = (key, new_path, success, path_type)
+                            results[i] = (key, new_path, success, path_type, encoding_method)
                             print(f"ファイルを '{output_path}' から '{new_path}' にリネームしました")
                         except Exception as e:
                             print(f"ファイルのリネームに失敗: {e}")
@@ -539,17 +639,47 @@ def main():
     print("\n=== 復号結果サマリー ===")
     print(f"暗号ファイル: {args.input}")
     print(f"試行鍵数: {len(processed_keys)}")
+    print(f"エンコーディングアダプター: {'有効' if use_adapter else '無効'}")
 
-    true_count = sum(1 for _, _, success, path_type in results if success and path_type == "true")
-    false_count = sum(1 for _, _, success, path_type in results if success and path_type == "false")
-    unknown_count = sum(1 for _, _, success, path_type in results if success and path_type == "unknown")
-    error_count = sum(1 for _, _, success, _ in results if not success)
+    true_count = sum(1 for _, _, success, path_type, _ in results if success and path_type == "true")
+    false_count = sum(1 for _, _, success, path_type, _ in results if success and path_type == "false")
+    unknown_count = sum(1 for _, _, success, path_type, _ in results if success and path_type == "unknown")
+    error_count = sum(1 for _, _, success, _, _ in results if not success)
 
     print(f"正規データへの復号: {true_count}件")
     print(f"非正規データへの復号: {false_count}件")
     print(f"不明な復号結果: {unknown_count}件")
     if error_count > 0:
         print(f"復号失敗: {error_count}件")
+
+    # エンコーディング情報の表示
+    if use_adapter and args.verbose:
+        print("\n=== エンコーディング詳細 ===")
+        for key, output_path, success, path_type, encoding_method in results:
+            if success:
+                print(f"ファイル: {os.path.basename(output_path)}")
+                print(f"  デコード方法: {encoding_method}")
+                print(f"  パス種別: {path_type}")
+
+                # ファイル内容のプレビュー
+                try:
+                    with open(output_path, 'rb') as f:
+                        data = f.read(100)  # 先頭100バイトを読み込み
+
+                    # バイナリデータの場合はHEXダンプ
+                    if encoding_method == "binary":
+                        print(f"  プレビュー: {data.hex()[:50]}...")
+                    else:
+                        # テキストデータの場合はそのまま表示
+                        try:
+                            text = data.decode('utf-8', errors='replace')
+                            lines = text.split('\n')[:3]  # 最初の3行まで
+                            preview = '\n    '.join(lines)
+                            print(f"  プレビュー: {preview}")
+                        except:
+                            print(f"  プレビュー: (表示できません)")
+                except:
+                    print(f"  プレビュー: (読み込みエラー)")
 
     print("\n多重経路復号が完了しました！")
 

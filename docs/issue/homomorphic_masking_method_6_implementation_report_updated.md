@@ -240,11 +240,20 @@ def remove_comprehensive_indistinguishability(indistinguishable_ciphertexts, met
 
     # ノイズ値の配列が適切な長さであることを確認
     if len(noise_values) > len(deredundant):
-        # 長すぎる場合は切り詰める
+        # ノイズ値が多すぎる場合は切り詰める
         noise_values = noise_values[:len(deredundant)]
     elif len(noise_values) < len(deredundant):
-        # 足りない場合はゼロで埋める
-        noise_values = noise_values + [0] * (len(deredundant) - len(noise_values))
+        # ノイズ値が少なすぎる場合は拡張する
+        # 元の配列のパターンを維持しつつ拡張
+        if len(noise_values) > 0:
+            # パターン反復による拡張
+            extended_noise = []
+            for i in range(len(deredundant)):
+                extended_noise.append(noise_values[i % len(noise_values)])
+            noise_values = extended_noise
+        else:
+            # ノイズ値がない場合はゼロで埋める
+            noise_values = [0] * len(deredundant)
 
     denoised = remove_statistical_noise(deredundant, noise_values, paillier)
 

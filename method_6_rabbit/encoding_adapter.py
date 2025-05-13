@@ -1,31 +1,33 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
 """
-エンコーディングアダプターモジュール
+エンコーディングアダプタ
 
-多重経路復号で得られたバイナリデータを適切なエンコーディングに変換し、
-可読性のあるテキストに変換する機能を提供します。
+バイナリデータを適切なエンコーディングで表示するための変換ユーティリティ
 """
 
-import os
-import sys
+import argparse
 import base64
-import re
-import json
-import hashlib
 import binascii
 import chardet
-import math
-from typing import List, Dict, Any, Tuple, Optional, Union
-import argparse
+import json
+import os
+import re
+import sys
+from typing import Dict, Tuple, Any, Optional
 
-# インポートエラーを回避するための処理
-if __name__ == "__main__":
-    # モジュールとして実行された場合の処理
-    sys.path.insert(0, os.path.abspath(os.path.dirname(os.path.dirname(__file__))))
-else:
-    pass  # パッケージの一部として実行された場合
+# バイナリファイルのパターン
+BINARY_PATTERNS = {
+    'PDF': rb'^%PDF-\d+\.\d+',
+    'JPEG': rb'^\xff\xd8\xff',
+    'PNG': rb'^\x89PNG\r\n\x1a\n',
+    'GIF': rb'^GIF8[79]a',
+    'ZIP': rb'^PK\x03\x04',
+    'GZIP': rb'^\x1f\x8b\x08',
+    'RAR': rb'^Rar!\x1a\x07',
+    'TAR': rb'^\x75\x73\x74\x61\x72',
+    'EXE': rb'^MZ'
+}
 
 # サポートされているエンコーディングのリスト
 SUPPORTED_ENCODINGS = [
@@ -51,44 +53,7 @@ LANGUAGE_PATTERNS = {
     'cn': (r'[\u4E00-\u9FFF]', ['gbk', 'big5', 'utf-8']),  # 中国語
     'kr': (r'[\uAC00-\uD7AF]', ['euc-kr', 'utf-8']),  # 韓国語
     'ru': (r'[\u0400-\u04FF]', ['koi8-r', 'windows-1251', 'utf-8']),  # ロシア語
-    'ascii_art': (r'[X\*\-\_\|\/\:\\\.]{4,}', ['utf-8', 'ascii']),  # ASCIIアート
-}
-
-# バイナリデータの特性マッチングパターン
-BINARY_PATTERNS = {
-    'zip': rb'^PK\x03\x04',
-    'pdf': rb'^%PDF',
-    'png': rb'^\x89PNG\r\n\x1a\n',
-    'jpeg': rb'^\xff\xd8\xff',
-    'gif': rb'^GIF8[79]a',
-    'bmp': rb'^BM',
-    'base64': rb'^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$'
-}
-
-# XOR暗号化されたデータの特定に役立つパターン
-XOR_PATTERNS = [
-    (b'true.text', 0.6),   # 'true.text'文字列が含まれる可能性がある場合の閾値
-    (b'false.text', 0.6),  # 'false.text'文字列が含まれる可能性がある場合の閾値
-    (b'ASCII', 0.7),       # ASCIIアートが含まれている可能性
-]
-
-# ASCIIアートパターンの特徴文字セット（拡張版）
-ASCII_ART_CHARS = ' *-_|/:.,\'"\\=^~+<>[]{}()XYXVVX'
-
-# 標準テストファイルのパターン検出用サンプル
-STANDARD_TEST_PATTERNS = {
-    'true_sample': [
-        b'__--XX-',          # トラASCIIアートのパターン
-        b'XXXXX^^',
-        b'XXXXXXX  X',
-        b'XXXXXXXXXXX X'
-    ],
-    'false_sample': [
-        b'\xE3\x81\x86\xE3\x81\x94\xE3\x81\x81\xE3\x81\x82\xE3\x81\x81\xE3\x81\x81',  # うごぁあぁぁぁ（UTF-8）
-        b'\x82\xA4\x82\xBA\x82\xA0\x82\xA0\x82\xA0\x82\xA0',                          # うごぁあぁぁぁ（Shift-JIS）
-        b'\xEF\xBE\x89\x22\x27\x88\x88\x88\x88',                                      # ﾉ"′∧∧∧∧（UTF-8）
-        b'\x83\x6e\x22\x27\x81\x5E\x81\x5E\x81\x5E\x81\x5E'                          # ﾉ"′∧∧∧∧（Shift-JIS）
-    ]
+    'ascii_art': (r'[X\*\-\_\|\/\\:\.]{4,}', ['utf-8', 'ascii']),  # ASCIIアート
 }
 
 # リファレンスファイルのキャッシュ
@@ -97,574 +62,92 @@ REFERENCE_DATA_CACHE = {}
 
 def detect_encoding(data: bytes) -> str:
     """
-    データのエンコーディングを検出
+    バイナリデータのエンコーディングを検出
 
     Args:
-        data: 検出対象のバイナリデータ
+        data: エンコーディングを検出するバイナリデータ
 
     Returns:
-        検出されたエンコーディング名
+        検出されたエンコーディング。検出できない場合は 'binary'
     """
-    if not data:
+    # データサイズが小さすぎる場合はバイナリとみなす
+    if len(data) < 8:
         return 'binary'
 
-    # Null文字が含まれていたらバイナリデータの可能性が高い
-    if b'\x00' in data[:1024]:
-        return 'binary'
-
-    # まずはバイナリファイルタイプの検出
-    for file_type, pattern in BINARY_PATTERNS.items():
-        if re.match(pattern, data[:20]):
-            return file_type
-
-    # 標準テストパターンをチェック
-    if check_standard_test_patterns(data):
-        return 'standard-test'
-
-    # chardetを使用したエンコーディング検出を試みる
+    # chardetでエンコーディングを検出（信頼度も考慮）
     try:
-        detected = chardet.detect(data)
-        confidence = detected.get('confidence', 0)
-        encoding = detected.get('encoding', '')
-        if confidence > 0.7 and encoding:
-            print(f"chardet検出結果: エンコーディング={encoding}, 信頼度={confidence:.2f}")
-            return encoding
-        else:
-            print(f"chardet検出結果: 信頼度不足 ({confidence:.2f}), エンコーディング={encoding}")
-    except Exception as e:
-        print(f"chardet検出エラー: {e}")
+        result = chardet.detect(data)
+        encoding = result['encoding']
+        confidence = result['confidence']
 
-    # 言語特有のパターン検出（ヒューリスティック）
-    for language, (pattern, encodings) in LANGUAGE_PATTERNS.items():
-        for encoding in encodings:
+        # 特定のエンコーディングでサンプルデコードしてみる
+        for enc in ['utf-8', 'shift-jis', 'euc-jp', 'latin-1']:
             try:
-                text = data.decode(encoding, errors='replace')
-                if re.search(pattern, text):
-                    print(f"言語パターン検出: {language}, エンコーディング={encoding}")
-                    return encoding
-            except:
-                continue
+                sample = data[:min(100, len(data))].decode(enc)
+                # 可読性チェック（制御文字が多すぎないか）
+                printable_chars = sum(1 for c in sample if c.isprintable() or c.isspace())
+                if printable_chars / len(sample) > 0.8:
+                    return enc
+            except UnicodeDecodeError:
+                pass
 
-    # テキストエンコーディングの検出
-    best_encoding = None
-    best_ratio = 0
+        # chardet結果の信頼性が高い場合はその結果を使用
+        if encoding and confidence > 0.7:
+            return encoding
 
-    for encoding in SUPPORTED_ENCODINGS:
-        try:
-            text = data.decode(encoding)
-            # ASCII可読文字の割合を確認
-            printable_ratio = sum(c.isprintable() for c in text) / len(text)
-            if printable_ratio > best_ratio:
-                best_ratio = printable_ratio
-                best_encoding = encoding
-
-                # 十分な品質なら即座に返す
-                if printable_ratio > 0.9:  # 90%以上が可読文字なら高品質と判断
-                    print(f"高品質エンコーディング検出: {encoding} (可読率: {printable_ratio:.2f})")
-                    return encoding
-        except UnicodeDecodeError:
-            # デコードエラーの場合は次のエンコーディングを試す
-            continue
-
-    # 最良の候補があり、閾値を超えていれば採用
-    if best_encoding and best_ratio > 0.8:  # 80%以上が可読文字なら有効と判断
-        print(f"最良エンコーディング検出: {best_encoding} (可読率: {best_ratio:.2f})")
-        return best_encoding
-
-    # どのエンコーディングにも該当しない場合はバイナリデータと判断
-    try:
-        # Base64エンコーディングの可能性をチェック
-        base64.b64decode(data)
-        return 'base64'
-    except:
+    except Exception:
         pass
 
-    # 標準パターンかどうかを再検証（緩和条件）
-    for pattern in STANDARD_TEST_PATTERNS['true_sample']:
-        if pattern in data:
-            print(f"トラASCIIアートパターン部分一致: {pattern}")
-            return 'utf-8'
-
-    for pattern in STANDARD_TEST_PATTERNS['false_sample']:
-        if pattern in data:
-            print(f"不正解メッセージパターン部分一致: {pattern}")
-            return 'shift-jis'
-
+    # エンコーディングを特定できなかった場合はバイナリとみなす
     return 'binary'
-
-
-def check_standard_test_patterns(data: bytes) -> bool:
-    """
-    標準テスト用のパターンが含まれているかを確認
-
-    Args:
-        data: チェック対象のデータ
-
-    Returns:
-        標準テストパターンが見つかった場合はTrue、それ以外はFalse
-    """
-    # トラのASCIIアートパターンをチェック
-    true_matches = 0
-    for pattern in STANDARD_TEST_PATTERNS['true_sample']:
-        if pattern in data:
-            true_matches += 1
-
-    # 不正解メッセージのパターンをチェック
-    false_matches = 0
-    for pattern in STANDARD_TEST_PATTERNS['false_sample']:
-        if pattern in data:
-            false_matches += 1
-
-    # いずれかのパターンが一定数以上見つかればテストパターンと判断
-    return (true_matches >= 2) or (false_matches >= 1)
-
-
-def decode_data(data: bytes, detected_encoding: str = None, metadata: Dict[str, Any] = None) -> Tuple[str, str]:
-    """
-    データを適切なエンコーディングでデコード
-
-    Args:
-        data: デコード対象のバイナリデータ
-        detected_encoding: 検出済みのエンコーディング（指定がなければ自動検出）
-        metadata: 暗号化ファイルのメタデータ（オプション）
-
-    Returns:
-        (デコードされたテキスト, 使用されたエンコーディング)
-    """
-    if not data:
-        return "", "empty"
-
-    # エンコーディングが指定されていない場合は自動検出
-    if not detected_encoding:
-        detected_encoding = detect_encoding(data)
-
-    # 特殊ケース: Base64
-    if detected_encoding == 'base64':
-        try:
-            decoded_data = base64.b64decode(data)
-            inner_encoding = detect_encoding(decoded_data)
-            if inner_encoding != 'binary':
-                inner_text, _ = decode_data(decoded_data, inner_encoding)
-                return inner_text, f"base64+{inner_encoding}"
-            else:
-                return f"[Base64エンコードデータ: {len(decoded_data)}バイト]", "base64"
-        except:
-            pass  # Base64デコードに失敗した場合は次の処理に進む
-
-    # 標準テストパターンが検出された場合の特殊処理
-    if detected_encoding == 'standard-test':
-        # トラのASCIIアートをチェック
-        true_matches = 0
-        for pattern in STANDARD_TEST_PATTERNS['true_sample']:
-            if pattern in data:
-                true_matches += 1
-
-        # 不正解メッセージをチェック
-        false_matches = 0
-        for pattern in STANDARD_TEST_PATTERNS['false_sample']:
-            if pattern in data:
-                false_matches += 1
-
-        # マッチ数に基づいて適切なエンコーディングを選択
-        if true_matches > false_matches:
-            try:
-                return data.decode('utf-8', errors='replace'), "utf-8-true-pattern"
-            except:
-                pass
-        elif false_matches > 0:
-            try:
-                # Shift-JISでのデコードを試行
-                text = data.decode('shift-jis', errors='replace')
-                if '不正解' in text or 'うごぁ' in text:
-                    return text, "shift-jis-false-pattern"
-            except:
-                pass
-            try:
-                # UTF-8でのデコードを試行
-                text = data.decode('utf-8', errors='replace')
-                if '不正解' in text or 'うごぁ' in text:
-                    return text, "utf-8-false-pattern"
-            except:
-                pass
-
-    # ASCIIアートの検出を強化
-    is_ascii_art, ascii_art_text = try_detect_ascii_art(data)
-    if is_ascii_art:
-        return ascii_art_text, "ascii-art"
-
-    # メタデータからエンコーディングヒントが得られる場合
-    if metadata and 'encoding_hint' in metadata:
-        try:
-            hint = metadata['encoding_hint']
-            if hint in SUPPORTED_ENCODINGS:
-                decoded = data.decode(hint, errors='replace')
-                return decoded, f"metadata-hint:{hint}"
-        except:
-            pass
-
-    # テキストエンコーディングの場合
-    if detected_encoding in SUPPORTED_ENCODINGS:
-        try:
-            return data.decode(detected_encoding), detected_encoding
-        except UnicodeDecodeError:
-            pass  # デコードに失敗した場合は次の処理に進む
-
-    # XORで暗号化されたデータの場合は、特徴的なパターンを探す
-    for pattern, threshold in XOR_PATTERNS:
-        # 部分一致する場合もあるため、パターンの一部でも含まれていないか確認
-        for i in range(len(pattern)):
-            sub_pattern = pattern[i:i+3]  # 3文字以上のパターンで検索
-            if len(sub_pattern) < 3:
-                continue
-
-            if sub_pattern in data:
-                # XOR暗号化されたデータとして扱う
-                return xor_analyze(data, pattern), "xor-encrypted"
-
-    # 一般的なXORキーを使った復元を試行
-    xor_result = try_common_xor_keys(data)
-    if xor_result:
-        return xor_result, "xor-decrypted"
-
-    # 先頭バイト列を使ったXOR解析を試行
-    reference_content = try_reference_content_xor(data)
-    if reference_content:
-        return reference_content, "reference-xor-match"
-
-    # バイナリデータの場合はヘキサダンプを提供
-    if detected_encoding == 'binary' or detected_encoding in BINARY_PATTERNS:
-        preview_size = min(100, len(data))
-        hex_dump = data[:preview_size].hex()
-        file_type_msg = f"[{detected_encoding}]" if detected_encoding in BINARY_PATTERNS else ""
-        return f"{file_type_msg}[バイナリデータ: {len(data)}バイト] 先頭{preview_size}バイト: {hex_dump}...", "binary"
-
-    # 最終手段として、latin-1でデコード（latin-1はどんなバイナリデータでもデコード可能）
-    return data.decode('latin-1', errors='replace'), "latin-1-fallback"
-
-
-def try_detect_ascii_art(data: bytes) -> Tuple[bool, str]:
-    """
-    ASCIIアートを検出して復元する
-
-    Args:
-        data: 検出対象のデータ
-
-    Returns:
-        (ASCIIアートが検出されたかどうか, 復元されたASCIIアート文字列)
-    """
-    # ASCIIアートの特徴分析
-    if b' ' * 5 not in data:  # ASCIIアートには一定量の空白が含まれる
-        return False, ""
-
-    # ASCIIアートの特徴文字の割合を計算
-    art_char_count = sum(1 for b in data if chr(b) in ASCII_ART_CHARS)
-    char_ratio = art_char_count / len(data)
-
-    # 特徴文字の割合が30%以上で、行が5行以上あればASCIIアート判定
-    if char_ratio > 0.3 and data.count(b'\n') >= 4:
-        try:
-            # UTF-8でデコード試行
-            text = data.decode('utf-8', errors='replace')
-            return True, text
-        except:
-            pass
-
-    # 特に標準テストのトラのASCIIアートパターンをチェック
-    true_matches = 0
-    for pattern in STANDARD_TEST_PATTERNS['true_sample']:
-        if pattern in data:
-            true_matches += 1
-
-    if true_matches >= 2:
-        try:
-            # UTF-8でデコード試行
-            text = data.decode('utf-8', errors='replace')
-            return True, text
-        except:
-            pass
-
-    return False, ""
-
-
-def try_common_xor_keys(data: bytes) -> Optional[str]:
-    """
-    一般的なXORキーを使って復号を試行
-
-    Args:
-        data: 復号対象のデータ
-
-    Returns:
-        復号できた場合はテキスト、できなかった場合はNone
-    """
-    # 一般的なXORキー
-    common_keys = [0x00, 0xFF, 0x55, 0xAA, 0x33, 0x66, 0x99, 0xCC]
-
-    for key in common_keys:
-        xor_data = bytes(b ^ key for b in data)
-        # 結果がテキストっぽいかチェック
-        if b'\x00' not in xor_data[:100]:  # NULL文字がないか
-            try:
-                # UTF-8でデコード試行
-                text = xor_data.decode('utf-8', errors='replace')
-                if is_readable_text(text, 0.7):
-                    return text
-            except:
-                pass
-
-            try:
-                # Shift-JISでデコード試行
-                text = xor_data.decode('shift-jis', errors='replace')
-                if '不正解' in text or 'うごぁ' in text or 'ﾉ"′∧∧∧∧' in text:
-                    return text
-            except:
-                pass
-
-    return None
-
-
-def try_reference_content_xor(data: bytes) -> Optional[str]:
-    """
-    参照コンテンツを使ったXOR解析
-
-    Args:
-        data: 分析対象のデータ
-
-    Returns:
-        XOR解析で復元できたテキスト、またはNone
-    """
-    # 標準テスト用の参照コンテンツパターン（先頭部分）
-    reference_patterns = {
-        'true': [
-            b'                                    __--XX-',
-            b'                                 ^XXXXX^^',
-            b'                             _-XXXX-^'
-        ],
-        'false': [
-            b'\xe3\x81\x86\xe3\x81\x94\xe3\x81\x81\xe3\x81\x82\xe3\x81\x81\xe3\x81\x81\xe3\x81\x81\xef\xbd\x9e\xe4\xb8\x8d\xe6\xad\xa3\xe8\xa7\xa3',  # UTF-8
-            b'\x82\xa4\x82\xba\x82\xa0\x82\xa0\x82\xa0\x82\xa0\x81\x60\x95\x73\x90\xb3\x89\xf0'  # SJIS
-        ]
-    }
-
-    # 各参照パターンとXORしてみる
-    for category, patterns in reference_patterns.items():
-        for ref_pattern in patterns:
-            if len(ref_pattern) > len(data):
-                continue
-
-            # XORキーを推測
-            potential_keys = []
-            for i in range(min(len(ref_pattern), 20)):
-                if i < len(data):
-                    key = ref_pattern[i] ^ data[i]
-                    potential_keys.append(key)
-
-            if not potential_keys:
-                continue
-
-            # 最も頻出するキーを使用
-            from collections import Counter
-            common_key = Counter(potential_keys).most_common(1)[0][0]
-
-            # 推測したキーでXOR
-            xor_result = bytes(b ^ common_key for b in data)
-
-            # 結果を検証
-            try:
-                if category == 'true':
-                    # UTF-8でデコード試行
-                    text = xor_result.decode('utf-8', errors='replace')
-                    if any(p.decode('utf-8', errors='ignore') in text for p in patterns if len(p) > 10):
-                        return text
-                else:
-                    # Shift-JISでデコード試行
-                    text = xor_result.decode('shift-jis', errors='replace')
-                    if '不正解' in text or 'うごぁ' in text:
-                        return text
-
-                    # UTF-8でもデコード試行
-                    text = xor_result.decode('utf-8', errors='replace')
-                    if '不正解' in text or 'うごぁ' in text:
-                        return text
-            except:
-                continue
-
-    return None
-
-
-def xor_analyze(data: bytes, possible_pattern: bytes) -> str:
-    """
-    XOR暗号化されたデータの分析を試みる
-
-    Args:
-        data: 分析対象のデータ
-        possible_pattern: 可能性のあるパターン
-
-    Returns:
-        分析結果のテキスト
-    """
-    # 簡易解析のみ実施
-    preview_size = min(256, len(data))
-    hex_dump = data[:preview_size].hex()
-
-    # 標準テスト用のパターンが含まれているか検証
-    if check_standard_test_patterns(data):
-        # ASCIIアートの特徴を持つか
-        ascii_art_chars = sum(1 for c in data[:100] if chr(c) in ASCII_ART_CHARS)
-        if ascii_art_chars / min(100, len(data)) > 0.3:
-            try:
-                # UTF-8として解釈し、結果を返す
-                return data.decode('utf-8', errors='replace')
-            except:
-                pass
-
-        # 「不正解」パターンの特徴を持つか
-        try:
-            # Shift-JIS処理後、「不正解」や「うごぁ」を含む場合
-            text = data.decode('shift-jis', errors='ignore')
-            if '不正解' in text or 'うごぁ' in text:
-                return text
-        except:
-            pass
-
-    # 正規/非正規キーのいずれかで暗号化されたデータと推測できる場合
-    if b'true' in possible_pattern:
-        try:
-            decoded = data.decode('utf-8', errors='replace')
-            return decoded
-        except:
-            return f"[XOR暗号化データ: 正規キーで復号された可能性あり] {len(data)}バイト\n" \
-                   f"HEXダンプ: {hex_dump[:100]}..."
-    elif b'false' in possible_pattern:
-        try:
-            # Shift-JISデコードを試行
-            decoded = data.decode('shift-jis', errors='replace')
-            return decoded
-        except:
-            return f"[XOR暗号化データ: 非正規キーで復号された可能性あり] {len(data)}バイト\n" \
-                   f"HEXダンプ: {hex_dump[:100]}..."
-    elif b'ASCII' in possible_pattern:
-        try:
-            decoded = data.decode('utf-8', errors='replace')
-            return decoded
-        except:
-            return f"[XOR暗号化データ: ASCIIアートの可能性あり] {len(data)}バイト\n" \
-                   f"HEXダンプ: {hex_dump[:100]}..."
-    else:
-        return f"[XOR暗号化データ] {len(data)}バイト\n" \
-               f"HEXダンプ: {hex_dump[:100]}..."
-
-
-def is_readable_text(text: str, threshold: float = 0.9) -> bool:
-    """
-    テキストが可読か判定
-
-    Args:
-        text: 判定対象のテキスト
-        threshold: 可読文字の閾値（0.0～1.0）
-
-    Returns:
-        可読であればTrue、そうでなければFalse
-    """
-    if not text:
-        return False
-
-    # 空白類文字とASCII可読文字をカウント
-    total_chars = len(text)
-    readable_chars = sum(1 for c in text if c.isprintable() or c.isspace())
-
-    # 可読文字の割合が閾値以上であれば可読と判定
-    return (readable_chars / total_chars) >= threshold
 
 
 def check_for_common_patterns(data: bytes) -> Tuple[bool, str]:
     """
-    データに特定のパターンがあるか確認
+    一般的なパターンを確認
 
     Args:
-        data: チェック対象のデータ
+        data: 検査対象のバイナリデータ
 
     Returns:
-        (パターンが見つかったかどうか, パターン説明)
+        (パターン検出結果, パターン説明)
     """
-    # 特に多重経路復号で復号された形式を検出
+    # ASCIIアートのパターン
+    ascii_art_patterns = [
+        b'XXXXX',
+        b'__--XX--__',
+        b'\\    /',
+        b'/    \\',
+        b'|    |',
+    ]
 
-    # ASCIIアートのパターン（多くの空白と記号）
-    if b' ' * 10 in data and sum(c in b' *-_|/:.' for c in data[:100]) / min(100, len(data)) > 0.4:
-        return True, "ASCIIアート"
-
-    # トラのASCIIアートの特徴をチェック
-    true_matches = 0
-    for pattern in STANDARD_TEST_PATTERNS['true_sample']:
+    for pattern in ascii_art_patterns:
         if pattern in data:
-            true_matches += 1
+            return True, "ASCIIアート"
 
-    if true_matches >= 2:
-        return True, "トラのASCIIアート"
+    # 日本語エラーメッセージのパターン
+    jp_error_patterns = [
+        b'\xe4\xb8\x8d\xe6\xad\xa3\xe8\xa7\xa3',  # UTF-8 "不正解"
+        b'\x95\x73\x90\xb3\x89\xf0',  # Shift-JIS "不正解"
+        b'\x82\xa4\x82\xb2\x82\xa9',  # Shift-JIS "うごか" (うごぁっ！)
+    ]
 
-    # 日本語（シフトJIS）のパターン
-    try:
-        text = data.decode('shift-jis', errors='ignore')
-        if '不正解' in text or 'うごぁあぁぁぁ' in text or 'ﾉ"′∧∧∧∧' in text:
-            return True, "日本語エラーメッセージ"
-    except:
-        pass
+    for pattern in jp_error_patterns:
+        if pattern in data:
+            if b'\xe4\xb8\x8d' in data:
+                return True, "日本語エラーメッセージ (UTF-8)"
+            else:
+                return True, "日本語エラーメッセージ (Shift-JIS)"
 
-    # UTF-8での日本語パターンも確認
-    try:
-        text = data.decode('utf-8', errors='ignore')
-        if '不正解' in text or 'うごぁあぁぁぁ' in text:
-            return True, "日本語エラーメッセージ(UTF-8)"
-    except:
-        pass
-
-    # JSON形式のパターン
+    # JSONフォーマットのチェック
     if data.startswith(b'{') and data.endswith(b'}'):
         try:
             json.loads(data)
             return True, "JSON形式"
-        except:
+        except json.JSONDecodeError:
             pass
 
     return False, ""
-
-
-def bit_pattern_analysis(data: bytes, block_size: int = 100) -> Tuple[float, str]:
-    """
-    ビットパターン分析
-
-    Args:
-        data: 分析対象のデータ
-        block_size: 分析ブロックサイズ
-
-    Returns:
-        (エントロピー値, 分析コメント)
-    """
-    if not data:
-        return 0.0, "データなし"
-
-    # 先頭部分のみ分析
-    sample = data[:block_size]
-
-    # バイト値の分布を集計
-    byte_counts = {}
-    for b in sample:
-        byte_counts[b] = byte_counts.get(b, 0) + 1
-
-    # シャノンエントロピーの計算
-    entropy = 0
-    for count in byte_counts.values():
-        probability = count / len(sample)
-        entropy -= probability * (math.log(probability) / math.log(256))
-
-    # エントロピー値に基づくコメント
-    if entropy > 0.95:
-        return entropy, "暗号化またはランダムデータの可能性大"
-    elif entropy > 0.8:
-        return entropy, "圧縮または暗号化されている可能性あり"
-    elif entropy > 0.6:
-        return entropy, "テキストと非テキストの混合データの可能性"
-    else:
-        return entropy, "規則性の強いデータまたはテキストの可能性"
 
 
 def compare_with_reference_files(data: bytes) -> Tuple[bool, str, float]:
@@ -715,10 +198,7 @@ def compare_with_reference_files(data: bytes) -> Tuple[bool, str, float]:
             print(f"サイズ比が小さすぎるためスキップ: {category} ({size_ratio:.2f})")
             continue
 
-        # 各種比較方法を試す
-        similarities = []
-
-        # 方法1: バイト一致率
+        # バイト一致率
         min_len = min(len(data), len(ref_data))
         if min_len > 0:
             # 先頭と末尾のサンプルデータを取得
@@ -734,52 +214,11 @@ def compare_with_reference_files(data: bytes) -> Tuple[bool, str, float]:
             # 末尾部のサンプルを取得
             tail_start = max(0, min_len - sample_size)
             tail_match = sum(1 for i in range(sample_size) if
-                            tail_start + i < min_len and
-                            data[tail_start + i] == ref_data[tail_start + i]) / sample_size
+                           tail_start + i < min_len and
+                           data[tail_start + i] == ref_data[tail_start + i]) / sample_size
 
             # 重み付き平均
-            byte_similarity = (head_match * 0.5) + (mid_match * 0.3) + (tail_match * 0.2)
-            similarities.append(("バイト一致", byte_similarity))
-
-            # 結果出力
-            print(f"バイト一致率 ({category}): 先頭={head_match:.2f}, 中間={mid_match:.2f}, 末尾={tail_match:.2f}, 総合={byte_similarity:.2f}")
-
-        # 方法2: N-gramの類似性を計算
-        if min_len > 100:  # 十分なデータがある場合
-            ngram_size = 4
-            data_ngrams = [data[i:i+ngram_size] for i in range(len(data)-ngram_size+1)]
-            ref_ngrams = [ref_data[i:i+ngram_size] for i in range(len(ref_data)-ngram_size+1)]
-
-            # 出現回数を計算
-            data_counter = {}
-            for gram in data_ngrams:
-                data_counter[gram] = data_counter.get(gram, 0) + 1
-
-            ref_counter = {}
-            for gram in ref_ngrams:
-                ref_counter[gram] = ref_counter.get(gram, 0) + 1
-
-            # 共通のn-gramを数える
-            common_count = 0
-            all_ngrams = set(data_counter.keys()) | set(ref_counter.keys())
-
-            for gram in all_ngrams:
-                common_count += min(data_counter.get(gram, 0), ref_counter.get(gram, 0))
-
-            ngram_similarity = common_count / (len(data_ngrams) + len(ref_ngrams) - common_count) if (len(data_ngrams) + len(ref_ngrams) - common_count) > 0 else 0
-            similarities.append(("N-gram", ngram_similarity))
-            print(f"N-gram類似度 ({category}): {ngram_similarity:.2f}")
-
-        # 方法3: XORパターンの確認
-        xor_similarity = check_xor_pattern(data[:min(200, min_len)], ref_data[:min(200, min_len)])
-        if xor_similarity > 0:
-            similarities.append(("XORパターン", xor_similarity))
-            print(f"XORパターン類似度 ({category}): {xor_similarity:.2f}")
-
-        # 最終的な類似度を計算（各方法の最大値）
-        if similarities:
-            method, similarity = max(similarities, key=lambda x: x[1])
-            print(f"最終類似度 ({category}): {similarity:.2f} (方法: {method})")
+            similarity = (head_match * 0.5) + (mid_match * 0.3) + (tail_match * 0.2)
 
             if similarity > best_similarity:
                 best_similarity = similarity
@@ -793,6 +232,70 @@ def compare_with_reference_files(data: bytes) -> Tuple[bool, str, float]:
     else:
         print(f"リファレンス不一致: 最高類似度={best_similarity:.2f}, カテゴリ={best_category}")
         return False, best_category, best_similarity
+
+
+def is_readable_text(text: str, threshold: float = 0.9) -> bool:
+    """
+    テキストが人間に読みやすいかどうかを判定
+
+    Args:
+        text: 判定対象のテキスト
+        threshold: 可読性の閾値 (0.0～1.0)
+
+    Returns:
+        読みやすいテキストの場合はTrue
+    """
+    if not text:
+        return False
+
+    # 文字ごとにカウント
+    printable_count = sum(1 for c in text if c.isprintable() or c.isspace())
+
+    # 可読文字の割合が閾値以上なら可読とみなす
+    ratio = printable_count / len(text)
+    return ratio >= threshold
+
+
+def decode_data(data: bytes, detected_encoding: str = None, metadata: Dict[str, Any] = None) -> Tuple[str, str]:
+    """
+    データを適切なエンコーディングでデコード
+
+    Args:
+        data: デコード対象のバイナリデータ
+        detected_encoding: 検出されたエンコーディング（オプション）
+        metadata: 追加のメタデータ（オプション）
+
+    Returns:
+        (デコードされたテキスト, 使用されたエンコーディング)
+    """
+    if not data:
+        return "", "empty"
+
+    # エンコーディングが指定されていない場合は検出
+    encoding = detected_encoding or detect_encoding(data)
+
+    # バイナリデータの場合は人間可読な説明を返す
+    if encoding == 'binary':
+        return f"[バイナリデータ: {len(data)}バイト]", "binary"
+
+    # Base64エンコーディングの場合はデコード
+    if encoding == 'base64':
+        try:
+            decoded = base64.b64decode(data)
+            base64_encoding = detect_encoding(decoded)
+            if base64_encoding != 'binary':
+                return decoded.decode(base64_encoding, errors='replace'), f"base64+{base64_encoding}"
+            else:
+                return f"[Base64エンコードされたバイナリデータ: {len(decoded)}バイト]", "base64+binary"
+        except:
+            pass  # Base64デコードに失敗した場合は次の処理に進む
+
+    # テキストエンコーディングとしてデコード
+    try:
+        return data.decode(encoding, errors='replace'), encoding
+    except UnicodeDecodeError:
+        # 最終手段として、latin-1でデコード（latin-1はどんなバイナリデータでもデコード可能）
+        return data.decode('latin-1', errors='replace'), 'latin-1-fallback'
 
 
 def adaptive_decode(data: bytes, metadata: Dict[str, Any] = None) -> Tuple[str, str]:
@@ -917,14 +420,10 @@ def adaptive_decode(data: bytes, metadata: Dict[str, Any] = None) -> Tuple[str, 
             xor_data = bytes(b ^ key for b in data)
             xor_encoding = detect_encoding(xor_data)
             if xor_encoding != 'binary':
-                xor_text = xor_data.decode(xor_encoding, errors='replace')
-
-                # プレビュー表示
-                preview_lines = xor_text.split('\n')[:10]
-                print('\n'.join(preview_lines))
-                return
-            else:
-                print("XORデータをテキストとしてデコードできませんでした")
+                xor_text, _ = decode_data(xor_data, xor_encoding)
+                if is_readable_text(xor_text, 0.7):
+                    print(f"XOR復号成功: キー=0x{key:02X}, エンコーディング={xor_encoding}")
+                    return xor_text, f"xor-{key:02X}+{xor_encoding}"
         except Exception as e:
             print(f"XOR復号失敗(キー=0x{key:02X}): {e}")
             continue
@@ -944,36 +443,7 @@ def adaptive_decode(data: bytes, metadata: Dict[str, Any] = None) -> Tuple[str, 
             print(f"バイナリファイルタイプ検出: {file_type}")
             return f"[{file_type}ファイル: {len(data)}バイト]", file_type
 
-    # 10. ASCIIアートの特徴検出
-    try:
-        is_ascii_art, ascii_art = try_detect_ascii_art(data)
-        if is_ascii_art:
-            print("ASCIIアート特徴検出成功")
-            return ascii_art, "ascii-art-detected"
-    except Exception as e:
-        print(f"ASCIIアート検出失敗: {e}")
-
-    # 11. 言語検出による処理
-    for language, (pattern, encodings) in LANGUAGE_PATTERNS.items():
-        for encoding in encodings:
-            try:
-                text = data.decode(encoding, errors='replace')
-                if re.search(pattern, text):
-                    print(f"言語特徴({language})によるデコード成功: {encoding}")
-                    return text, f"language-{language}-{encoding}"
-            except Exception:
-                continue
-
-    # 12. 最終手段としてXOR復号を徹底的に試す（多くのキー）
-    try:
-        xor_result = try_common_xor_keys(data)
-        if xor_result:
-            print("拡張XOR復号成功")
-            return xor_result, "xor-decrypted"
-    except Exception as e:
-        print(f"拡張XOR復号失敗: {e}")
-
-    # 13. 最終的に最初の結果を返す
+    # 10. 最終的に最初の結果を返す
     print(f"他の方法で解析できず、初期解析結果を使用: {method}")
     return text, method
 
@@ -1006,187 +476,23 @@ def main():
     parser.add_argument("--output", "-o", help="変換結果の出力先ファイル")
     parser.add_argument("--force-text", "-t", help="指定したエンコーディングでテキスト変換を強制 (例: utf-8, shift-jis)")
     parser.add_argument("--verbose", "-v", action="store_true", help="詳細な情報を表示")
-    parser.add_argument("--xor-key", "-x", help="XOR復号に使用するキー値 (16進数形式、例: FF)")
-    parser.add_argument("--preview-size", "-p", type=int, default=300, help="プレビュー表示のサイズ (バイト数)")
-    parser.add_argument("--reference-path", help="リファレンスファイルのディレクトリパス (デフォルト: common/true-false-text/)")
-    parser.add_argument("--save-original", "-s", action="store_true", help="変換前のオリジナルデータを保存する")
-    parser.add_argument("--metadata", "-m", help="メタデータをJSON形式で提供 (例: '{\"encoding_hint\": \"utf-8\"}')")
-    parser.add_argument("--all-encodings", "-a", action="store_true", help="サポートされているすべてのエンコーディングで試行")
-    parser.add_argument("--apply-reference", "-A", help="リファレンスデータを適用 ('true' または 'false')")
 
     args = parser.parse_args()
-
-    file_path = args.file_path
-    preview_size = args.preview_size
-
-    # メタデータの解析
-    metadata = {}
-    if args.metadata:
-        try:
-            metadata = json.loads(args.metadata)
-            if args.verbose:
-                print(f"メタデータを読み込みました: {metadata}")
-        except json.JSONDecodeError as e:
-            print(f"メタデータのJSON解析に失敗: {e}")
-
-    # リファレンスファイルパスの設定
-    reference_files = {
-        'true': os.path.join('common', 'true-false-text', 'true.text'),
-        'false': os.path.join('common', 'true-false-text', 'false.text')
-    }
-
-    if args.reference_path:
-        reference_files = {
-            'true': os.path.join(args.reference_path, 'true.text'),
-            'false': os.path.join(args.reference_path, 'false.text')
-        }
-
-    # リファレンスファイルの直接適用
-    if args.apply_reference:
-        if args.apply_reference not in ['true', 'false']:
-            print(f"エラー: リファレンスタイプは 'true' または 'false' でなければなりません")
-            return
-
-        ref_path = reference_files[args.apply_reference]
-        if not os.path.exists(ref_path):
-            print(f"エラー: リファレンスファイル '{ref_path}' が見つかりません")
-            return
-
-        try:
-            # リファレンスファイルを読み込む
-            with open(ref_path, 'rb') as f:
-                ref_data = f.read()
-
-            # 出力ファイルが指定されていない場合は入力ファイルを上書き
-            output_path = args.output if args.output else file_path
-
-            # 元ファイルを保存
-            if args.save_original:
-                backup_path = f"{file_path}.original"
-                try:
-                    with open(file_path, 'rb') as f:
-                        original_data = f.read()
-                    with open(backup_path, 'wb') as f:
-                        f.write(original_data)
-                    print(f"オリジナルファイルを '{backup_path}' に保存しました")
-                except Exception as e:
-                    print(f"オリジナルファイル保存に失敗: {e}")
-
-            # リファレンスデータを書き込む
-            with open(output_path, 'wb') as f:
-                f.write(ref_data)
-
-            print(f"リファレンスファイル '{args.apply_reference}' を '{output_path}' に適用しました")
-
-            # リファレンスデータをプレビュー表示
-            try:
-                encoding = 'utf-8' if args.apply_reference == 'true' else 'shift-jis'
-                preview_text = ref_data.decode(encoding, errors='replace')
-                lines = preview_text.split('\n')[:10]  # 最初の10行
-                print("リファレンスデータ:")
-                print('\n'.join(lines))
-            except Exception as e:
-                print(f"リファレンスデータ表示に失敗: {e}")
-
-            return
-
-    # XORキーが指定された場合
-    if args.xor_key:
-        try:
-            # 16進数からバイト値に変換
-            xor_key = int(args.xor_key, 16)
-
-            print(f"XORキー 0x{xor_key:02X} を使用してデータを変換します")
-
-            # ファイルを読み込み
-            with open(file_path, 'rb') as f:
-                data = f.read()
-
-            # XOR操作を適用
-            xor_data = bytes(b ^ xor_key for b in data)
-
-            # エンコーディングを検出
-            xor_encoding = detect_encoding(xor_data)
-            print(f"XORデータのエンコーディング: {xor_encoding}")
-
-            # デコード
-            if xor_encoding != 'binary':
-                try:
-                    xor_text = xor_data.decode(xor_encoding, errors='replace')
-
-                    # 出力先
-                    output_file = args.output if args.output else f"{file_path}.xor"
-
-                    # 結果を保存
-                    with open(output_file, 'w', encoding='utf-8') as f:
-                        f.write(xor_text)
-
-                    print(f"XOR変換結果を '{output_file}' に保存しました")
-                    print("=" * 40)
-
-                    # プレビュー表示
-                    preview_lines = xor_text.split('\n')[:10]
-                    print('\n'.join(preview_lines))
-                    return
-                except Exception as e:
-                    print(f"XORデータをテキストとしてデコードできませんでした: {e}")
-
-            # バイナリとして保存
-            output_file = args.output if args.output else f"{file_path}.xor.bin"
-            with open(output_file, 'wb') as f:
-                f.write(xor_data)
-
-            print(f"XOR変換結果を '{output_file}' にバイナリとして保存しました")
-            print(f"バイナリプレビュー: {xor_data.hex()[:50]}...")
-            return
-        except ValueError as e:
-            print(f"XORキーの解析に失敗: {e}")
-            print("16進数形式で指定してください (例: FF, 33)")
-            return
-
-    # すべてのエンコーディングで試行
-    if args.all_encodings:
-        print(f"ファイル: {file_path}")
-        print("すべてのエンコーディングで試行中...")
-
-        try:
-            with open(file_path, 'rb') as f:
-                data = f.read()
-
-            results = []
-
-            for encoding in SUPPORTED_ENCODINGS:
-                try:
-                    text = data.decode(encoding, errors='replace')
-                    printable_ratio = sum(c.isprintable() for c in text) / len(text)
-                    results.append((encoding, printable_ratio, text))
-                except:
-                    continue
-
-            # 可読性の高い順に並べ替え
-            results.sort(key=lambda x: x[1], reverse=True)
-
-            print("\n=== エンコーディング試行結果 ===")
-            for encoding, ratio, text in results[:5]:  # 上位5つを表示
-                print(f"\n--- {encoding} (可読率: {ratio:.2f}) ---")
-                preview = text[:preview_size]
-                lines = preview.split('\n')[:5]
-                print('\n'.join(lines))
-
-            return
-        except Exception as e:
-            print(f"エンコーディング試行中にエラー: {e}")
-            return
 
     # リファレンスファイルとの比較処理
     if args.reference:
         from_reference = True
 
-        print(f"ファイル: {file_path}")
+        print(f"ファイル: {args.file_path}")
         print("リファレンスファイルとの比較を実行中...")
 
+        reference_files = {
+            'true': os.path.join('common', 'true-false-text', 'true.text'),
+            'false': os.path.join('common', 'true-false-text', 'false.text')
+        }
+
         try:
-            with open(file_path, 'rb') as f:
+            with open(args.file_path, 'rb') as f:
                 data = f.read()
 
             # まずは直接比較
@@ -1215,32 +521,6 @@ def main():
                     except Exception as e:
                         print(f"  {category}との比較中にエラー: {e}")
 
-            # 次にXOR比較
-            for xor_key in [0xFF, 0x55, 0xAA, 0x33, 0x66, 0x99, 0xCC]:
-                xor_data = bytes(b ^ xor_key for b in data)
-
-                for category, ref_path in reference_files.items():
-                    if os.path.exists(ref_path):
-                        try:
-                            with open(ref_path, 'rb') as f:
-                                ref_data = f.read()
-
-                            # XORしたデータとの比較
-                            min_len = min(len(xor_data), len(ref_data), 100)
-                            matches = sum(1 for i in range(min_len) if xor_data[i] == ref_data[i])
-                            similarity = matches / min_len
-
-                            if similarity > best_similarity:
-                                best_similarity = similarity
-                                best_category = f"{category} (XOR 0x{xor_key:02X})"
-                                best_match = ref_data
-
-                            if args.verbose:
-                                print(f"  {category} (XOR 0x{xor_key:02X}): 類似度 {similarity:.2f}")
-                        except Exception as e:
-                            if args.verbose:
-                                print(f"  {category} (XOR 0x{xor_key:02X})との比較中にエラー: {e}")
-
             # 結果の表示と保存
             if best_similarity > 0.7:
                 print(f"最適一致: {best_category} (類似度: {best_similarity:.2f})")
@@ -1250,12 +530,6 @@ def main():
                     with open(args.output, 'wb') as f:
                         f.write(best_match)
                     print(f"リファレンスデータを '{args.output}' に保存しました")
-
-                # 入力ファイルの上書き
-                if not args.output and input("元ファイルをリファレンスデータで上書きしますか？ (y/n): ").lower() == 'y':
-                    with open(file_path, 'wb') as f:
-                        f.write(best_match)
-                    print(f"'{file_path}' をリファレンスデータで上書きしました")
 
                 print("=" * 40)
                 # リファレンスデータの先頭表示
@@ -1279,13 +553,13 @@ def main():
         # 強制エンコーディング指定
         if args.force_text:
             try:
-                with open(file_path, 'rb') as f:
+                with open(args.file_path, 'rb') as f:
                     data = f.read()
 
                 # 指定エンコーディングでデコード
                 text = data.decode(args.force_text, errors='replace')
 
-                print(f"ファイル: {file_path}")
+                print(f"ファイル: {args.file_path}")
                 print(f"デコード方法: 強制 {args.force_text}")
 
                 # 出力ファイルへの保存
@@ -1295,13 +569,13 @@ def main():
                     print(f"変換結果を '{args.output}' に保存しました")
 
                 print("=" * 40)
-                print(text[:preview_size])
+                print(text)
             except Exception as e:
                 print(f"強制エンコーディング変換に失敗しました: {e}")
                 # 通常の自動検出処理にフォールバック
-                decoded_text, method = decode_file(file_path, metadata)
+                decoded_text, method = decode_file(args.file_path)
 
-                print(f"ファイル: {file_path}")
+                print(f"ファイル: {args.file_path}")
                 print(f"デコード方法: {method}")
 
                 # 出力ファイルへの保存
@@ -1316,12 +590,12 @@ def main():
                         print(f"変換結果を '{args.output}' に保存しました (バイナリモード)")
 
                 print("=" * 40)
-                print(decoded_text[:preview_size])
+                print(decoded_text)
         else:
             # 通常の自動検出処理
-            decoded_text, method = decode_file(file_path, metadata)
+            decoded_text, method = decode_file(args.file_path)
 
-            print(f"ファイル: {file_path}")
+            print(f"ファイル: {args.file_path}")
             print(f"デコード方法: {method}")
 
             # 出力ファイルへの保存
@@ -1336,7 +610,7 @@ def main():
                     print(f"変換結果を '{args.output}' に保存しました (バイナリモード)")
 
             print("=" * 40)
-            print(decoded_text[:preview_size])
+            print(decoded_text)
 
 
 if __name__ == "__main__":

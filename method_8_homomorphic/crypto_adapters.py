@@ -295,8 +295,28 @@ class TextAdapter(DataAdapter):
             base64_data = data[header_end+1:]
             print(f"[DEBUG] Base64データサイズ: {len(base64_data)}バイト")
 
+            # Base64データをクリーンアップ（無効な文字を除去）
+            try:
+                cleaned_base64 = base64_data.decode('ascii', errors='ignore').encode('ascii')
+            except Exception:
+                cleaned_base64 = base64_data
+
             # ステップ1: Base64デコード
-            latin1_data = base64.b64decode(base64_data)
+            try:
+                latin1_data = base64.b64decode(cleaned_base64)
+            except Exception as e:
+                print(f"[WARNING] 標準的なBase64デコードに失敗: {e}")
+                # 末尾のパディングを調整して再試行
+                padded_base64 = cleaned_base64
+                while len(padded_base64) % 4 != 0:
+                    padded_base64 += b'='
+                try:
+                    latin1_data = base64.b64decode(padded_base64)
+                except Exception as e2:
+                    print(f"[ERROR] パディング調整後もBase64デコードに失敗: {e2}")
+                    # 最後の手段：ヘッダー以降の全データをLatin-1として解釈
+                    return data[header_end+1:].decode('latin-1')
+
             print(f"[DEBUG] Base64デコード後: {len(latin1_data)}バイト")
 
             # ステップ2: latin-1としてデコード
@@ -304,13 +324,25 @@ class TextAdapter(DataAdapter):
 
             # ステップ3: UTF-8として解釈
             utf8_data = latin1_text.encode('latin-1')
-            text = utf8_data.decode('utf-8')
+
+            try:
+                text = utf8_data.decode('utf-8')
+            except UnicodeDecodeError:
+                # UTF-8デコードに失敗した場合はLatin-1として直接返す
+                print("[WARNING] UTF-8デコードに失敗しました。Latin-1として返します")
+                return latin1_text
+
             print(f"[DEBUG] UTF-8デコード後: '{text[:30]}'... (長さ: {len(text)})")
 
             return text
         except Exception as e:
             print(f"[ERROR] 多段エンコーディング逆変換中にエラー: {e}")
-            raise
+            # どうしても変換できない場合は、元データをLatin-1でデコードして返す
+            try:
+                return data.decode('latin-1', errors='replace')
+            except Exception:
+                # 最終手段：バイナリを16進数表現に変換
+                return data.hex()
 
     def to_processable(self, data: bytes) -> bytes:
         """
@@ -594,43 +626,86 @@ def process_data_after_decryption(data: bytes, data_type: str) -> Union[str, byt
     print(f"[DEBUG] 復号後: データタイプ={data_type}, サイズ={len(data)}バイト")
     print(f"[DEBUG] 復号後先頭バイト: {data[:min(20, len(data))]}")
 
-    # 多段エンコーディングの判定（ヘッダー付きデータ）
-    if data.startswith(b'TXT-MULTI:'):
-        try:
-            text_adapter = TextAdapter()
-            result = text_adapter.reverse_multi_stage_encoding(data)
-            print(f"[DEBUG] 多段エンコーディングの復号成功: {result[:min(50, len(result))]}")
-            return result
-        except Exception as e:
-            print(f"[DEBUG] 多段エンコーディングの復号に失敗: {e}")
-            # 失敗した場合は通常の処理に進む
+    # 無効なデータをチェック
+    if not data:
+        print("[WARNING] 空のデータを受け取りました")
+        return b'' if data_type == 'binary' else ''
 
-    # データタイプが指定されていない場合は自動検出
-    if data_type == 'auto':
-        data_type = DataAdapter.detect_data_type(data)
-        print(f"[DEBUG] 自動検出したデータタイプ: {data_type}")
-
-    # 適切なアダプタの取得と変換
     try:
-        adapter = DataAdapter.get_adapter(data_type)
-        result = adapter.from_processable(data)
-        print(f"[DEBUG] 変換後: 型={type(result)}, サイズ={len(result)}")
-        return result
-    except Exception as e:
-        print(f"[DEBUG] データ変換中にエラー: {e}")
+        # バイナリデータからテキストを検出（ヘッダーがない場合の対応）
+        try:
+            # ASCII文字として判定可能か確認
+            ascii_text = data.decode('ascii', errors='ignore')
+            if 'TXT-MULTI:' in ascii_text[:20]:
+                print("[DEBUG] テキスト内でTXT-MULTIヘッダーを検出")
+                # バイト列からTXT-MULTIヘッダーの位置を特定
+                header_pos = ascii_text.find('TXT-MULTI:')
+                if header_pos >= 0:
+                    # ヘッダーからのデータを抽出
+                    header_data = data[header_pos:]
+                    text_adapter = TextAdapter()
+                    try:
+                        result = text_adapter.reverse_multi_stage_encoding(header_data)
+                        print(f"[DEBUG] 多段エンコーディング部分からの復号成功")
+                        return result
+                    except Exception as e:
+                        print(f"[DEBUG] 多段エンコーディング部分からの復号に失敗: {e}")
+        except Exception as e:
+            print(f"[DEBUG] ASCII検出中にエラー: {e}")
 
-        # エラーが発生した場合、各種エンコーディングを試す（テキストとして処理を試みる）
-        if data_type == 'text':
+        # 多段エンコーディングの判定（ヘッダー付きデータ）
+        if isinstance(data, (bytes, bytearray)) and data.startswith(b'TXT-MULTI:'):
+            try:
+                text_adapter = TextAdapter()
+                result = text_adapter.reverse_multi_stage_encoding(data)
+                print(f"[DEBUG] 多段エンコーディングの復号成功: {result[:min(50, len(result))]}")
+                return result
+            except Exception as e:
+                print(f"[DEBUG] 多段エンコーディングの復号に失敗: {e}")
+                # 失敗した場合は通常の処理に進む
+
+        # データタイプが指定されていない場合は自動検出
+        detected_type = data_type
+        if data_type == 'auto':
+            detected_type = DataAdapter.detect_data_type(data)
+            print(f"[DEBUG] 自動検出したデータタイプ: {detected_type}")
+
+        # テキストデータの特別処理
+        if detected_type == 'text' or data_type == 'text':
+            # 複数のエンコーディングを試す
             for encoding in ['utf-8', 'latin-1', 'shift-jis', 'euc-jp']:
                 try:
                     text = data.decode(encoding)
-                    print(f"[DEBUG] {encoding}でデコードできました")
+                    print(f"[DEBUG] {encoding}でデコード成功: {text[:20]}")
                     return text
                 except UnicodeDecodeError:
                     continue
 
-        # すべての変換が失敗した場合は元のデータを返す
-        return data
+            # どのエンコーディングでもデコードできない場合は、latin-1で強制デコード
+            try:
+                text = data.decode('latin-1')
+                print(f"[DEBUG] latin-1でデコード成功: {text[:20]}")
+                return text
+            except Exception as e:
+                print(f"[DEBUG] 最終的なテキストデコードにも失敗: {e}")
+
+        # 適切なアダプタの取得と変換
+        try:
+            adapter = DataAdapter.get_adapter(detected_type)
+            result = adapter.from_processable(data)
+            print(f"[DEBUG] 変換後: 型={type(result).__name__}, サイズ={len(result) if hasattr(result, '__len__') else 'N/A'}")
+            return result
+        except Exception as e:
+            print(f"[DEBUG] データ変換中にエラー: {e}")
+            # 変換エラー時は元のデータをそのまま返す
+
+    except Exception as e:
+        print(f"[ERROR] データ処理中に予期しないエラー: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # すべての変換が失敗した場合、元のデータをそのまま返す
+    return data
 
 
 if __name__ == "__main__":

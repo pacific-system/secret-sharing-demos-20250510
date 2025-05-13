@@ -251,16 +251,30 @@ def determine_key_type_advanced(key: Union[str, bytes], salt: bytes) -> str:
     else:
         key_bytes = key
 
-    # ソルトを使ったHMACハッシュを計算して最初の4バイトを取得
-    hmac_hash = hmac.new(salt, key_bytes, hashlib.sha256).digest()[:4]
+    # ソルトを使ったHMACハッシュを計算
+    hmac_hash = hmac.new(salt, key_bytes, hashlib.sha256).digest()
 
-    # 最初の4バイトを整数に変換して偶数/奇数判定
-    value = int.from_bytes(hmac_hash, byteorder='big')
+    # ハッシュから複数の特徴を抽出
+    # 1. 先頭4バイトを整数に変換
+    value1 = int.from_bytes(hmac_hash[:4], byteorder='big')
 
-    # 数学的に安定した判定: ハッシュ値が偶数ならtrue、奇数ならfalse
-    # これは確率的に約50%ずつに分かれるため、ランダムなパスワードに対して
-    # true/falseは均等に分布します
-    if value % 2 == 0:
+    # 2. 次の4バイトを整数に変換
+    value2 = int.from_bytes(hmac_hash[4:8], byteorder='big')
+
+    # 3. ハミング重み（1ビットの数）を計算
+    hamming_weight = sum(bin(b).count('1') for b in hmac_hash[:16])
+
+    # 4. 複数の判定条件を組み合わせて結果を生成
+    # この複雑な判定式は単純な解析を防ぎます
+    condition1 = (value1 % 2 == 0)
+    condition2 = ((value2 & 0xFF) > 127)
+    condition3 = (hamming_weight % 3 == 1)
+
+    # 複数条件の組み合わせ（XOR演算で複雑性を高める）
+    result = (condition1 ^ condition2) ^ condition3
+
+    # 結果に応じて鍵タイプを返す
+    if result:
         return KEY_TYPE_TRUE
     else:
         return KEY_TYPE_FALSE

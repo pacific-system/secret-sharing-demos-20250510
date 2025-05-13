@@ -392,7 +392,7 @@ def decrypt_data(data: bytes, key: str) -> bytes:
 def simpler_decrypt(encrypted_data: bytes, metadata: Dict[str, Any], password: str) -> Tuple[bytes, str]:
     """
     シンプルな復号処理を行う関数。
-    メタデータ内のパスワードリストと照合し、適切なデータを復号します。
+    鍵種別の判定を安全に行い、適切なデータを復号します。
 
     Args:
         encrypted_data: 暗号化データ
@@ -402,37 +402,19 @@ def simpler_decrypt(encrypted_data: bytes, metadata: Dict[str, Any], password: s
     Returns:
         (復号データ, データ種別)
     """
-    # メタデータからパスワードを取得
-    true_password = metadata.get("true_password")
-    false_password = metadata.get("false_password")
-
-    # パスワードが見つからない場合
-    if not true_password or not false_password:
-        raise ValueError("メタデータにパスワード情報がありません")
-
-    # 鍵の種類を判定（単純なパスワード比較）
-    if password == true_password:
-        key_type = "true"
-    elif password == false_password:
-        key_type = "false"
-    else:
-        # それ以外のパスワードは、どちらかは判定できないのでランダム
-        # 実際のシステムではもっと安全な方法が必要
-        key_type = "true" if hash(password) % 2 == 0 else "false"
-
     # メタデータを取得
     salt = base64.b64decode(metadata["salt"])
     data_length = metadata["data_length"]
 
-    # パスワードから鍵を派生
-    key, iv, _ = derive_key(password, salt)
+    # 安全な鍵種別判定を実装 (StreamSelectorを使用)
+    selector = StreamSelector(salt)
+    key_type = selector.determine_key_type_for_decryption(password)
 
-    # ストリーム生成
-    stream_gen = RabbitStreamGenerator(key, iv)
-    stream = stream_gen.generate(data_length)
+    # 適切なストリームを生成
+    stream = selector.get_stream_for_decryption(password, data_length)
 
-    # データ選択
-    if key_type == "true":
+    # 鍵種別に応じてデータを選択
+    if key_type == KEY_TYPE_TRUE:
         # true鍵の場合は前半部分
         encrypted_part = encrypted_data[:data_length]
     else:

@@ -524,16 +524,14 @@ def simpler_encrypt(true_data: bytes, false_data: bytes) -> Tuple[str, str, byte
     if len(false_data) < max_length:
         false_data = false_data + b'\x00' * (max_length - len(false_data))
 
-    # 各パスワードからキーを派生
-    true_key, true_iv, _ = derive_key(true_password, salt)
-    false_key, false_iv, _ = derive_key(false_password, salt)
+    # StreamSelectorを使用して安全に鍵を処理
+    selector = StreamSelector(salt)
 
-    # 各データをXOR暗号化するためのストリームを生成
-    true_gen = RabbitStreamGenerator(true_key, true_iv)
-    false_gen = RabbitStreamGenerator(false_key, false_iv)
+    # 正規データ用ストリームを生成
+    true_stream = selector.get_stream_for_decryption(true_password, max_length)
 
-    true_stream = true_gen.generate(max_length)
-    false_stream = false_gen.generate(max_length)
+    # 非正規データ用ストリームを生成
+    false_stream = selector.get_stream_for_decryption(false_password, max_length)
 
     # データを暗号化
     true_encrypted = xor_encrypt_data(true_data, true_stream)
@@ -542,13 +540,11 @@ def simpler_encrypt(true_data: bytes, false_data: bytes) -> Tuple[str, str, byte
     # 暗号化データを連結
     encrypted_data = true_encrypted + false_encrypted
 
-    # メタデータの作成
+    # メタデータの作成（パスワードは含めない）
     metadata = {
         "version": VERSION,
         "salt": base64.b64encode(salt).decode('utf-8'),
         "data_length": max_length,
-        "true_password": true_password,  # デモ用なのでパスワードも保存
-        "false_password": false_password,
         "true_hash": hashlib.sha256(true_data).hexdigest()[:8],
         "false_hash": hashlib.sha256(false_data).hexdigest()[:8],
         "encryption_method": "simple_separate_xor",

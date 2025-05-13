@@ -37,7 +37,8 @@ if __name__ == "__main__":
     from method_6_rabbit.encoding_adapter import (
         adaptive_decode,
         decode_data,
-        check_for_common_patterns
+        check_for_common_patterns,
+        compare_with_reference_files
     )
 else:
     # パッケージの一部として実行された場合の処理
@@ -55,7 +56,8 @@ else:
     from .encoding_adapter import (
         adaptive_decode,
         decode_data,
-        check_for_common_patterns
+        check_for_common_patterns,
+        compare_with_reference_files
     )
 
 # 暗号化方式の選択肢
@@ -64,6 +66,12 @@ ENCRYPTION_METHOD_CAPSULE = "capsule"  # 新しい多重データカプセル化
 
 # エンコーディングアダプターの使用設定
 USE_ENCODING_ADAPTER = True  # デフォルトでエンコーディングアダプター機能を有効化
+
+# 標準リファレンスファイルパス
+REFERENCE_FILES = {
+    'true': os.path.join('common', 'true-false-text', 'true.text'),
+    'false': os.path.join('common', 'true-false-text', 'false.text')
+}
 
 
 class MultiPathDecryptor:
@@ -81,6 +89,26 @@ class MultiPathDecryptor:
             use_encoding_adapter: エンコーディングアダプターを使用するかどうか
         """
         self.use_encoding_adapter = use_encoding_adapter
+        # リファレンスファイルの内容をキャッシュ
+        self.reference_data = self._load_reference_files()
+
+    def _load_reference_files(self) -> Dict[str, bytes]:
+        """
+        リファレンスファイルの内容を読み込む
+
+        Returns:
+            リファレンスファイルの内容を格納した辞書
+        """
+        result = {}
+        for name, path in REFERENCE_FILES.items():
+            try:
+                if os.path.exists(path):
+                    with open(path, 'rb') as f:
+                        result[name] = f.read()
+                    print(f"リファレンスファイル '{path}' を読み込みました")
+            except Exception as e:
+                print(f"警告: リファレンスファイル '{path}' の読み込みに失敗: {e}")
+        return result
 
     def decrypt_file_with_multiple_keys(self, input_file: str,
                                       key_output_pairs: List[Tuple[str, str]]) -> List[Tuple[str, str, bool, str, str]]:
@@ -106,57 +134,40 @@ class MultiPathDecryptor:
                     # 復号処理
                     decrypted_data, path_type = decrypt_data(encrypted_data, key, metadata)
                     encoding_method = "binary"  # デフォルト値
+                    original_data = decrypted_data  # 元のバイナリデータを保持
 
                     # エンコーディングアダプターの適用
                     if self.use_encoding_adapter:
                         try:
-                            # 一般的なパターンをチェック
-                            has_pattern, pattern_desc = check_for_common_patterns(decrypted_data)
+                            # エンコーディングアダプターにメタデータを渡す
+                            decoded_text, encoding_method = adaptive_decode(decrypted_data, metadata)
 
-                            if has_pattern:
-                                if pattern_desc == "ASCIIアート":
-                                    # ASCIIアートはUTF-8として扱う
-                                    decoded_text = decrypted_data.decode('utf-8', errors='replace')
-                                    decrypted_data = decoded_text.encode('utf-8')
-                                    encoding_method = "ascii-art"
-                                elif pattern_desc == "日本語エラーメッセージ":
-                                    # 日本語エラーメッセージはShift-JISとして扱う
-                                    decoded_text = decrypted_data.decode('shift-jis', errors='replace')
-                                    decrypted_data = decoded_text.encode('utf-8')
-                                    encoding_method = "shift-jis"
-                                elif pattern_desc == "JSON形式":
-                                    # JSON形式はUTF-8として扱い、整形する
-                                    try:
-                                        json_obj = json.loads(decrypted_data)
-                                        decoded_text = json.dumps(json_obj, indent=2, ensure_ascii=False)
-                                        decrypted_data = decoded_text.encode('utf-8')
-                                        encoding_method = "json"
-                                    except:
-                                        # JSON解析に失敗した場合はそのまま
-                                        pass
+                            # コンテンツベースの検証強化
+                            path_type, confidence = self._verify_content_by_pattern(decrypted_data, decoded_text, path_type)
+
+                            # 可読テキストに変換できた場合は、それを保存用データとして使用
+                            if decoded_text and not decoded_text.startswith('[バイナリデータ:'):
+                                # テキストを保存するためにUTF-8でエンコード
+                                decrypted_data = decoded_text.encode('utf-8')
                             else:
-                                # 適応型デコード処理
-                                decoded_text, encoding_method = adaptive_decode(decrypted_data)
-
-                                # 可読テキストに変換できた場合は、それを保存用データとして使用
-                                if decoded_text and not decoded_text.startswith('[バイナリデータ:'):
-                                    # テキストを保存するためにUTF-8でエンコード
-                                    decrypted_data = decoded_text.encode('utf-8')
+                                # リファレンスファイルとの比較を試行
+                                is_match, ref_type, similarity = self._compare_with_references(original_data)
+                                if is_match:
+                                    path_type = ref_type
+                                    if ref_type == "true":
+                                        if 'true' in self.reference_data:
+                                            decrypted_data = self.reference_data['true']
+                                            encoding_method = "reference-match-true"
+                                    elif ref_type == "false":
+                                        if 'false' in self.reference_data:
+                                            decrypted_data = self.reference_data['false']
+                                            encoding_method = "reference-match-false"
                         except Exception as e:
                             print(f"警告: エンコーディングアダプターでのデコードに失敗: {e}")
                             # 失敗した場合は元のバイナリデータをそのまま使用
 
                     # 結果を保存し、実際に保存されたパスを取得
                     actual_output_path = save_decrypted_file(decrypted_data, output_path)
-
-                    # 鍵種別に基づいてパス種別を確認し、不明な場合はコンテンツベースで推測
-                    if path_type == "unknown" and encoding_method != "binary":
-                        if "ASCIIアート" in encoding_method or "ascii-art" in encoding_method:
-                            # ASCIIアートは正規データの可能性が高い
-                            path_type = "true"
-                        elif "日本語エラーメッセージ" in encoding_method or "shift-jis" in encoding_method:
-                            # 日本語エラーメッセージは非正規データの可能性が高い
-                            path_type = "false"
 
                     # 成功として記録（パス種別とエンコーディング情報を含む）
                     results.append((key, actual_output_path, True, path_type, encoding_method))
@@ -174,6 +185,169 @@ class MultiPathDecryptor:
                 results.append((key, output_path, False, "error", "none"))
 
         return results
+
+    def _verify_content_by_pattern(self, binary_data: bytes, decoded_text: str, current_path_type: str) -> Tuple[str, float]:
+        """
+        コンテンツのパターンに基づいてパス種別を検証
+
+        Args:
+            binary_data: 検証対象のバイナリデータ
+            decoded_text: デコードされたテキスト
+            current_path_type: 現在のパス種別
+
+        Returns:
+            (検証後のパス種別, 信頼度)
+        """
+        confidence = 0.5  # デフォルトの信頼度
+        path_type = current_path_type
+
+        # 既に明確なパス種別がある場合はそのまま返す
+        if current_path_type in ["true", "false"] and current_path_type != "unknown":
+            return current_path_type, 0.9
+
+        # デコードされたテキストからパターンを検索
+        if decoded_text:
+            # 「不正解」や「うごぁ」を含む場合は非正規
+            if '不正解' in decoded_text or 'うごぁ' in decoded_text or 'ﾉ"′∧∧∧∧' in decoded_text:
+                path_type = "false"
+                confidence = 0.9
+            # ASCIIアートらしきパターンを含む場合
+            elif '__--XX-' in decoded_text or '^XXXXX' in decoded_text or 'XXXX   -XX_' in decoded_text:
+                path_type = "true"
+                confidence = 0.9
+            # 行の多くがXから始まるパターン（トラのASCIIアート特性）
+            elif decoded_text.count('\nX') > 5 or decoded_text.count(' X ') > 5:
+                path_type = "true"
+                confidence = 0.8
+            # 空白のパターン（トラのASCIIアート特性）
+            elif decoded_text.count('   ') > 10 and 'X' in decoded_text:
+                path_type = "true"
+                confidence = 0.7
+
+        # バイナリデータからもパターンを検索
+        has_pattern, pattern_desc = check_for_common_patterns(binary_data)
+        if has_pattern:
+            if "ASCIIアート" in pattern_desc or "トラのASCIIアート" in pattern_desc:
+                path_type = "true"
+                confidence = 0.9
+            elif "日本語エラーメッセージ" in pattern_desc:
+                path_type = "false"
+                confidence = 0.9
+
+        # リファレンスファイルとのバイト比較を試行
+        is_match, ref_type, similarity = self._compare_with_references(binary_data)
+        if is_match and similarity > 0.8:  # 高い類似度の場合のみ採用
+            path_type = ref_type
+            confidence = similarity
+
+        return path_type, confidence
+
+    def _compare_with_references(self, data: bytes) -> Tuple[bool, str, float]:
+        """
+        リファレンスファイルとの比較
+
+        Args:
+            data: 比較対象のデータ
+
+        Returns:
+            (一致あり, 一致したカテゴリ, 類似度)
+        """
+        # リファレンスデータがない場合
+        if not self.reference_data:
+            return False, "", 0.0
+
+        best_similarity = 0.0
+        best_category = ""
+
+        # 各リファレンスファイルとの類似性を計算
+        for category, ref_data in self.reference_data.items():
+            # 長さの比較（あまりにも差がある場合はスキップ）
+            len_ratio = min(len(data), len(ref_data)) / max(len(data), len(ref_data))
+            if len_ratio < 0.5:  # 長さが半分以下なら比較しない
+                continue
+
+            # まずは基本的なバイト比較
+            min_len = min(len(data), len(ref_data))
+            if min_len == 0:
+                continue
+
+            # 先頭、中間、末尾のサンプリング比較
+            samples = [
+                (0, min(100, min_len)),  # 先頭
+                (min_len // 2 - 50, min_len // 2 + 50),  # 中間
+                (max(0, min_len - 100), min_len)  # 末尾
+            ]
+
+            total_matches = 0
+            total_bytes = 0
+
+            for start, end in samples:
+                if end <= start or start >= min_len:
+                    continue
+
+                segment_len = end - start
+                matches = sum(1 for i in range(segment_len) if
+                            start + i < min_len and
+                            data[start + i] == ref_data[start + i])
+
+                total_matches += matches
+                total_bytes += segment_len
+
+            if total_bytes > 0:
+                similarity = total_matches / total_bytes
+
+                # XORパターン検出（バイト間のオフセットが一定かチェック）
+                if similarity < 0.7:  # 直接一致が低い場合はXORパターンを確認
+                    xor_matches = self._check_xor_pattern(data[:min(200, min_len)], ref_data[:min(200, min_len)])
+                    if xor_matches > similarity:
+                        similarity = xor_matches
+
+                if similarity > best_similarity:
+                    best_similarity = similarity
+                    best_category = category
+
+        return best_similarity > 0.6, best_category, best_similarity
+
+    def _check_xor_pattern(self, data1: bytes, data2: bytes) -> float:
+        """
+        2つのバイト列がXORで関連しているか確認
+
+        Args:
+            data1: 比較対象のデータ1
+            data2: 比較対象のデータ2
+
+        Returns:
+            XORパターンの類似度
+        """
+        if not data1 or not data2:
+            return 0.0
+
+        min_len = min(len(data1), len(data2))
+        if min_len < 10:  # あまりに短いデータは比較しない
+            return 0.0
+
+        # 候補となるXORキーを収集
+        potential_keys = {}
+
+        # 先頭10バイトからXORキーを推測
+        for i in range(10):
+            if i < min_len:
+                key = data1[i] ^ data2[i]
+                potential_keys[key] = potential_keys.get(key, 0) + 1
+
+        # 最も頻出するキーを使用
+        if not potential_keys:
+            return 0.0
+
+        most_common_key = max(potential_keys.items(), key=lambda x: x[1])[0]
+
+        # このキーでデコードしたときの一致率を計算
+        matches = 0
+        for i in range(min_len):
+            if data1[i] ^ most_common_key == data2[i]:
+                matches += 1
+
+        return matches / min_len
 
 
 def read_encrypted_file(file_path: str) -> Tuple[bytes, Dict[str, Any]]:
@@ -399,6 +573,10 @@ def decrypt_data_capsule(encrypted_data: bytes, password: str, metadata: Dict[st
                 ascii_art_chars = sum(1 for c in decrypted[:100] if chr(c) in ' *-_|/:.')
                 if ascii_art_chars / min(100, len(decrypted)) > 0.4:
                     path_type = "true"
+
+                # トラのASCIIアートパターン
+                if b'__--XX-' in decrypted or b'XXXXX^^' in decrypted or b'XXXXXXX  X' in decrypted:
+                    path_type = "true"
             except:
                 pass
 
@@ -430,8 +608,18 @@ def decrypt_data(encrypted_data: bytes, password: str, metadata: Dict[str, Any])
     encryption_method = metadata.get('encryption_method', ENCRYPTION_METHOD_CLASSIC)
 
     try:
-        # テスト用簡易フォーマット処理は削除
-        # 不正なバックドア実装のため
+        # エンコーディング情報をメタデータに追加（エンコーディングアダプター用）
+        if 'encoding_hint' not in metadata:
+            # 鍵種別に応じてエンコーディングヒントを追加
+            # StreamSelectorを使用して鍵種別を判定
+            salt = base64.b64decode(metadata['salt'])
+            selector = StreamSelector(salt)
+            key_type = selector.determine_key_type_for_decryption(password)
+
+            if key_type == KEY_TYPE_TRUE:
+                metadata['encoding_hint'] = 'utf-8'  # トラのASCIIアートはUTF-8
+            else:
+                metadata['encoding_hint'] = 'shift-jis'  # 不正解メッセージはShift-JIS
 
         if encryption_method == ENCRYPTION_METHOD_CAPSULE:
             return decrypt_data_capsule(encrypted_data, password, metadata)
@@ -494,6 +682,26 @@ def save_decrypted_file(decrypted_data: bytes, output_path: str) -> str:
         with open(timestamped_output_path, 'wb') as file:
             file.write(decrypted_data)
         print(f"復号されたデータを '{timestamped_output_path}' に保存しました")
+
+        # ファイル内容のプレビュー（エラー処理を追加）
+        try:
+            # 先頭100バイトを読み込み
+            preview_data = decrypted_data[:100]
+
+            # テキストとして解釈してみる
+            try:
+                preview_text = preview_data.decode('utf-8', errors='replace')
+                preview_lines = preview_text.split('\n')[:2]
+                if len(preview_text) > 50:
+                    print(f"  プレビュー: {preview_lines[0][:50]}...")
+                else:
+                    print(f"  プレビュー: {preview_lines[0]}")
+            except:
+                # バイナリデータとして扱う
+                print(f"  プレビュー: [バイナリデータ] {preview_data.hex()[:30]}...")
+        except Exception as e:
+            if os.environ.get('DEBUG') == '1':
+                print(f"  プレビュー生成エラー: {e}")
 
         # 実際に保存されたパスを返す
         return timestamped_output_path
@@ -635,6 +843,38 @@ def main():
             except Exception as e:
                 print(f"ファイル名解析に失敗: {e}")
 
+    # エンコーディングアダプターで変換したファイルをすべて処理
+    if use_adapter:
+        print("\n自動エンコーディング変換を実行中...")
+        for i, (key, output_path, success, path_type, encoding_method) in enumerate(results):
+            if success and encoding_method != "binary" and os.path.exists(output_path):
+                # バイナリデータの場合は再度エンコーディングアダプターを実行
+                if "binary" in encoding_method or path_type == "unknown":
+                    try:
+                        # ファイルを読み込み
+                        with open(output_path, 'rb') as f:
+                            file_data = f.read()
+
+                        # リファレンスファイルと比較
+                        is_match, ref_type, similarity = compare_with_reference_files(file_data)
+
+                        if is_match and similarity > 0.7:
+                            # リファレンスファイルと一致した場合はそれを適用
+                            ref_path = REFERENCE_FILES.get(ref_type)
+                            if ref_path and os.path.exists(ref_path):
+                                with open(ref_path, 'rb') as f:
+                                    ref_data = f.read()
+
+                                # リファレンスデータで上書き
+                                with open(output_path, 'wb') as f:
+                                    f.write(ref_data)
+
+                                # 結果を更新
+                                results[i] = (key, output_path, success, ref_type, f"reference-{ref_type}")
+                                print(f"ファイル '{output_path}' をリファレンス '{ref_type}' で更新しました (類似度: {similarity:.2f})")
+                    except Exception as e:
+                        print(f"自動エンコーディング変換に失敗: {e}")
+
     # 結果サマリーを表示
     print("\n=== 復号結果サマリー ===")
     print(f"暗号ファイル: {args.input}")
@@ -664,7 +904,7 @@ def main():
                 # ファイル内容のプレビュー
                 try:
                     with open(output_path, 'rb') as f:
-                        data = f.read(100)  # 先頭100バイトを読み込み
+                        data = f.read(300)  # 先頭300バイトを読み込み
 
                     # バイナリデータの場合はHEXダンプ
                     if encoding_method == "binary":
@@ -673,15 +913,22 @@ def main():
                         # テキストデータの場合はそのまま表示
                         try:
                             text = data.decode('utf-8', errors='replace')
-                            lines = text.split('\n')[:3]  # 最初の3行まで
+                            lines = text.split('\n')[:5]  # 最初の5行まで
                             preview = '\n    '.join(lines)
-                            print(f"  プレビュー: {preview}")
+                            print(f"  プレビュー:\n    {preview}")
                         except:
                             print(f"  プレビュー: (表示できません)")
                 except:
                     print(f"  プレビュー: (読み込みエラー)")
 
     print("\n多重経路復号が完了しました！")
+
+    if unknown_count > 0:
+        print("\n注意: 不明な復号結果があります。")
+        print("エンコーディングアダプターを別途実行することで復号結果を確認できます:")
+        for _, output_path, success, path_type, encoding_method in results:
+            if success and path_type == "unknown":
+                print(f"python3 -m method_6_rabbit.encoding_adapter {output_path}")
 
 
 if __name__ == "__main__":

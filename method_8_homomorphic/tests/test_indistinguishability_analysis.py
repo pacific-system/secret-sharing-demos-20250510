@@ -544,7 +544,9 @@ class CryptanalyticTests(unittest.TestCase):
         ax = plt.subplot(111, polar=True)
         ax.plot(angles, scores, 'o-', linewidth=2)
         ax.fill(angles, scores, alpha=0.25)
-        ax.set_thetagrids(angles[:-1] * 180 / np.pi, categories)
+        # numpy配列として確実に処理
+        angles_array = np.array(angles[:-1])
+        ax.set_thetagrids(angles_array * 180 / np.pi, categories)
 
         # 目盛りの設定
         ax.set_ylim(0, 1)

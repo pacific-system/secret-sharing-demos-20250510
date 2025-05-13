@@ -1,0 +1,30 @@
+2025-05-13 16:19:20,348 - homomorphic_test_runner - INFO - Discovered 17 test modules
+2025-05-13 16:19:20,349 - homomorphic_test_runner - INFO - Starting test run with 17 modules
+2025-05-13 16:19:20,349 - homomorphic_test_runner - INFO - Debug mode: False
+2025-05-13 16:19:20,349 - homomorphic_test_runner - INFO - Performance mode: False
+2025-05-13 16:19:20,349 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_crypto_mask
+2025-05-13 16:19:20,609 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_crypto_mask (6 tests)
+2025-05-13 16:19:34,146 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_decrypt
+2025-05-13 16:19:34,147 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_decrypt (0 tests)
+2025-05-13 16:19:34,148 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_encrypt
+2025-05-13 16:19:34,169 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_encrypt (6 tests)
+2025-05-13 16:19:34,640 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_encrypt_decrypt
+2025-05-13 16:19:34,641 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_encrypt_decrypt (1 tests)
+2025-05-13 16:19:44,904 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_encrypt_decrypt_integration
+2025-05-13 16:19:44,905 - homomorphic_test_runner - ERROR - Failed to import test module method_8_homomorphic.tests.test_encrypt_decrypt_integration: cannot import name 'decrypt_file' from 'method_8_homomorphic.decrypt' (/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/decrypt.py)
+2025-05-13 16:19:44,906 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_enhanced_security
+2025-05-13 16:19:44,906 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_enhanced_security (3 tests)
+2025-05-13 16:19:46,147 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_homomorphic
+2025-05-13 16:19:46,149 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_homomorphic (25 tests)
+2025-05-13 16:20:06,291 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_homomorphic_crypto
+2025-05-13 16:20:06,292 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_homomorphic_crypto (0 tests)
+2025-05-13 16:20:06,292 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_homomorphic_modules
+2025-05-13 16:20:06,293 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_homomorphic_modules (16 tests)
+2025-05-13 16:20:07,259 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_indistinguishability
+2025-05-13 16:20:07,260 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_indistinguishability (6 tests)
+2025-05-13 16:20:13,976 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_indistinguishability_analysis
+2025-05-13 16:20:14,528 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_indistinguishability_analysis (7 tests)
+2025-05-13 16:20:28,277 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_indistinguishable
+2025-05-13 16:20:28,279 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_indistinguishable (0 tests)
+2025-05-13 16:20:28,279 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_key_analysis
+2025-05-13 16:20:28,280 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_key_analysis (12 tests)

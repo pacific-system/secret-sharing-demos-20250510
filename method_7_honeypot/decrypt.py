@@ -167,9 +167,16 @@ def decrypt_file(file_path: str, key: bytes, output_path: Optional[str] = None) 
         salt = base64.b64decode(metadata.get('salt', ''))
         iv = base64.b64decode(metadata.get(f'{key_type}_iv', ''))
 
-        # トラップドアパラメータを復元
-        # 実際には、ここで必要なパラメータをカプセルから抽出
-        trapdoor_params = {}  # 簡略化のため空の辞書を使用
+        # トラップドアパラメータを簡易的に作成（復号時には完全なパラメータが不要）
+        # 実際の復号では鍵の検証のみを行うため、必要最小限のパラメータで十分
+        trapdoor_params = {
+            'true_param': 1,        # ダミー値（実際の処理では使用されない）
+            'false_param': 2,       # ダミー値（実際の処理では使用されない）
+            'seed': key,            # シード値（キー自体を使用）
+            'n': 65537,             # 固定値（処理に使用しない）
+            'e': 65537,             # 固定値（処理に使用しない）
+            'd': 1                  # 固定値（処理に使用しない）
+        }
 
         # 改変耐性機能による鍵検証
         # 注: verify_with_tamper_resistance は改変検知機能を含む

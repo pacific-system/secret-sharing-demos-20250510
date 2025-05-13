@@ -79,32 +79,24 @@ def generate_prime(bits: int) -> int:
     Returns:
         生成された素数
     """
-    # 実際の実装では、cryptographyライブラリを使用して素数を生成します
-    # このデモでは簡易的な実装として、ダミーの素数を返します
-
-    # 注: 実際の実装ではより堅牢な素数生成が必要です
-    # 以下は概念実証のためのシンプルな実装です
-
-    # ランダムな奇数を生成
+    # cryptographyライブラリを使用して素数を生成
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives.asymmetric import rsa
 
-    # RSA鍵ペア生成を利用して素数を取得
-    p = 0
-    for _ in range(PRIME_GENERATION_ATTEMPTS):
-        private_key = rsa.generate_private_key(
-            public_exponent=RSA_PUBLIC_EXPONENT,
-            key_size=bits,
-            backend=default_backend()
-        )
-        # 秘密鍵から素数pを取得
-        private_numbers = private_key.private_numbers()
-        p = private_numbers.p
+    # このデモではより小さい鍵サイズを使用（実際の実装ではより大きな値を使用）
+    # RSA鍵生成時に内部で素数が生成されるため、その値を利用する
+    key_size = max(bits * 2, 2048)  # 最低でも2048ビットを確保
 
-        if p.bit_length() >= bits - 1:
-            return p
+    # RSA鍵ペア生成
+    private_key = rsa.generate_private_key(
+        public_exponent=RSA_PUBLIC_EXPONENT,
+        key_size=key_size,
+        backend=default_backend()
+    )
 
-    raise ValueError(f"素数生成に失敗しました（{bits}ビット）")
+    # 秘密鍵から素数pを取得
+    private_numbers = private_key.private_numbers()
+    return private_numbers.p
 
 
 def create_trapdoor_parameters(master_key: bytes) -> Dict[str, Any]:
@@ -275,16 +267,14 @@ def generate_honey_token(key_type: str, params: Dict[str, Any]) -> bytes:
         base = params['false_param']
 
     # トークン種別を埋め込み（暗号学的に隠蔽）
-    token_seed = int.to_bytes(
-        (base * params['e']) % params['n'],
-        length=TOKEN_SIZE,
-        byteorder='big'
-    )
+    # 大きな整数を適切に処理するために、ハッシュ関数を使用して縮小
+    token_value = (base * params['e']) % params['n']
+    token_hash = hashlib.sha256(str(token_value).encode()).digest()
 
     # ハニートークン生成
     token = hmac.new(
         params['seed'],
-        token_seed + key_type.encode('utf-8'),
+        token_hash + key_type.encode('utf-8'),
         hashlib.sha256
     ).digest()
 

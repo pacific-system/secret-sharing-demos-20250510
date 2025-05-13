@@ -39,8 +39,8 @@ HEADER_FORMAT = "!6sHI16sI4x"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
 # データブロックヘッダーの構造
-# | ブロックタイプ(4) | ブロックサイズ(4) | データオフセット(8) | ブロックハッシュ(32) |
-BLOCK_HEADER_FORMAT = "!IIIQ32s"
+# | ブロックタイプ(4) | ブロックサイズ(4) | データオフセット(8) | 予約フィールド(4) | ブロックハッシュ(32) |
+BLOCK_HEADER_FORMAT = "!IIQI32s"
 BLOCK_HEADER_SIZE = struct.calcsize(BLOCK_HEADER_FORMAT)
 
 
@@ -196,10 +196,11 @@ class HoneypotCapsule:
             # ブロックヘッダーを作成
             block_header = struct.pack(
                 BLOCK_HEADER_FORMAT,
-                block['type'],
-                block['size'],
-                data_pos,
-                block['hash']
+                block['type'],        # ブロックタイプ
+                block['size'],        # ブロックサイズ
+                data_pos,             # データオフセット
+                0,                    # 予約フィールド
+                block['hash']         # ブロックハッシュ
             )
 
             # ファイルポインタをブロックヘッダー位置に移動
@@ -274,7 +275,7 @@ class HoneypotCapsule:
             if len(block_header_data) != BLOCK_HEADER_SIZE:
                 raise ValueError("カプセル形式が不正です: ブロックヘッダーの読み込みに失敗しました")
 
-            block_type, block_size, data_offset, block_hash = struct.unpack(BLOCK_HEADER_FORMAT, block_header_data)
+            block_type, block_size, data_offset, reserved, block_hash = struct.unpack(BLOCK_HEADER_FORMAT, block_header_data)
             block_headers.append({
                 'type': block_type,
                 'size': block_size,

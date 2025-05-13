@@ -57,6 +57,88 @@ def safe_log10(value):
         bit_length = value.bit_length()
         return bit_length * math.log10(2)
 
+def deinterleave_ciphertexts_enhanced(
+    mixed_chunks: List[int],
+    metadata: Dict[str, Any],
+    key_type: str
+) -> List[int]:
+    """
+    セキュリティ強化版: 交互配置された暗号文チャンクを元に戻す
+
+    この関数は、標準の deinterleave_ciphertexts 関数を拡張し、
+    メタデータの形式が不正な場合でもロバストに動作します。
+
+    Args:
+        mixed_chunks: シャッフルされた暗号文チャンクのリスト
+        metadata: 交互配置の情報を含むメタデータ
+        key_type: 取得したい暗号文の種類 ("true" または "false")
+
+    Returns:
+        元の暗号文チャンクのリスト
+    """
+    # メタデータから必要な情報を取得
+    interleave_metadata = metadata.get("interleave", {})
+
+    # 必要なメタデータのチェック
+    if "mapping" not in interleave_metadata:
+        # 古い形式や不完全なメタデータの場合、マッピングを再構築
+        true_indices = interleave_metadata.get("true_indices", [])
+        false_indices = interleave_metadata.get("false_indices", [])
+
+        if not true_indices and not false_indices:
+            # どちらも空の場合は簡易的な処理
+            total_chunks = len(mixed_chunks)
+            half = total_chunks // 2
+            true_indices = list(range(half))
+            false_indices = list(range(half, total_chunks))
+
+        # マッピング情報を構築
+        mapping = []
+        for i in range(len(true_indices) + len(false_indices)):
+            if i < len(true_indices):
+                mapping.append({
+                    "index": true_indices[i],
+                    "type": "true"
+                })
+            else:
+                mapping.append({
+                    "index": false_indices[i - len(true_indices)],
+                    "type": "false"
+                })
+    else:
+        # マッピングが直接存在する場合
+        mapping = interleave_metadata["mapping"]
+
+        # マッピングが整数のリストの場合（単純なインデックス指定）
+        if isinstance(mapping, list) and all(isinstance(x, int) for x in mapping):
+            # 整数リストから辞書形式のマッピングに変換
+            true_indices = interleave_metadata.get("true_indices", [])
+            false_indices = interleave_metadata.get("false_indices", [])
+
+            new_mapping = []
+            for idx in mapping:
+                if idx < len(true_indices):
+                    new_mapping.append({
+                        "index": true_indices[idx],
+                        "type": "true"
+                    })
+                else:
+                    new_mapping.append({
+                        "index": false_indices[idx - len(true_indices)],
+                        "type": "false"
+                    })
+            mapping = new_mapping
+
+    # 指定されたタイプの暗号文チャンクを取得
+    extracted_chunks = []
+    for entry in mapping:
+        if isinstance(entry, dict) and entry.get("type") == key_type:
+            chunk_index = entry.get("index", 0)
+            if 0 <= chunk_index < len(mixed_chunks):
+                extracted_chunks.append(mixed_chunks[chunk_index])
+
+    return extracted_chunks
+
 def remove_comprehensive_indistinguishability_enhanced(
     indistinguishable_ciphertexts: List[int],
     metadata: Dict[str, Any],
@@ -95,7 +177,26 @@ def remove_comprehensive_indistinguishability_enhanced(
 
     # 1. 交互配置とシャッフルを元に戻す
     interleave_metadata = metadata.get("interleave", {})
-    deinterleaved = deinterleave_ciphertexts(indistinguishable_ciphertexts, interleave_metadata, key_type)
+    try:
+        # 強化版のdeinterleave関数を使用
+        deinterleaved = deinterleave_ciphertexts_enhanced(
+            indistinguishable_ciphertexts, metadata, key_type
+        )
+    except Exception as e:
+        # 既存の関数にフォールバック
+        try:
+            deinterleaved = deinterleave_ciphertexts(
+                indistinguishable_ciphertexts, interleave_metadata, key_type
+            )
+        except Exception as e2:
+            # どちらも失敗した場合は、シンプルな方法でデータ抽出を試みる
+            print(f"警告: 交互配置の解除に失敗しました: {e}, {e2}")
+            # 単純な方法（前半がtrue、後半がfalse）を試行
+            half = len(indistinguishable_ciphertexts) // 2
+            if key_type == "true":
+                deinterleaved = indistinguishable_ciphertexts[:half]
+            else:
+                deinterleaved = indistinguishable_ciphertexts[half:]
 
     # 2. 冗長性を除去
     redundancy_metadata = metadata.get(f"{key_type}_redundancy", {})

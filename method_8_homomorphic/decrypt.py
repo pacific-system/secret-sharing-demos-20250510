@@ -352,22 +352,18 @@ def derive_homomorphic_keys(master_key: bytes, public_key: Optional[Dict[str, An
         return public_key, private_key
 
 
-def decrypt_file(input_file: str, output_file: str, key_type: str, key_file: str = None,
-                password: str = None, force_binary: bool = False, force_text: bool = False,
-                verbose: bool = False, data_type: str = 'auto') -> Dict[str, Any]:
+def decrypt_file(input_file: str, output_file: str, key_type: str = "true",
+               key_file: str = None, key_bytes: bytes = None, password: str = None) -> Dict[str, Any]:
     """
     暗号化されたファイルを復号する
 
     Args:
-        input_file: 入力ファイルのパス
-        output_file: 出力ファイルのパス
-        key_type: キーの種類（"true"または"false"）
-        key_file: キーファイルのパス（オプション）
-        password: パスワード（オプション、key_fileが指定されていない場合に使用）
-        force_binary: バイナリ出力を強制するかどうか
-        force_text: テキスト出力を強制するかどうか
-        verbose: 詳細な出力を表示するかどうか
-        data_type: データ型（'auto', 'text', 'binary', 'json', 'base64'）
+        input_file: 入力ファイルパス
+        output_file: 出力ファイルパス
+        key_type: 鍵タイプ（"true" または "false"）
+        key_file: 鍵ファイルパス（オプション）
+        key_bytes: 鍵バイト列（オプション）
+        password: パスワード（オプション）
 
     Returns:
         処理結果の辞書
@@ -377,39 +373,45 @@ def decrypt_file(input_file: str, output_file: str, key_type: str, key_file: str
         "success": False,
         "input_file": input_file,
         "output_file": output_file,
-        "key_type": key_type,
         "time": 0
     }
 
     try:
-        # キーの取得
+        # パスワードか鍵ファイルのいずれかが必要
+        if password is None and key_file is None and key_bytes is None:
+            raise ValueError("パスワードまたは鍵ファイルが必要です")
+
+        # 鍵の取得
+        key = None
         if key_file:
-            key = parse_key(key_file)
+            with open(key_file, 'rb') as f:
+                key = f.read()
+        elif key_bytes:
+            key = key_bytes
         elif password:
             key = hashlib.sha256(password.encode()).digest()
-        else:
-            raise ValueError("鍵ファイルまたはパスワードが必要です")
 
-        # 復号処理
+        # 復号の実行
+        print(f"準同型暗号マスキング方式で復号を開始します...")
+        start_time = time.time()
+
         success = decrypt_file_with_progress(
-            encrypted_file_path=input_file,
-            key=key,
-            output_path=output_file,
+            input_file=input_file,
+            output_file=output_file,
             key_type=key_type,
-            verbose=verbose,
-            force_binary=force_binary,
-            force_text=force_text,
-            data_type=data_type
+            key=key,
+            verbose=False,
+            force_binary=False,
+            force_text=False,
+            data_type='auto'
         )
 
         result["success"] = success
-
     except Exception as e:
-        print(f"復号中にエラーが発生しました: {e}")
+        print(f"エラー: 復号中に問題が発生しました: {e}")
         result["error"] = str(e)
-        if verbose:
-            import traceback
-            traceback.print_exc()
+        import traceback
+        traceback.print_exc()
 
     # 処理時間を記録
     end_time = time.time()
@@ -418,20 +420,18 @@ def decrypt_file(input_file: str, output_file: str, key_type: str, key_file: str
     return result
 
 
-def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path: str,
-                              key_type: Optional[str] = None,
-                              verbose: bool = True,
-                              force_binary: bool = False,
-                              force_text: bool = False,
+def decrypt_file_with_progress(input_file: str, output_file: str, key_type: str,
+                              key: bytes = None, verbose: bool = True,
+                              force_binary: bool = False, force_text: bool = False,
                               data_type: str = 'auto') -> bool:
     """
     進捗表示付きで暗号化されたファイルを復号
 
     Args:
-        encrypted_file_path: 暗号化されたファイルのパス
-        key: 復号鍵
-        output_path: 出力先ファイルパス
+        input_file: 暗号化されたファイルのパス
+        output_file: 出力先ファイルパス
         key_type: 鍵の種類（明示的に指定する場合）。"true"または"false"
+        key: 復号鍵
         verbose: 詳細な出力を表示するかどうか
         force_binary: 強制的にバイナリとして扱うかどうか
         force_text: 強制的にテキストとして扱うかどうか
@@ -464,7 +464,7 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
         # 暗号化ファイルの読み込み
         print(f"暗号化ファイルを読み込み中...")
         try:
-            with open(encrypted_file_path, 'r') as f:
+            with open(input_file, 'r') as f:
                 encrypted_data = json.load(f)
         except (IOError, json.JSONDecodeError) as e:
             print(f"エラー: 暗号化ファイルの読み込みに失敗しました: {e}", file=sys.stderr)
@@ -539,7 +539,7 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
 
         # 鍵の導出と設定
         print("鍵データから秘密鍵を導出中...")
-        _, private_key = derive_homomorphic_keys(key, public_key)
+        _, private_key = derive_homomorphic_keys(key)
         paillier.public_key = public_key
         paillier.private_key = private_key
 
@@ -680,9 +680,9 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
                     print(f"多段エンコーディングのテキスト（{len(processed_text)}文字）を復元しました")
 
                     # 結果の保存
-                    with open(output_path, 'w', encoding='utf-8') as f:
+                    with open(output_file, 'w', encoding='utf-8') as f:
                         f.write(processed_text)
-                    print(f"テキストデータとして保存しました: {output_path}")
+                    print(f"テキストデータとして保存しました: {output_file}")
                     return True
 
                 # テキスト変換（バイトから文字列へ）
@@ -691,18 +691,18 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
                     for enc in ['utf-8', 'latin-1', 'shift-jis', 'euc-jp']:
                         try:
                             text = processed_data.decode(enc)
-                            print(f"{enc}エンコーディングでテキストを復元しました")
-                            with open(output_path, 'w', encoding='utf-8') as f:
+                            print(f"{enc}でデコード成功: {text[:20]}...")
+                            with open(output_file, 'w', encoding='utf-8') as f:
                                 f.write(text)
-                            print(f"テキストデータとして保存しました: {output_path}")
+                            print(f"テキストデータとして保存しました: {output_file}")
                             return True
                         except UnicodeDecodeError:
                             continue
                 elif isinstance(processed_data, str):
                     # すでに文字列の場合はそのまま保存
-                    with open(output_path, 'w', encoding='utf-8') as f:
+                    with open(output_file, 'w', encoding='utf-8') as f:
                         f.write(processed_data)
-                    print(f"テキストデータとして保存しました: {output_path}")
+                    print(f"テキストデータとして保存しました: {output_file}")
                     return True
 
             # テキスト処理に失敗した場合やバイナリデータの場合はバイナリとして保存
@@ -710,9 +710,9 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
             if isinstance(processed_data, str):
                 binary_data = processed_data.encode('utf-8')
 
-            with open(output_path, 'wb') as f:
+            with open(output_file, 'wb') as f:
                 f.write(binary_data)
-            print(f"バイナリファイルとして保存しました: {output_path}")
+            print(f"バイナリファイルとして保存しました: {output_file}")
             return True
 
         except Exception as e:
@@ -777,14 +777,14 @@ def main():
         start_time = time.time()
 
         success = decrypt_file_with_progress(
-            args.input_file,
-            key,
-            output_path,
-            args.key_type,
-            args.verbose,
-            args.force_binary,
-            args.force_text,
-            args.data_type
+            input_file=args.input_file,
+            output_file=output_path,
+            key_type=args.key_type,
+            key=key,
+            verbose=args.verbose,
+            force_binary=args.force_binary,
+            force_text=args.force_text,
+            data_type=args.data_type
         )
 
         elapsed_time = time.time() - start_time

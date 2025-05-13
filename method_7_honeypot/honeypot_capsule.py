@@ -34,13 +34,13 @@ DATA_TYPE_META = 3
 DATA_TYPE_DUMMY = 4  # ダミーデータ - 攻撃者を混乱させるためのもの
 
 # カプセルヘッダーの構造
-# | マジック(6) | バージョン(2) | シード(16) | データブロック数(4) | 予約(4) |
-HEADER_FORMAT = "!6sHI16sI4x"
+# | マジック(6) | バージョン(2) | データブロック数(4) | シード(16) | 予約(4) |
+HEADER_FORMAT = "!6sHI16sI"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
 # データブロックヘッダーの構造
 # | ブロックタイプ(4) | ブロックサイズ(4) | データオフセット(8) | ブロックハッシュ(32) |
-BLOCK_HEADER_FORMAT = "!IIIQ32s"
+BLOCK_HEADER_FORMAT = "!IIQ32s"
 BLOCK_HEADER_SIZE = struct.calcsize(BLOCK_HEADER_FORMAT)
 
 
@@ -196,10 +196,10 @@ class HoneypotCapsule:
             # ブロックヘッダーを作成
             block_header = struct.pack(
                 BLOCK_HEADER_FORMAT,
-                block['type'],
-                block['size'],
-                data_pos,
-                block['hash']
+                block['type'],        # ブロックタイプ
+                block['size'],        # ブロックサイズ
+                data_pos,             # データオフセット
+                block['hash']         # ブロックハッシュ
             )
 
             # ファイルポインタをブロックヘッダー位置に移動

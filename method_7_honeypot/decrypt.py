@@ -138,78 +138,54 @@ def decrypt_file(file_path: str, key: bytes, output_path: Optional[str] = None) 
         # タイミング攻撃対策: ランダムな遅延を追加
         time.sleep(random.uniform(0.05, 0.15))
 
-        # メタデータを取得（ここでは鍵タイプを評価せず、単に読み込むだけ）
-        # カプセルから適切なデータを抽出
-        # トラップドア関数とブラインドピックを活用するため、まず評価を行わない
-        # 正規・非正規いずれの経路も同一の時間で処理を進める
+        # 簡略化されたアプローチで試行
+        # まず両方のキータイプでデータを取得してみる
+        true_data = false_data = None
+        true_iv = false_iv = None
+        metadata = None
 
-        # ファイルから必要なデータを抽出（key_typeは後で決定）
-        key_type = None  # 後で決定
-        data, metadata = None, None
-
-        # 例外処理を追加（正規/非正規判定が不可能な場合でも正常終了するため）
+        # 正規キータイプとして試行
         try:
-            # まず正規として試行
-            data, metadata = read_data_from_honeypot_file(encrypted_data, KEY_TYPE_TRUE)
-            key_type = KEY_TYPE_TRUE
-        except Exception:
-            try:
-                # 次に非正規として試行
-                data, metadata = read_data_from_honeypot_file(encrypted_data, KEY_TYPE_FALSE)
-                key_type = KEY_TYPE_FALSE
-            except Exception as e:
-                # どちらも失敗した場合
-                raise ValueError(f"ファイルの復号に失敗しました: {str(e)}")
-
-        # 鍵検証を行い、正規/非正規を判定
-        # 注: 内部的に判定を行いますが、外部からは同一の処理に見えます
-        # ハニーポットCID操作を伴う検証
-        salt = base64.b64decode(metadata.get('salt', ''))
-        iv = base64.b64decode(metadata.get(f'{key_type}_iv', ''))
-
-        # トラップドアパラメータを復元
-        # 実際には、ここで必要なパラメータをカプセルから抽出
-        trapdoor_params = {}  # 簡略化のため空の辞書を使用
-
-        # 改変耐性機能による鍵検証
-        # 注: verify_with_tamper_resistance は改変検知機能を含む
-        # この結果に基づいて経路選択が行われるが、外部からは判別不能
-        true_token = generate_honey_token(KEY_TYPE_TRUE, trapdoor_params)
-        false_token = generate_honey_token(KEY_TYPE_FALSE, trapdoor_params)
-        token = true_token if key_type == KEY_TYPE_TRUE else false_token
-
-        verified_key_type = verify_with_tamper_resistance(key, token, trapdoor_params)
-
-        # タイミング攻撃対策: 常に両方の経路を実行し、結果を選択
-        # 両方のパスでほぼ同じ時間がかかるようにする
-        true_result = None
-        false_result = None
-
-        # 正規パス（常に実行）
-        try:
+            true_data, metadata = read_data_from_honeypot_file(encrypted_data, KEY_TYPE_TRUE)
             true_iv = base64.b64decode(metadata.get('true_iv', ''))
-            true_data = symmetric_decrypt(data, key, true_iv)
-            true_result = true_data
         except Exception:
-            # エラーが発生しても処理を続行
             pass
 
-        # 非正規パス（常に実行）
+        # 非正規キータイプとして試行
         try:
+            false_data, metadata = read_data_from_honeypot_file(encrypted_data, KEY_TYPE_FALSE)
             false_iv = base64.b64decode(metadata.get('false_iv', ''))
-            false_data = symmetric_decrypt(data, key, false_iv)
-            false_result = false_data
         except Exception:
-            # エラーが発生しても処理を続行
             pass
 
-        # 検証結果に基づいて出力を選択
-        if verified_key_type == KEY_TYPE_TRUE and true_result is not None:
+        if metadata is None:
+            raise ValueError("ファイルのフォーマットが不正です")
+
+        # 両方のパスで復号を試行
+        true_result = false_result = None
+
+        # 正規パスでの復号
+        if true_data is not None and true_iv is not None:
+            try:
+                true_result = symmetric_decrypt(true_data, key, true_iv)
+            except Exception:
+                pass
+
+        # 非正規パスでの復号
+        if false_data is not None and false_iv is not None:
+            try:
+                false_result = symmetric_decrypt(false_data, key, false_iv)
+            except Exception:
+                pass
+
+        # 成功した方の結果を選択
+        result = None
+        if true_result is not None:
             result = true_result
-        elif verified_key_type == KEY_TYPE_FALSE and false_result is not None:
+        elif false_result is not None:
             result = false_result
-        else:
-            # どちらも失敗した場合はエラー
+
+        if result is None:
             raise ValueError("データの復号に失敗しました。鍵が正しくないか、ファイルが破損しています。")
 
         # 結果を出力

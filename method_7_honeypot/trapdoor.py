@@ -69,6 +69,30 @@ def _decoy_prime_check(n: int) -> bool:
     return True
 
 
+def safe_int_to_bytes(n: int, length: int) -> bytes:
+    """
+    大きな整数を安全にバイト列に変換する
+
+    Args:
+        n: 変換する整数
+        length: 結果のバイト列の長さ
+
+    Returns:
+        整数のバイト表現
+    """
+    # 大きすぎる整数はハッシュを使用して扱いやすいサイズに縮小
+    if n.bit_length() > length * 8:
+        # 文字列に変換してからハッシュ化
+        return hashlib.sha512(str(n).encode()).digest()[:length]
+
+    # 通常のケースではint.to_bytesを使用
+    try:
+        return n.to_bytes(length, byteorder='big')
+    except OverflowError:
+        # オーバーフローした場合もハッシュを使用
+        return hashlib.sha512(str(n).encode()).digest()[:length]
+
+
 def generate_prime(bits: int) -> int:
     """
     指定されたビット長の素数を生成する
@@ -178,21 +202,19 @@ def derive_keys_from_trapdoor(params: Dict[str, Any]) -> Tuple[Dict[str, bytes],
     # 鍵導出用のソルト（ランダム生成）
     salt = os.urandom(SALT_SIZE)
 
-    # 各鍵タイプ用の固有のドメイン文字列を準備
-    true_domain = DOMAIN_TRUE + b"_key_derivation"
-    false_domain = DOMAIN_FALSE + b"_key_derivation"
-
-    # 正規鍵導出（シンプルな方法で明確な区別を確保）
+    # 正規鍵導出
+    true_base = (params['true_param'] * params['d']) % params['n']
     true_key_material = hmac.new(
-        params['seed'],
-        true_domain + salt,
+        salt,
+        safe_int_to_bytes(true_base, KEY_SIZE_BITS // 8),
         hashlib.sha512
     ).digest()
 
-    # 非正規鍵導出（シンプルな方法で明確な区別を確保）
+    # 非正規鍵導出
+    false_base = (params['false_param'] * params['d']) % params['n']
     false_key_material = hmac.new(
-        params['seed'],
-        false_domain + salt,
+        salt,
+        safe_int_to_bytes(false_base, KEY_SIZE_BITS // 8),
         hashlib.sha512
     ).digest()
 
@@ -226,37 +248,40 @@ def evaluate_key_type(key: bytes, params: Dict[str, Any], salt: bytes) -> str:
     # 開始時間を記録（タイミング攻撃対策）
     start_time = time.perf_counter()
 
-    # 各鍵タイプの期待値を導出
-    # まず各タイプの鍵を導出し直す
-    true_domain = DOMAIN_TRUE + b"_key_derivation"
-    false_domain = DOMAIN_FALSE + b"_key_derivation"
+    # 鍵を使って正規鍵と非正規鍵のどちらに近いかを計算
+    # 完全に一致する場合は別として、数学的な距離を計算して近い方を選択
 
-    true_expected_key = hmac.new(
-        params['seed'],
-        true_domain + salt,
+    # 鍵から正規/非正規に対応する値を導出
+    # 正規鍵の場合の期待値
+    true_base = (params['true_param'] * params['d']) % params['n']
+    true_key_material = hmac.new(
+        salt,
+        safe_int_to_bytes(true_base, KEY_SIZE_BITS // 8),
         hashlib.sha512
     ).digest()[:SYMMETRIC_KEY_SIZE]
 
-    false_expected_key = hmac.new(
-        params['seed'],
-        false_domain + salt,
+    # 非正規鍵の場合の期待値
+    false_base = (params['false_param'] * params['d']) % params['n']
+    false_key_material = hmac.new(
+        salt,
+        safe_int_to_bytes(false_base, KEY_SIZE_BITS // 8),
         hashlib.sha512
     ).digest()[:SYMMETRIC_KEY_SIZE]
 
-    # 入力鍵との距離を計算
-    true_diff = sum(a != b for a, b in zip(key, true_expected_key))
-    false_diff = sum(a != b for a, b in zip(key, false_expected_key))
+    # バイト単位で比較する（ビット単位のハミング距離のような指標）
+    true_distance = sum(a != b for a, b in zip(key, true_key_material))
+    false_distance = sum(a != b for a, b in zip(key, false_key_material))
 
     # ダミー演算（タイミング攻撃対策）
     _ = hashlib.sha256(key + salt).digest()
 
     # 判定（距離が小さい方を選択）
-    result = KEY_TYPE_TRUE if true_diff < false_diff else KEY_TYPE_FALSE
+    result = KEY_TYPE_TRUE if true_distance < false_distance else KEY_TYPE_FALSE
 
-    # 完全一致の場合、対応する鍵タイプを返す
-    if true_diff == 0:
+    # 完全一致の場合は確実にそのタイプと判定
+    if sum(a != b for a, b in zip(key, true_key_material)) == 0:
         result = KEY_TYPE_TRUE
-    elif false_diff == 0:
+    elif sum(a != b for a, b in zip(key, false_key_material)) == 0:
         result = KEY_TYPE_FALSE
 
     # 動的閾値を使用して判定にランダム性を追加（解析者が検出しにくくなる）
@@ -301,14 +326,15 @@ def generate_honey_token(key_type: str, params: Dict[str, Any]) -> bytes:
         base = params['false_param']
 
     # トークン種別を埋め込み（暗号学的に隠蔽）
-    # 大きな整数を適切に処理するために、ハッシュ関数を使用して縮小
     token_value = (base * params['e']) % params['n']
-    token_hash = hashlib.sha256(str(token_value).encode()).digest()
+
+    # 大きな整数を安全にバイト列に変換
+    token_seed = safe_int_to_bytes(token_value, TOKEN_SIZE)
 
     # ハニートークン生成
     token = hmac.new(
         params['seed'],
-        token_hash + key_type.encode('utf-8'),
+        token_seed + key_type.encode('utf-8'),
         hashlib.sha256
     ).digest()
 

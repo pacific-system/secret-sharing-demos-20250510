@@ -11,9 +11,9 @@
 
 のなかの
 
-'準同型暗号マスキング方式 🎭 実装【子 Issue #5】：復号実装（decrypt.py）'
-'docs/issue/homomorphic_masking_method_5.md'
-(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/15)
+'準同型暗号マスキング方式 🎭 実装【子 Issue #6】：復号実装（decrypt.py）'
+'docs/issue/homomorphic_masking_method_6.md'
+(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/16)
 の実装結果に対して検収作業を行ってください
 必要があればチームの最高責任者として追加実装や修正を行なってください
 

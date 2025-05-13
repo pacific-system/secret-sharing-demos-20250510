@@ -367,9 +367,13 @@ def generate_comparative_charts(original_results, improved_results, timing_resul
 
     plt.tight_layout()
 
-    # 保存
-    size_chart_file = "test_output/file_size_comparison.png"
+    # 保存（タイムスタンプ付き）
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    size_chart_file = f"test_output/file_size_comparison_{timestamp}.png"
     plt.savefig(size_chart_file)
+    # 元のファイル名でもコピーしておく
+    import shutil
+    shutil.copy(size_chart_file, "test_output/file_size_comparison.png")
     plt.close()
 
     # 処理時間の比較
@@ -404,9 +408,13 @@ def generate_comparative_charts(original_results, improved_results, timing_resul
 
     plt.tight_layout()
 
-    # 保存
-    time_chart_file = "test_output/processing_time_comparison.png"
+    # 保存（タイムスタンプ付き）
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    time_chart_file = f"test_output/processing_time_comparison_{timestamp}.png"
     plt.savefig(time_chart_file)
+    # 元のファイル名でもコピーしておく
+    import shutil
+    shutil.copy(time_chart_file, "test_output/processing_time_comparison.png")
     plt.close()
 
     return {

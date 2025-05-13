@@ -1,0 +1,33 @@
+{
+  "key_hex": "df9e10d6ac165dc60d11c1d63fff59c8f2acb56cee659ffff11a319bd1e7bc69",
+  "key_length": 32,
+  "key_hash": "9621e0e5f2b10b99e2b50cb2378d7232b0da0f85b81d871196729fee6056f583",
+  "result": "false",
+  "cryptic_result": "false",
+  "integrated_result": "false",
+  "key_features": {
+    "feature_0": 14050530165165177978,
+    "feature_1": 5692261609023501463,
+    "feature_2": 552362567393044539,
+    "feature_3": 9394468834685340232,
+    "feature_4": 3575345460690292393,
+    "feature_5": 13216221821951309473
+  },
+  "condition_results": {
+    "condition_0": true,
+    "condition_1": true,
+    "condition_2": false,
+    "condition_3": false,
+    "condition_4": true,
+    "condition_5": false,
+    "condition_6": true,
+    "condition_7": false
+  },
+  "true_conditions": 4,
+  "total_conditions": 8,
+  "environment_info": {
+    "system_entropy": "d52e04dc3fac341e...",
+    "hardware_fp": "82ba87b36e1e32e1...",
+    "dynamic_threshold": 0.5345817779737017
+  }
+}

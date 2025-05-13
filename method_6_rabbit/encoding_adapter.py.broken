@@ -349,21 +349,14 @@ def try_common_xor_keys(data: bytes) -> Optional[str]:
         xor_data = bytes(b ^ key for b in data)
         # 結果がテキストっぽいかチェック
         if b'\x00' not in xor_data[:100]:  # NULL文字がないか
-            try:
-                # UTF-8でデコード試行
-                text = xor_data.decode('utf-8', errors='replace')
-                if is_readable_text(text, 0.7):
-                    return text
-            except:
-                pass
-
-            try:
-                # Shift-JISでデコード試行
-                text = xor_data.decode('shift-jis', errors='replace')
-                if '不正解' in text or 'うごぁ' in text or 'ﾉ"′∧∧∧∧' in text:
-                    return text
-            except:
-                pass
+            # 様々なエンコーディングでデコード試行
+            for encoding in ['utf-8', 'shift-jis', 'euc-jp', 'iso-2022-jp']:
+                try:
+                    text = xor_data.decode(encoding, errors='replace')
+                    if is_readable_text(text, 0.7):
+                        return text
+                except Exception:
+                    continue
 
     return None
 
@@ -864,6 +857,16 @@ def adaptive_decode(data: bytes, metadata: Dict[str, Any] = None) -> Tuple[str, 
             xor_encoding = detect_encoding(xor_data)
             if xor_encoding != 'binary':
                 xor_text = xor_data.decode(xor_encoding, errors='replace')
+
+                # 出力先
+                output_file = args.output if args.output else f"{file_path}.xor"
+
+                # 結果を保存
+                with open(output_file, 'w', encoding='utf-8') as f:
+                    f.write(xor_text)
+
+                print(f"XOR変換結果を '{output_file}' に保存しました")
+                print("=" * 40)
 
                 # プレビュー表示
                 preview_lines = xor_text.split('\n')[:10]

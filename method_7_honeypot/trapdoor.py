@@ -83,20 +83,36 @@ def generate_prime(bits: int) -> int:
     from cryptography.hazmat.backends import default_backend
     from cryptography.hazmat.primitives.asymmetric import rsa
 
-    # このデモではより小さい鍵サイズを使用（実際の実装ではより大きな値を使用）
     # RSA鍵生成時に内部で素数が生成されるため、その値を利用する
+    # 必要なビット長の2倍の鍵サイズを使用（RSA鍵は2つの素数の積なので）
     key_size = max(bits * 2, 2048)  # 最低でも2048ビットを確保
 
-    # RSA鍵ペア生成
-    private_key = rsa.generate_private_key(
-        public_exponent=RSA_PUBLIC_EXPONENT,
-        key_size=key_size,
-        backend=default_backend()
-    )
+    # 複数回試行して適切なビット長の素数を取得
+    for _ in range(PRIME_GENERATION_ATTEMPTS):
+        # RSA鍵ペア生成
+        private_key = rsa.generate_private_key(
+            public_exponent=RSA_PUBLIC_EXPONENT,
+            key_size=key_size,
+            backend=default_backend()
+        )
 
-    # 秘密鍵から素数pを取得
-    private_numbers = private_key.private_numbers()
-    return private_numbers.p
+        # 秘密鍵から素数pとqを取得
+        private_numbers = private_key.private_numbers()
+        p = private_numbers.p
+        q = private_numbers.q
+
+        # pとqのビット長を確認し、要求を満たす方を返す
+        p_bits = p.bit_length()
+        q_bits = q.bit_length()
+
+        # 目標ビット長に近い素数を選択
+        if abs(p_bits - bits) <= abs(q_bits - bits):
+            return p
+        else:
+            return q
+
+    # 全試行で適切な素数が見つからなかった場合はpを返す
+    return p
 
 
 def create_trapdoor_parameters(master_key: bytes) -> Dict[str, Any]:
@@ -162,19 +178,21 @@ def derive_keys_from_trapdoor(params: Dict[str, Any]) -> Tuple[Dict[str, bytes],
     # 鍵導出用のソルト（ランダム生成）
     salt = os.urandom(SALT_SIZE)
 
-    # 正規鍵導出
-    true_base = (params['true_param'] * params['d']) % params['n']
+    # 各鍵タイプ用の固有のドメイン文字列を準備
+    true_domain = DOMAIN_TRUE + b"_key_derivation"
+    false_domain = DOMAIN_FALSE + b"_key_derivation"
+
+    # 正規鍵導出（シンプルな方法で明確な区別を確保）
     true_key_material = hmac.new(
-        salt,
-        int.to_bytes(true_base, length=KEY_SIZE_BITS // 8, byteorder='big'),
+        params['seed'],
+        true_domain + salt,
         hashlib.sha512
     ).digest()
 
-    # 非正規鍵導出
-    false_base = (params['false_param'] * params['d']) % params['n']
+    # 非正規鍵導出（シンプルな方法で明確な区別を確保）
     false_key_material = hmac.new(
-        salt,
-        int.to_bytes(false_base, length=KEY_SIZE_BITS // 8, byteorder='big'),
+        params['seed'],
+        false_domain + salt,
         hashlib.sha512
     ).digest()
 
@@ -208,22 +226,38 @@ def evaluate_key_type(key: bytes, params: Dict[str, Any], salt: bytes) -> str:
     # 開始時間を記録（タイミング攻撃対策）
     start_time = time.perf_counter()
 
-    # 鍵から評価値を計算
-    key_int = int.from_bytes(key, byteorder='big')
+    # 各鍵タイプの期待値を導出
+    # まず各タイプの鍵を導出し直す
+    true_domain = DOMAIN_TRUE + b"_key_derivation"
+    false_domain = DOMAIN_FALSE + b"_key_derivation"
 
-    # モジュラス剰余を計算
-    mod_value = pow(key_int, params['e'], params['n'])
+    true_expected_key = hmac.new(
+        params['seed'],
+        true_domain + salt,
+        hashlib.sha512
+    ).digest()[:SYMMETRIC_KEY_SIZE]
 
-    # 正規鍵と非正規鍵の両方の評価を実施（タイミング攻撃対策）
-    true_distance = abs(mod_value - params['true_param'])
-    false_distance = abs(mod_value - params['false_param'])
+    false_expected_key = hmac.new(
+        params['seed'],
+        false_domain + salt,
+        hashlib.sha512
+    ).digest()[:SYMMETRIC_KEY_SIZE]
+
+    # 入力鍵との距離を計算
+    true_diff = sum(a != b for a, b in zip(key, true_expected_key))
+    false_diff = sum(a != b for a, b in zip(key, false_expected_key))
 
     # ダミー演算（タイミング攻撃対策）
     _ = hashlib.sha256(key + salt).digest()
 
-    # 判定（両方の距離を比較）
-    # この判定が数学的なトラップドア関数の核心です
-    result = KEY_TYPE_TRUE if true_distance < false_distance else KEY_TYPE_FALSE
+    # 判定（距離が小さい方を選択）
+    result = KEY_TYPE_TRUE if true_diff < false_diff else KEY_TYPE_FALSE
+
+    # 完全一致の場合、対応する鍵タイプを返す
+    if true_diff == 0:
+        result = KEY_TYPE_TRUE
+    elif false_diff == 0:
+        result = KEY_TYPE_FALSE
 
     # 動的閾値を使用して判定にランダム性を追加（解析者が検出しにくくなる）
     # 注: この部分は実際の真偽判定には影響せず、タイミングを変動させるだけ

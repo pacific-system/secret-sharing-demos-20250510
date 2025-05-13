@@ -34,13 +34,13 @@ DATA_TYPE_META = 3
 DATA_TYPE_DUMMY = 4  # ダミーデータ - 攻撃者を混乱させるためのもの
 
 # カプセルヘッダーの構造
-# | マジック(6) | バージョン(2) | シード(16) | データブロック数(4) | 予約(4) |
-HEADER_FORMAT = "!6sHI16sI4x"
+# | マジック(6) | バージョン(2) | データブロック数(4) | シード(16) | 予約(4) |
+HEADER_FORMAT = "!6sHI16sI"
 HEADER_SIZE = struct.calcsize(HEADER_FORMAT)
 
 # データブロックヘッダーの構造
-# | ブロックタイプ(4) | ブロックサイズ(4) | データオフセット(8) | 予約フィールド(4) | ブロックハッシュ(32) |
-BLOCK_HEADER_FORMAT = "!IIQI32s"
+# | ブロックタイプ(4) | ブロックサイズ(4) | データオフセット(8) | ブロックハッシュ(32) |
+BLOCK_HEADER_FORMAT = "!IIQ32s"
 BLOCK_HEADER_SIZE = struct.calcsize(BLOCK_HEADER_FORMAT)
 
 
@@ -199,7 +199,6 @@ class HoneypotCapsule:
                 block['type'],        # ブロックタイプ
                 block['size'],        # ブロックサイズ
                 data_pos,             # データオフセット
-                0,                    # 予約フィールド
                 block['hash']         # ブロックハッシュ
             )
 
@@ -275,7 +274,7 @@ class HoneypotCapsule:
             if len(block_header_data) != BLOCK_HEADER_SIZE:
                 raise ValueError("カプセル形式が不正です: ブロックヘッダーの読み込みに失敗しました")
 
-            block_type, block_size, data_offset, reserved, block_hash = struct.unpack(BLOCK_HEADER_FORMAT, block_header_data)
+            block_type, block_size, data_offset, block_hash = struct.unpack(BLOCK_HEADER_FORMAT, block_header_data)
             block_headers.append({
                 'type': block_type,
                 'size': block_size,

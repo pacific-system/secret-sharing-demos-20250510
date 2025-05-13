@@ -448,17 +448,18 @@ def verify_key_pair(true_key: bytes, false_key: bytes) -> bool:
     if constant_time_compare(true_key, false_key):
         return False
 
-    # 真の鍵を解析
-    true_type = analyze_key_type_robust(true_key)
-    if true_type != "true":
-        return False
+    # 重要な修正：どちらが「正規」かは使用者の意図に依存するものであり、
+    # 技術的な区別ではありません。そのため、どちらの鍵も「true」または「false」の
+    # 両方の状態を持ち得ます。
 
-    # 偽の鍵を解析
-    false_type = analyze_key_type_robust(false_key)
-    if false_type != "false":
-        return False
+    # 区別のために個別の判定方法を使用する代わりに、鍵の組み合わせをチェックします
+    # キーが異なれば、必然的に一方が「true」で一方が「false」として識別されます
+    # これにより、どちらをどの目的で使うかはユーザーの意図次第となります
+    key_type_a = analyze_key_type_robust(true_key)
+    key_type_b = analyze_key_type_robust(false_key)
 
-    return True
+    # 2つの鍵が異なる種類として識別されることを確認
+    return key_type_a != key_type_b
 
 def generate_key_pair() -> Tuple[bytes, bytes]:
     """

@@ -6,7 +6,8 @@
 
 このモジュールは、準同型暗号マスキング方式を使用して暗号化されたファイルを復号するための
 コマンドラインツールを提供します。マスク関数を使って暗号化されたファイルを、
-鍵に応じて真または偽の状態に復号します。
+鍵に応じて真または偽の状態に復号します。どちらの鍵が「正規」か「非正規」かは
+ユーザーの意図によって決まります。
 """
 
 import os
@@ -48,7 +49,7 @@ from method_8_homomorphic.crypto_mask import (
     MaskFunctionGenerator, AdvancedMaskFunctionGenerator,
     extract_by_key_type
 )
-from method_8_homomorphic.key_analyzer import (
+from method_8_homomorphic.key_analyzer_robust import (
     analyze_key_type, extract_seed_from_key
 )
 from method_8_homomorphic.crypto_adapters import (
@@ -541,15 +542,14 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
             if len(decrypted_data) > 0:
                 print(f"先頭バイト: {decrypted_data[:min(20, len(decrypted_data))].hex()}")
 
-        # データアダプターを使用して復号後のデータを処理
-        # データタイプを取得
+        # データタイプを取得（true/falseに関係なく統一したアプローチでデータ処理）
         current_data_type = true_data_type if key_type == "true" else false_data_type
 
-        # process_data_after_decryption関数を使用してデータを変換
+        # process_data_after_decryptionを使用して統一的なデータ処理
         if verbose:
             print(f"復号データの処理: データタイプ={current_data_type}")
 
-        # データの後処理
+        # データの後処理（true/falseに関わらず同じ処理パイプラインを通す）
         try:
             processed_data = process_data_after_decryption(decrypted_data, current_data_type)
             if verbose:
@@ -561,7 +561,7 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
                 import traceback
                 traceback.print_exc()
 
-        # メタデータからファイル形式情報を取得
+        # メタデータからファイル形式情報を取得（両方の鍵で統一したアプローチ）
         is_text = False
         encoding = None
 
@@ -592,14 +592,15 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
             current_data_type = 'binary'
             print(f"バイナリモードを強制指定しました")
 
-        # テキストアダプタによる処理
-        if current_data_type == 'text' or is_text or force_text:
-            try:
-                # テキストデータの場合の処理
-                text_adapter = TextAdapter()
+        # 統一されたデータ処理：テキストとバイナリの両方に同じアプローチを適用
+        try:
+            # データタイプに基づいて適切な処理を選択
+            if current_data_type == 'text' or is_text or force_text:
+                # テキストデータの場合
 
-                # 多段エンコーディングのチェック
-                if decrypted_data.startswith(b'TXT-MULTI:'):
+                # 多段エンコーディング処理（両方の鍵に対して同様に機能）
+                if isinstance(decrypted_data, bytes) and decrypted_data.startswith(b'TXT-MULTI:'):
+                    text_adapter = TextAdapter()
                     processed_text = text_adapter.reverse_multi_stage_encoding(decrypted_data)
                     print(f"多段エンコーディングのテキスト（{len(processed_text)}文字）を復元しました")
 
@@ -609,12 +610,12 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
                     print(f"テキストデータとして保存しました: {output_path}")
                     return True
 
-                # 通常のテキスト処理
-                try:
-                    # 異なるエンコーディングを試す
+                # テキスト変換（バイトから文字列へ）
+                if isinstance(processed_data, bytes):
+                    # 複数のエンコーディングを試す
                     for enc in ['utf-8', 'latin-1', 'shift-jis', 'euc-jp']:
                         try:
-                            text = decrypted_data.decode(enc)
+                            text = processed_data.decode(enc)
                             print(f"{enc}エンコーディングでテキストを復元しました")
                             with open(output_path, 'w', encoding='utf-8') as f:
                                 f.write(text)
@@ -622,20 +623,27 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
                             return True
                         except UnicodeDecodeError:
                             continue
-                except Exception as e:
-                    print(f"テキスト変換エラー: {e}")
-            except Exception as e:
-                print(f"警告: テキスト処理中にエラー: {e}")
-                # エラー時はバイナリとして処理継続
+                elif isinstance(processed_data, str):
+                    # すでに文字列の場合はそのまま保存
+                    with open(output_path, 'w', encoding='utf-8') as f:
+                        f.write(processed_data)
+                    print(f"テキストデータとして保存しました: {output_path}")
+                    return True
 
-        # バイナリデータの処理
-        try:
+            # テキスト処理に失敗した場合やバイナリデータの場合はバイナリとして保存
+            binary_data = processed_data
+            if isinstance(processed_data, str):
+                binary_data = processed_data.encode('utf-8')
+
             with open(output_path, 'wb') as f:
-                f.write(processed_data)
+                f.write(binary_data)
             print(f"バイナリファイルとして保存しました: {output_path}")
             return True
+
         except Exception as e:
-            print(f"バイナリ保存エラー: {e}")
+            print(f"エラー: ファイル保存中に問題が発生しました: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
             return False
 
     except Exception as e:

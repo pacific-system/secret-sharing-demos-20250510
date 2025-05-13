@@ -6,7 +6,10 @@
 
 このモジュールは、準同型暗号マスキング方式を使用してファイルを暗号化するための
 コマンドラインツールを提供します。マスク関数を使って真と偽の状態を区別不可能な形式で
-暗号化します。
+暗号化します。どちらのキーが「正規」か「非正規」かはシステムの区別ではなく、
+使用者の意図によって決まります。これにより、ハニーポット戦略（意図的に「正規」鍵を
+漏洩させて偽情報を信じ込ませる）やリバーストラップ（本当に重要な情報を「非正規」側に
+隠す）のような高度なセキュリティ戦略が可能になります。
 """
 
 import os
@@ -203,6 +206,8 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
 
     # 処理開始メッセージ
     print(f"準同型暗号マスキング方式による暗号化を開始します...")
+    print(f"重要：どちらのキーが「正規」か「非正規」かはユーザーの意図によって決まります")
+    print(f"      復号時に使用する鍵によって、どちらのファイルが復元されるかが決まります")
 
     # 鍵の生成または取得
     if args.password:
@@ -276,7 +281,7 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
         print(f"Error: {e}")
         sys.exit(1)
 
-    # データタイプの検出と処理
+    # データタイプの検出と処理 - 両方のファイルに対して一貫性を持たせる
     true_data_type = 'auto'
     false_data_type = 'auto'
 
@@ -292,43 +297,45 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
         print(f"真データタイプを自動検出: {true_data_type}")
         print(f"偽データタイプを自動検出: {false_data_type}")
 
-    # データの前処理
+    # データの前処理（両方のファイルに対して同じ処理パイプラインを適用）
     true_content, true_final_type = process_data_for_encryption(true_raw_content, true_data_type)
     false_content, false_final_type = process_data_for_encryption(false_raw_content, false_data_type)
 
     if args.verbose:
-        print(f"[DEBUG] 暗号化前: データタイプ={true_data_type}, サイズ={len(true_raw_content)}バイト")
-        print(f"[DEBUG] テキスト内容: {true_raw_content[:20]}...")
+        # 真データの詳細情報
+        print(f"[DEBUG] 真ファイル暗号化前: データタイプ={true_data_type}, サイズ={len(true_raw_content)}バイト")
+        print(f"[DEBUG] 真ファイルテキスト内容: {true_raw_content[:20]}...")
         if true_data_type == 'text':
             try:
                 encoding = 'utf-8'
                 text = true_raw_content.decode(encoding)
-                print(f"[DEBUG] 検出されたエンコーディング: {encoding}")
-                print(f"[DEBUG] デコードされたテキスト（先頭30文字）: {text[:30]}")
+                print(f"[DEBUG] 真ファイル検出されたエンコーディング: {encoding}")
+                print(f"[DEBUG] 真ファイルデコードされたテキスト（先頭30文字）: {text[:30]}")
             except UnicodeDecodeError:
-                print(f"[DEBUG] デコードできませんでした")
-        print(f"[DEBUG] 変換後: サイズ={len(true_content)}バイト")
-        print(f"[DEBUG] 変換後先頭バイト: {true_content[:20]}")
+                print(f"[DEBUG] 真ファイルデコードできませんでした")
+        print(f"[DEBUG] 真ファイル変換後: サイズ={len(true_content)}バイト")
+        print(f"[DEBUG] 真ファイル変換後先頭バイト: {true_content[:20]}")
 
-        print(f"[DEBUG] 暗号化前: データタイプ={false_data_type}, サイズ={len(false_raw_content)}バイト")
-        print(f"[DEBUG] テキスト内容: {false_raw_content[:20]}...")
+        # 偽データの詳細情報
+        print(f"[DEBUG] 偽ファイル暗号化前: データタイプ={false_data_type}, サイズ={len(false_raw_content)}バイト")
+        print(f"[DEBUG] 偽ファイルテキスト内容: {false_raw_content[:20]}...")
         if false_data_type == 'text':
             try:
                 encoding = 'utf-8'
                 text = false_raw_content.decode(encoding)
-                print(f"[DEBUG] 検出されたエンコーディング: {encoding}")
-                print(f"[DEBUG] デコードされたテキスト（先頭30文字）: {text[:30]}")
+                print(f"[DEBUG] 偽ファイル検出されたエンコーディング: {encoding}")
+                print(f"[DEBUG] 偽ファイルデコードされたテキスト（先頭30文字）: {text[:30]}")
             except UnicodeDecodeError:
-                print(f"[DEBUG] デコードできませんでした")
-        print(f"[DEBUG] 変換後: サイズ={len(false_content)}バイト")
-        print(f"[DEBUG] 変換後先頭バイト: {false_content[:20]}")
+                print(f"[DEBUG] 偽ファイルデコードできませんでした")
+        print(f"[DEBUG] 偽ファイル変換後: サイズ={len(false_content)}バイト")
+        print(f"[DEBUG] 偽ファイル変換後先頭バイト: {false_content[:20]}")
 
-    # データをチャンクに分割
+    # データをチャンクに分割（両方のファイルに対して同じチャンクサイズを使用）
     chunk_size = MAX_CHUNK_SIZE  # バイトごとの暗号化に適したサイズ
     true_chunks = [true_content[i:i+chunk_size] for i in range(0, len(true_content), chunk_size)]
     false_chunks = [false_content[i:i+chunk_size] for i in range(0, len(false_content), chunk_size)]
 
-    # 各チャンクを暗号化
+    # 各チャンクを暗号化（両方のファイルに対して同じ暗号化処理を適用）
     true_encrypted = []
     false_encrypted = []
 
@@ -354,6 +361,7 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
 
     # マスク適用と真偽変換
     print("マスク関数を適用し、真偽両方の状態を区別不可能な形式に変換中...")
+    print("この処理により、暗号文だけではどちらが「正規」ファイルか判別できなくなります")
 
     # マスク関数生成器の初期化
     if args.advanced_mask:
@@ -386,53 +394,31 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
         "public_key": paillier_obj.public_key  # 公開鍵情報を追加
     }
 
-    # true_file と false_file が両方テキストファイルであるかどうかをチェック
+    # エンコーディング情報の統一的な取得と保存（両方のファイルに対して同じアプローチ）
     try:
-        is_true_text = False
-        is_false_text = False
+        # テキストファイルかどうかをチェック（エンコーディング検出）
+        for file_type, raw_content, file_path in [
+            ('true', true_raw_content, args.true_file),
+            ('false', false_raw_content, args.false_file)
+        ]:
+            is_text = False
 
-        # ファイル拡張子でテキストファイルかどうかを判断
-        true_ext = os.path.splitext(args.true_file)[1].lower()
-        false_ext = os.path.splitext(args.false_file)[1].lower()
+            # ファイル拡張子でテキストファイルかどうかを判断
+            file_ext = os.path.splitext(file_path)[1].lower()
+            text_extensions = ['.txt', '.text', '.md', '.json', '.xml', '.html', '.htm', '.csv', '.log']
 
-        text_extensions = ['.txt', '.text', '.md', '.json', '.xml', '.html', '.htm', '.csv', '.log']
-
-        if true_ext in text_extensions:
-            # テキストファイルの可能性が高い
-            try:
-                true_raw_content.decode('utf-8')
-                is_true_text = True
-                metadata["true_encoding"] = "utf-8"
-            except UnicodeDecodeError:
-                # UTF-8以外のエンコーディングを試す
-                for enc in ['latin-1', 'shift-jis', 'euc-jp']:
+            if file_ext in text_extensions:
+                # テキストファイルの可能性が高い
+                for enc in ['utf-8', 'latin-1', 'shift-jis', 'euc-jp']:
                     try:
-                        true_raw_content.decode(enc)
-                        is_true_text = True
-                        metadata["true_encoding"] = enc
+                        raw_content.decode(enc)
+                        is_text = True
+                        metadata[f"{file_type}_encoding"] = enc
                         break
                     except UnicodeDecodeError:
                         continue
 
-        if false_ext in text_extensions:
-            # テキストファイルの可能性が高い
-            try:
-                false_raw_content.decode('utf-8')
-                is_false_text = True
-                metadata["false_encoding"] = "utf-8"
-            except UnicodeDecodeError:
-                # UTF-8以外のエンコーディングを試す
-                for enc in ['latin-1', 'shift-jis', 'euc-jp']:
-                    try:
-                        false_raw_content.decode(enc)
-                        is_false_text = True
-                        metadata["false_encoding"] = enc
-                        break
-                    except UnicodeDecodeError:
-                        continue
-
-        metadata["is_true_text"] = is_true_text
-        metadata["is_false_text"] = is_false_text
+            metadata[f"is_{file_type}_text"] = is_text
 
     except Exception as e:
         print(f"ファイル形式の判定中にエラーが発生しました: {e}")
@@ -460,6 +446,11 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     print(f"出力ファイル: {args.output}")
     print(f"鍵（安全に保管してください）: {binascii.hexlify(key).decode()}")
     print(f"処理時間: {elapsed_time:.2f}秒")
+    print(f"\n重要な注意:")
+    print(f"1. この鍵を使用すると、復号時に「真」ファイルまたは「偽」ファイルのいずれかが得られます")
+    print(f"2. どちらが「正規」ファイルかは、あなたの意図によって決まります")
+    print(f"3. ハニーポット戦略を実装したい場合は、「偽」ファイルを復号する鍵を意図的に漏洩させることができます")
+    print(f"4. リバーストラップを設定したい場合は、本当に重要な情報を「偽」側に隠すこともできます")
 
     if args.verbose:
         print(f"\n詳細情報:")

@@ -149,16 +149,36 @@ def decrypt_sample_file(encrypted_file, key_type):
     print(f"復号完了: {end_time - start_time:.2f}秒")
 
     # 復号されたファイルの内容を表示
-    with open(output_file, 'r', encoding='utf-8') as f:
-        content = f.read()
+    try:
+        with open(output_file, 'rb') as f:
+            content_bytes = f.read()
 
-    print("\n復号されたコンテンツのプレビュー:")
-    print("-" * 40)
-    # 最初の5行だけ表示
-    preview_lines = content.split('\n')[:5]
-    print('\n'.join(preview_lines))
-    print("...")
-    print("-" * 40)
+        # まずUTF-8でのデコードを試みる
+        try:
+            content = content_bytes.decode('utf-8', errors='replace')
+            is_text = True
+        except UnicodeDecodeError:
+            # テキストとして解釈できない場合はバイナリとして扱う
+            content = f"バイナリデータ ({len(content_bytes)} バイト)"
+            is_text = False
+
+        print("\n復号されたコンテンツのプレビュー:")
+        print("-" * 40)
+
+        if is_text:
+            # 最初の5行だけ表示
+            preview_lines = content.split('\n')[:5]
+            print('\n'.join(preview_lines))
+            if len(preview_lines) < len(content.split('\n')):
+                print("...")
+        else:
+            # バイナリデータの場合は16進ダンプを表示
+            hex_dump = ' '.join(f'{b:02x}' for b in content_bytes[:30])
+            print(f"16進数表示: {hex_dump}...")
+
+        print("-" * 40)
+    except Exception as e:
+        print(f"ファイル読み込み中にエラーが発生: {e}")
 
     return output_file
 

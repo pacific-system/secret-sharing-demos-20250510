@@ -11,6 +11,7 @@ KEY_SIZE_BYTES = 32  # 256ビット鍵
 PRIME_BITS = 2048    # 準同型暗号の法（素数）のビット長
 SALT_SIZE = 16       # ソルトサイズ
 MASK_SIZE = 256      # マスクサイズ（ビット）
+SECURITY_PARAMETER = 128  # セキュリティパラメータ（ビット）
 
 # 鍵導出パラメータ
 KDF_ITERATIONS = 10000  # 鍵導出関数の反復回数

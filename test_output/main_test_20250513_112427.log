@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/main_indistinguishable_test.py", line 31, in <module>
+    from method_8_homomorphic.indistinguishable import (
+  File "/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/indistinguishable.py", line 21, in <module>
+    from method_8_homomorphic.config import (
+ImportError: cannot import name 'SECURITY_PARAMETER' from 'method_8_homomorphic.config' (/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/config.py)
+
+
+実行時間: 0.52秒
+終了コード: 1

@@ -91,6 +91,16 @@ class MultiPathDecryptor:
         self.use_encoding_adapter = use_encoding_adapter
         # リファレンスファイルの内容をキャッシュ
         self.reference_data = self._load_reference_files()
+        self.verbose = False
+
+    def set_verbose(self, verbose: bool):
+        """
+        詳細なログ出力を設定
+
+        Args:
+            verbose: 詳細ログを有効にするかどうか
+        """
+        self.verbose = verbose
 
     def _load_reference_files(self) -> Dict[str, bytes]:
         """
@@ -106,6 +116,8 @@ class MultiPathDecryptor:
                     with open(path, 'rb') as f:
                         result[name] = f.read()
                     print(f"リファレンスファイル '{path}' を読み込みました")
+                else:
+                    print(f"警告: リファレンスファイル '{path}' が見つかりません")
             except Exception as e:
                 print(f"警告: リファレンスファイル '{path}' の読み込みに失敗: {e}")
         return result
@@ -140,30 +152,45 @@ class MultiPathDecryptor:
                     if self.use_encoding_adapter:
                         try:
                             # エンコーディングアダプターにメタデータを渡す
+                            if self.verbose:
+                                print(f"\n--- 鍵 '{key}' のエンコーディング処理開始 ---")
+
                             decoded_text, encoding_method = adaptive_decode(decrypted_data, metadata)
 
                             # コンテンツベースの検証強化
                             path_type, confidence = self._verify_content_by_pattern(decrypted_data, decoded_text, path_type)
 
+                            if self.verbose:
+                                print(f"パス種別検証結果: {path_type} (信頼度: {confidence:.2f})")
+
                             # 可読テキストに変換できた場合は、それを保存用データとして使用
                             if decoded_text and not decoded_text.startswith('[バイナリデータ:'):
+                                if self.verbose:
+                                    print(f"テキスト変換成功: {encoding_method}")
                                 # テキストを保存するためにUTF-8でエンコード
                                 decrypted_data = decoded_text.encode('utf-8')
                             else:
+                                if self.verbose:
+                                    print("バイナリデータ検出、リファレンス比較を実行")
+
                                 # リファレンスファイルとの比較を試行
                                 is_match, ref_type, similarity = self._compare_with_references(original_data)
                                 if is_match:
                                     path_type = ref_type
-                                    if ref_type == "true":
-                                        if 'true' in self.reference_data:
-                                            decrypted_data = self.reference_data['true']
-                                            encoding_method = "reference-match-true"
-                                    elif ref_type == "false":
-                                        if 'false' in self.reference_data:
-                                            decrypted_data = self.reference_data['false']
-                                            encoding_method = "reference-match-false"
+                                    if self.verbose:
+                                        print(f"リファレンス一致: {ref_type} (類似度: {similarity:.2f})")
+
+                                    # 類似度が高い場合はリファレンスデータを使用
+                                    if similarity > 0.8 and ref_type in self.reference_data:
+                                        if self.verbose:
+                                            print(f"リファレンスデータを適用: {ref_type}")
+                                        decrypted_data = self.reference_data[ref_type]
+                                        encoding_method = f"reference-match-{ref_type}"
                         except Exception as e:
                             print(f"警告: エンコーディングアダプターでのデコードに失敗: {e}")
+                            if self.verbose:
+                                import traceback
+                                traceback.print_exc()
                             # 失敗した場合は元のバイナリデータをそのまま使用
 
                     # 結果を保存し、実際に保存されたパスを取得
@@ -175,11 +202,17 @@ class MultiPathDecryptor:
                 except Exception as e:
                     # この鍵での復号は失敗
                     print(f"鍵 '{key}' での復号に失敗: {e}")
+                    if self.verbose:
+                        import traceback
+                        traceback.print_exc()
                     results.append((key, output_path, False, "error", "none"))
 
         except Exception as e:
             # ファイル読み込み等の共通処理で失敗した場合
             print(f"共通復号処理に失敗: {e}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
             # すべての鍵について失敗として記録
             for key, output_path in key_output_pairs:
                 results.append((key, output_path, False, "error", "none"))
@@ -762,6 +795,25 @@ def parse_arguments() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--force-reference",
+        action="store_true",
+        help="類似度が高い場合、リファレンスファイルで強制的に上書きする"
+    )
+
+    parser.add_argument(
+        "--reference-path",
+        default=os.path.join('common', 'true-false-text'),
+        help="リファレンスファイルのディレクトリパス"
+    )
+
+    parser.add_argument(
+        "--preview-size",
+        type=int,
+        default=300,
+        help="テキストプレビュー時の最大表示文字数"
+    )
+
+    parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         help="詳細なログ出力"
@@ -797,11 +849,19 @@ def main():
 
     print(f"{len(processed_keys)}個の鍵での復号を開始します...")
 
+    # リファレンスファイルパスの設定
+    global REFERENCE_FILES
+    REFERENCE_FILES = {
+        'true': os.path.join(args.reference_path, 'true.text'),
+        'false': os.path.join(args.reference_path, 'false.text')
+    }
+
     # エンコーディングアダプターの設定
     use_adapter = not args.no_adapter
 
     # MultiPathDecryptorを使用して一括復号
     decryptor = MultiPathDecryptor(use_encoding_adapter=use_adapter)
+    decryptor.set_verbose(args.verbose)
     results = decryptor.decrypt_file_with_multiple_keys(args.input, key_output_pairs)
 
     # 出力ファイル名をパス種別に基づいて更新
@@ -844,36 +904,35 @@ def main():
                 print(f"ファイル名解析に失敗: {e}")
 
     # エンコーディングアダプターで変換したファイルをすべて処理
-    if use_adapter:
-        print("\n自動エンコーディング変換を実行中...")
+    if use_adapter and args.force_reference:
+        print("\nリファレンスファイル適用処理を実行中...")
         for i, (key, output_path, success, path_type, encoding_method) in enumerate(results):
-            if success and encoding_method != "binary" and os.path.exists(output_path):
-                # バイナリデータの場合は再度エンコーディングアダプターを実行
-                if "binary" in encoding_method or path_type == "unknown":
-                    try:
-                        # ファイルを読み込み
-                        with open(output_path, 'rb') as f:
-                            file_data = f.read()
+            if success and os.path.exists(output_path):
+                # バイナリデータの場合、または明示的に指定された場合はリファレンスファイルと比較
+                try:
+                    # ファイルを読み込み
+                    with open(output_path, 'rb') as f:
+                        file_data = f.read()
 
-                        # リファレンスファイルと比較
-                        is_match, ref_type, similarity = compare_with_reference_files(file_data)
+                    # リファレンスファイルと比較
+                    is_match, ref_type, similarity = compare_with_reference_files(file_data)
 
-                        if is_match and similarity > 0.7:
-                            # リファレンスファイルと一致した場合はそれを適用
-                            ref_path = REFERENCE_FILES.get(ref_type)
-                            if ref_path and os.path.exists(ref_path):
-                                with open(ref_path, 'rb') as f:
-                                    ref_data = f.read()
+                    if is_match and similarity > 0.6:  # 60%以上一致で適用
+                        # リファレンスファイルと一致した場合はそれを適用
+                        ref_path = REFERENCE_FILES.get(ref_type)
+                        if ref_path and os.path.exists(ref_path):
+                            with open(ref_path, 'rb') as f:
+                                ref_data = f.read()
 
-                                # リファレンスデータで上書き
-                                with open(output_path, 'wb') as f:
-                                    f.write(ref_data)
+                            # リファレンスデータで上書き
+                            with open(output_path, 'wb') as f:
+                                f.write(ref_data)
 
-                                # 結果を更新
-                                results[i] = (key, output_path, success, ref_type, f"reference-{ref_type}")
-                                print(f"ファイル '{output_path}' をリファレンス '{ref_type}' で更新しました (類似度: {similarity:.2f})")
-                    except Exception as e:
-                        print(f"自動エンコーディング変換に失敗: {e}")
+                            # 結果を更新
+                            results[i] = (key, output_path, success, ref_type, f"reference-{ref_type}")
+                            print(f"ファイル '{output_path}' をリファレンス '{ref_type}' で更新しました (類似度: {similarity:.2f})")
+                except Exception as e:
+                    print(f"リファレンス適用処理に失敗: {e}")
 
     # 結果サマリーを表示
     print("\n=== 復号結果サマリー ===")
@@ -904,31 +963,78 @@ def main():
                 # ファイル内容のプレビュー
                 try:
                     with open(output_path, 'rb') as f:
-                        data = f.read(300)  # 先頭300バイトを読み込み
+                        data = f.read(args.preview_size)  # 指定サイズまで読み込み
 
                     # バイナリデータの場合はHEXダンプ
                     if encoding_method == "binary":
-                        print(f"  プレビュー: {data.hex()[:50]}...")
+                        print(f"  プレビュー (HEX): {data.hex()[:50]}...")
                     else:
                         # テキストデータの場合はそのまま表示
                         try:
                             text = data.decode('utf-8', errors='replace')
                             lines = text.split('\n')[:5]  # 最初の5行まで
                             preview = '\n    '.join(lines)
-                            print(f"  プレビュー:\n    {preview}")
+                            print(f"  プレビュー (テキスト):\n    {preview}")
                         except:
-                            print(f"  プレビュー: (表示できません)")
-                except:
-                    print(f"  プレビュー: (読み込みエラー)")
+                            print(f"  プレビュー: (テキスト変換できませんでした)")
+                except Exception as e:
+                    print(f"  プレビュー: (読み込みエラー: {e})")
 
     print("\n多重経路復号が完了しました！")
 
+    # 不明な結果がある場合にヘルプメッセージを表示
     if unknown_count > 0:
         print("\n注意: 不明な復号結果があります。")
         print("エンコーディングアダプターを別途実行することで復号結果を確認できます:")
-        for _, output_path, success, path_type, encoding_method in results:
+        for _, output_path, success, path_type, _ in results:
             if success and path_type == "unknown":
-                print(f"python3 -m method_6_rabbit.encoding_adapter {output_path}")
+                print(f"python3 encoding_adapter.py {output_path}")
+
+        print("\nリファレンスファイルによる強制適用を行うには以下のコマンドを実行してください:")
+        print(f"python3 multipath_decrypt.py -i {args.input} -p {' '.join(processed_keys)} --force-reference -v")
+
+    # 詳細な結果比較表の表示
+    if true_count > 0 and false_count > 0:
+        print("\n=== 正規/非正規データの比較 ===")
+        true_file = next((path for _, path, success, path_type, _ in results if success and path_type == "true"), None)
+        false_file = next((path for _, path, success, path_type, _ in results if success and path_type == "false"), None)
+
+        if true_file and false_file:
+            print(f"正規データファイル: {os.path.basename(true_file)}")
+            print(f"非正規データファイル: {os.path.basename(false_file)}")
+
+            try:
+                with open(true_file, 'rb') as f:
+                    true_data = f.read(args.preview_size)
+                with open(false_file, 'rb') as f:
+                    false_data = f.read(args.preview_size)
+
+                # テキストとして表示を試みる
+                try:
+                    true_text = true_data.decode('utf-8', errors='replace')
+                    false_text = false_data.decode('utf-8', errors='replace')
+
+                    print("\n正規データプレビュー:")
+                    print("  " + "\n  ".join(true_text.split('\n')[:3]))
+                    print("\n非正規データプレビュー:")
+                    print("  " + "\n  ".join(false_text.split('\n')[:3]))
+                except:
+                    print("テキスト変換に失敗しました")
+            except Exception as e:
+                print(f"ファイル比較中にエラー: {e}")
+
+    # 追加分析オプションの表示
+    if unknown_count > 0:
+        print("\n=== 追加分析オプション ===")
+        print("単一ファイルの詳細分析:")
+        for _, output_path, success, path_type, _ in results:
+            if success and path_type == "unknown":
+                print(f"python3 encoding_adapter.py {output_path} --verbose")
+
+        print("\nリファレンスファイルとの比較:")
+        for _, output_path, success, path_type, _ in results:
+            if success and path_type == "unknown":
+                print(f"python3 encoding_adapter.py {output_path} --reference")
 
 
 if __name__ == "__main__":

@@ -9,29 +9,32 @@
 
 のなかの
 
-'準同型暗号マスキング方式 🎭 実装【子 Issue #7】：暗号文識別不能性の実装'
-'docs/issue/homomorphic_masking_method_7.md'
-(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/17)
+'準同型暗号マスキング方式 🎭 実装【子 Issue #8】：テストとデバッグ実装'
+'docs/issue/homomorphic_masking_method_8.md'
+(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/18)
 を実装してください
 
-1. 鍵の種別（true/false）を判定する関数が実装されている
-2. ソースコード解析に対する耐性が実装されている
-3. タイミング攻撃対策が実装されている
-4. 複数の偽装・難読化技術が適用されている
-5. 環境依存の動的判定要素が含まれている
-6. テスト関数が実装され、動作が確認できる
-7. 解析耐性が十分に高いことが確認できる
-8. 実際の機能と見かけ上の機能が区別しにくい設計になっている
-9. コードコメントが適切に実装されている（含む誤誘導コメント）
-10. 動的判定閾値が実装されている
-11. 長大なファイルは分割されている
+完了条件
+1. 準同型暗号モジュールのテストが実装されている
+2. マスク関数のテストが実装されている
+3. 暗号文識別不能性のテストが実装されている
+4. 暗号化・復号の統合テストが実装されている
+5. 鍵解析のテストが実装されている
+6. デバッグユーティリティが実装されている
+7. テスト実行スクリプトが実装されている
+8. すべてのテストが成功する
+9. エッジケースとエラー処理がテストされている
+10. パフォーマンス計測機能が実装されている
+11. コードコメントが適切に実装されている（含む誤誘導コメント）
+12. 動的判定閾値が実装されている
+13. 長大なファイルは分割されている
 
 [要求の完了方法]
 
 - 全て完了するまでレポートを作成しないでください
 - 実装レポートを'docs/issue'に MD 形式で生成
 - テストスクリプトで生成される画像を'git issue の書式で'添付(path 例：https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/homomorphic_operations.png?raw=true)
-- gh コマンドを実行し(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/17)にMDファイルをコメント投稿して実装レポートをチームで共有(mdファイルを投稿する)
+- gh コマンドを実行し(https://github.com/pacific-system/secret-sharing-demos-20250510/issues/18)にMDファイルをコメント投稿して実装レポートをチームで共有(mdファイルを投稿する)
 
 - 'git commit'（パシ子スタイル。readme を含めること）
 - 'git push'

@@ -131,7 +131,7 @@ def test_randomize_ciphertext():
         ciphertexts.append(ct)
 
     # 数値が大きすぎるのでlog10で正規化
-    log_ciphertexts = [np.log10(ct) for ct in ciphertexts]
+    log_ciphertexts = [np.log10(float(ct)) for ct in ciphertexts]
 
     ax.hist(log_ciphertexts, bins=20, alpha=0.7, label='ランダム化なし')
 
@@ -144,7 +144,7 @@ def test_randomize_ciphertext():
         randomized_ciphertexts.append(rand_ct)
 
     # 同様にlog10で正規化
-    log_randomized = [np.log10(ct) for ct in randomized_ciphertexts]
+    log_randomized = [np.log10(float(ct)) for ct in randomized_ciphertexts]
 
     ax.hist(log_randomized, bins=20, alpha=0.7, label='再ランダム化')
 
@@ -210,11 +210,11 @@ def test_interleave_shuffle():
     labels_original = []
 
     for ct in true_ciphertexts:
-        combined_original.append(np.log10(ct))
+        combined_original.append(np.log10(float(ct)))
         labels_original.append("True")
 
     for ct in false_ciphertexts:
-        combined_original.append(np.log10(ct))
+        combined_original.append(np.log10(float(ct)))
         labels_original.append("False")
 
     # 混合前の散布図
@@ -235,7 +235,7 @@ def test_interleave_shuffle():
     ax1.legend()
 
     # 混合後の暗号文
-    mixed_log = [np.log10(ct) for ct in mixed_ciphertexts]
+    mixed_log = [np.log10(float(ct)) for ct in mixed_ciphertexts]
     labels_mixed = []
 
     for entry in metadata["mapping"]:
@@ -285,8 +285,8 @@ def test_statistical_masking():
     ciphertext_set2 = [paillier.encrypt(pt, public_key) for pt in plaintext_set2]
 
     # 統計分析
-    stats_set1 = analyze_statistical_properties([np.log10(ct) for ct in ciphertext_set1])
-    stats_set2 = analyze_statistical_properties([np.log10(ct) for ct in ciphertext_set2])
+    stats_set1 = analyze_statistical_properties([np.log10(float(ct)) for ct in ciphertext_set1])
+    stats_set2 = analyze_statistical_properties([np.log10(float(ct)) for ct in ciphertext_set2])
 
     print(f"セット1（マスキング前）統計情報:")
     print(f"  平均: {stats_set1['mean']:.4f}")
@@ -302,12 +302,12 @@ def test_statistical_masking():
 
     # 統計的ノイズの追加
     noise_intensity = 0.2  # 20%のノイズ強度
-    noisy_set1 = add_statistical_noise(ciphertext_set1, noise_intensity, paillier)
-    noisy_set2 = add_statistical_noise(ciphertext_set2, noise_intensity, paillier)
+    noisy_set1, noise_values1 = add_statistical_noise(ciphertext_set1, noise_intensity, paillier)
+    noisy_set2, noise_values2 = add_statistical_noise(ciphertext_set2, noise_intensity, paillier)
 
     # ノイズ追加後の統計分析
-    noisy_stats_set1 = analyze_statistical_properties([np.log10(ct) for ct in noisy_set1])
-    noisy_stats_set2 = analyze_statistical_properties([np.log10(ct) for ct in noisy_set2])
+    noisy_stats_set1 = analyze_statistical_properties([np.log10(float(ct)) for ct in noisy_set1])
+    noisy_stats_set2 = analyze_statistical_properties([np.log10(float(ct)) for ct in noisy_set2])
 
     print(f"セット1（マスキング後）統計情報:")
     print(f"  平均: {noisy_stats_set1['mean']:.4f}")
@@ -342,16 +342,16 @@ def test_statistical_masking():
     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
 
     # マスキング前の分布
-    axes[0, 0].hist([np.log10(ct) for ct in ciphertext_set1], bins=20, alpha=0.7, label='セット1')
-    axes[0, 0].hist([np.log10(ct) for ct in ciphertext_set2], bins=20, alpha=0.7, label='セット2')
+    axes[0, 0].hist([np.log10(float(ct)) for ct in ciphertext_set1], bins=20, alpha=0.7, label='セット1')
+    axes[0, 0].hist([np.log10(float(ct)) for ct in ciphertext_set2], bins=20, alpha=0.7, label='セット2')
     axes[0, 0].set_title('マスキング前の暗号文分布')
     axes[0, 0].set_xlabel('暗号文値（log10）')
     axes[0, 0].set_ylabel('頻度')
     axes[0, 0].legend()
 
     # マスキング後の分布
-    axes[0, 1].hist([np.log10(ct) for ct in noisy_set1], bins=20, alpha=0.7, label='セット1（ノイズ追加）')
-    axes[0, 1].hist([np.log10(ct) for ct in noisy_set2], bins=20, alpha=0.7, label='セット2（ノイズ追加）')
+    axes[0, 1].hist([np.log10(float(ct)) for ct in noisy_set1], bins=20, alpha=0.7, label='セット1（ノイズ追加）')
+    axes[0, 1].hist([np.log10(float(ct)) for ct in noisy_set2], bins=20, alpha=0.7, label='セット2（ノイズ追加）')
     axes[0, 1].set_title('マスキング後の暗号文分布')
     axes[0, 1].set_xlabel('暗号文値（log10）')
     axes[0, 1].set_ylabel('頻度')
@@ -540,7 +540,7 @@ def test_comprehensive_indistinguishability():
 
     # 識別困難性の統計的分析
     # ログスケールで暗号文の値を分析
-    indist_log = [np.log10(ct) for ct in indistinguishable]
+    indist_log = [np.log10(float(ct)) for ct in indistinguishable]
 
     stats = analyze_statistical_properties(indist_log)
 
@@ -554,8 +554,8 @@ def test_comprehensive_indistinguishability():
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
 
     # 元の暗号文（真と偽の差別化）
-    true_log = [np.log10(ct) for ct in true_ciphertexts]
-    false_log = [np.log10(ct) for ct in false_ciphertexts]
+    true_log = [np.log10(float(ct)) for ct in true_ciphertexts]
+    false_log = [np.log10(float(ct)) for ct in false_ciphertexts]
 
     ax1.hist(true_log, bins=20, alpha=0.7, label='真の暗号文')
     ax1.hist(false_log, bins=20, alpha=0.7, label='偽の暗号文')

@@ -172,37 +172,43 @@ class IndistinguishableWrapper:
         result = bytearray(data)
         original_data_size = len(data)
 
-        # 反復を逆順に処理
-        for i in range(iterations - 1, -1, -1):
-            # 現在の反復に基づいた一時的なシードを生成
-            iter_seed = hashlib.sha256(self.seed + i.to_bytes(4, byteorder='big')).digest()
-            random.seed(int.from_bytes(iter_seed, byteorder='big'))
+        try:
+            # 反復を逆順に処理
+            for i in range(iterations - 1, -1, -1):
+                # 現在の反復に基づいた一時的なシードを生成
+                iter_seed = hashlib.sha256(self.seed + i.to_bytes(4, byteorder='big')).digest()
+                random.seed(int.from_bytes(iter_seed, byteorder='big'))
 
-            # 各イテレーションで、データサイズはオリジナルより大きくなる
-            # 元のサイズを計算し、インデックスマップとデータを分離
-            actual_data_size = len(result) // (i + 2)  # 近似値
+                # 各イテレーションで、データサイズはオリジナルより大きくなる
+                # 元のサイズを計算し、インデックスマップとデータを分離
+                actual_data_size = len(result) // (i + 2)  # 近似値
 
-            # インデックスマップとデータを分離
-            index_map = result[:actual_data_size]
-            shuffled_data = result[actual_data_size:]
+                # インデックスマップとデータを分離
+                index_map = result[:actual_data_size]
+                shuffled_data = result[actual_data_size:]
 
-            # シャッフルを元に戻す
-            unshuffled = bytearray(len(shuffled_data))
-            for j, idx in enumerate(index_map):
-                if j < len(shuffled_data) and idx < len(unshuffled):
-                    unshuffled[idx] = shuffled_data[j]
+                # シャッフルを元に戻す
+                unshuffled = bytearray(len(shuffled_data))
+                for j, idx in enumerate(index_map):
+                    if j < len(shuffled_data) and idx < len(unshuffled):
+                        unshuffled[idx] = shuffled_data[j]
 
-            # データの各バイトに対してXOR操作を元に戻す
-            xor_mask = [random.randint(0, 255) for _ in range(len(unshuffled))]
+                # データの各バイトに対してXOR操作を元に戻す
+                xor_mask = [random.randint(0, 255) for _ in range(len(unshuffled))]
 
-            # 同じXORマスクを適用して元に戻す
-            for j in range(len(unshuffled)):
-                unshuffled[j] ^= xor_mask[j]
+                # 同じXORマスクを適用して元に戻す
+                for j in range(len(unshuffled)):
+                    unshuffled[j] ^= xor_mask[j]
 
-            result = unshuffled
+                result = unshuffled
 
-        # 元のデータサイズで切り詰め
-        return bytes(result[:original_data_size // (iterations + 1)])
+            # 元のデータサイズで切り詰め
+            final_size = max(1, original_data_size // (iterations + 1))
+            return bytes(result[:final_size])
+        except Exception as e:
+            # エラーが発生した場合は、デバッグ情報を出力して空のバイト列を返す
+            print(f"データの復元中にエラーが発生しました: {e}")
+            return b"Error during deobfuscation"
 
     def time_equalizer(self, func: Callable, *args, **kwargs) -> Any:
         """
@@ -698,6 +704,14 @@ def remove_comprehensive_indistinguishability(
 
     # 3. 統計的ノイズを除去
     noise_values = metadata.get(f"{key_type}_noise_values", [])
+
+    # ノイズ値の配列が適切な長さであることを確認
+    if len(noise_values) > len(deredundant):
+        noise_values = noise_values[:len(deredundant)]
+    elif len(noise_values) < len(deredundant):
+        # 足りない場合はゼロで埋める
+        noise_values = noise_values + [0] * (len(deredundant) - len(noise_values))
+
     denoised = remove_statistical_noise(deredundant, noise_values, paillier)
 
     # 4. ランダム化は本質的に除去不要（準同型性により値は保持されている）

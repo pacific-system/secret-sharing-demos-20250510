@@ -1,0 +1,64 @@
+準同型暗号マスキング方式 統合テスト開始（basic）
+日時: 2025年05月14日 19:04:09
+
+テスト設定:
+- テストタイプ: basic
+- 出力ディレクトリ: test_output
+- 真のテストファイル: common/true-false-text/t.text
+- 偽のテストファイル: common/true-false-text/f.text
+- 鍵サイズ: 1024ビット
+- チャンクサイズ: 64バイト
+
+## テスト環境情報
+- Python バージョン: 3.12.8 (v3.12.8:2dc476bcb91, Dec  3 2024, 14:43:20) [Clang 13.0.0 (clang-1300.0.29.30)]
+- OS: posix
+- ワーキングディレクトリ: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic
+
+
+================================================================================
+# 準同型暗号の基本機能テスト
+================================================================================
+
+
+## テストファイルの読み込み
+[2025-05-14 19:04:09] エラーが発生しました: [Errno 2] No such file or directory: 'common/true-false-text/t.text'
+[2025-05-14 19:04:09] Traceback (most recent call last):
+  File "/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/homomorphic_test.py", line 296, in test_basic_homomorphic_functions
+    with open(TRUE_TEXT_PATH, 'rb') as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'common/true-false-text/t.text'
+
+
+================================================================================
+# 検証結果レポートの作成
+================================================================================
+
+
+====== 準同型暗号マスキング方式 検証結果 ======
+元の真ファイルハッシュ: 
+復号された真ファイルハッシュ: 
+真ファイル一致: 成功 ✅
+元の偽ファイルハッシュ: 
+復号された偽ファイルハッシュ: 
+偽ファイル一致: 成功 ✅
+検証結果グラフを保存しました: test_output/verification_result_20250514-190409.png
+
+✅ 検証成功: 準同型暗号マスキング方式は正しく機能しています。
+  - 真の鍵で復号すると元の真ファイルが得られます。
+  - 偽の鍵で復号すると元の偽ファイルが得られます。
+  - 攻撃者はソースコードを入手しても復号結果の真偽を判別できません。
+
+================================================================================
+# テスト結果レポートの生成
+================================================================================
+
+[2025-05-14 19:04:09] エラーが発生しました: 'str' object has no attribute 'get'
+[2025-05-14 19:04:09] Traceback (most recent call last):
+  File "/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/homomorphic_test.py", line 2550, in main
+    report_file = generate_report(TEST_RESULTS)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/homomorphic_test.py", line 2121, in generate_report
+    success = results[test_name].get("success", False)
+              ^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'str' object has no attribute 'get'
+

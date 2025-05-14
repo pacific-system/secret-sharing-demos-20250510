@@ -12,24 +12,26 @@
 #              【準同型暗号マスキング方式テスト - HOMOMORPHIC MASKING TEST】     #
 #                                                                              #
 #     このファイルは準同型暗号マスキング方式の「テスト」機能のメインエントリーポイントです     #
-#     下記5つのテストファイルの機能を統合しています：                                #
+#     下記6つのテストファイルの機能を統合しています：                                #
 #     - enhanced_homomorphic_test.py                                           #
 #     - test_homomorphic_masking.py                                           #
 #     - test_secure_homomorphic.py                                            #
 #     - test_security_results.py                                              #
 #     - integrated_homomorphic_test.py                                        #
+#     - test_secure_homomorphic.py                                            #
 #                                                                              #
 ################################################################################
 
 """
 準同型暗号マスキング方式 統合テストスクリプト
 
-このスクリプトは、以下の5つのテストスクリプトの機能を統合したものです：
+このスクリプトは、以下の6つのテストスクリプトの機能を統合したものです：
 - enhanced_homomorphic_test.py
 - test_homomorphic_masking.py
 - test_secure_homomorphic.py
 - test_security_results.py
 - integrated_homomorphic_test.py
+- test_secure_homomorphic.py
 
 主な機能:
 1. 準同型暗号の基本機能テスト
@@ -40,6 +42,7 @@
 6. パフォーマンス計測機能
 7. セキュリティ検証機能
 8. タイムスタンプ付きログファイル生成機能
+9. 検証結果のグラフ視覚化機能
 
 使用方法:
   python3 homomorphic_test.py [オプション]
@@ -104,8 +107,8 @@ except ImportError:
     print("警告: debug_utils モジュールがインポートできません。一部のテスト機能が利用できません。")
 
 # 入出力パス設定
-TRUE_TEXT_PATH = "common/true-false-text/t.text"
-FALSE_TEXT_PATH = "common/true-false-text/f.text"
+TRUE_TEXT_PATH = "../common/true-false-text/t.text"
+FALSE_TEXT_PATH = "../common/true-false-text/f.text"
 OUTPUT_DIR = "test_output"
 TIMESTAMP = time.strftime("%Y%m%d-%H%M%S")
 
@@ -2115,6 +2118,10 @@ def generate_report(results: Dict[str, Any]) -> str:
     # 各テストの結果を追加
     for test_name, test_results in TEST_RESULTS.items():
         if test_name in results:
+            # verification_graphはstringなのでそのまま処理
+            if test_name == 'verification_graph':
+                continue
+
             success = results[test_name].get("success", False)
             all_success = all_success and success
 
@@ -2276,6 +2283,19 @@ def generate_report(results: Dict[str, Any]) -> str:
             for data in scaling_data:
                 report_content += f"| {data.get('key_bits', 0)}ビット | {data.get('data_size', 0)}バイト | {data.get('encryption_time', 0):.6f} | {data.get('decryption_time', 0):.6f} |\n"
 
+        # 検証グラフがあれば追加
+        if test_name == "verification_graph" and test_results and os.path.exists(test_results):
+            report_content += f"""
+## 検証結果の視覚化
+
+以下のグラフは、元のファイルと復号されたファイルの比較を示しています。
+マーカー ✓ は一致、 ✗ は不一致を示します。
+
+"""
+            # 相対パスに変換
+            rel_path = os.path.relpath(test_results, os.path.dirname(report_file))
+            report_content += f"![検証結果グラフ]({rel_path})\n"
+
         # エラーがある場合は追加
         if 'error' in test_results:
             report_content += f"""
@@ -2331,6 +2351,130 @@ def generate_report(results: Dict[str, Any]) -> str:
 
     return report_file
 
+#------------------------------------------------------------------------------
+# 検証レポート生成
+#------------------------------------------------------------------------------
+
+def create_verification_report() -> None:
+    """検証結果のレポートを作成し、グラフで視覚化"""
+    print_section_header("検証結果レポートの作成", 1)
+
+    # ファイルハッシュの取得
+    original_true_hash = ""
+    original_false_hash = ""
+    decrypted_true_hash = ""
+    decrypted_false_hash = ""
+
+    # 出力ファイルのパス設定
+    output_decrypted_true = os.path.join(OUTPUT_DIR, f"decrypted_true_{TIMESTAMP}.txt")
+    output_decrypted_false = os.path.join(OUTPUT_DIR, f"decrypted_false_{TIMESTAMP}.txt")
+
+    # 元ファイルのハッシュ
+    if os.path.exists(TRUE_TEXT_PATH):
+        original_true_hash = calculate_file_hash(TRUE_TEXT_PATH)
+
+    if os.path.exists(FALSE_TEXT_PATH):
+        original_false_hash = calculate_file_hash(FALSE_TEXT_PATH)
+
+    # 復号ファイルのハッシュ
+    if os.path.exists(output_decrypted_true):
+        decrypted_true_hash = calculate_file_hash(output_decrypted_true)
+
+    if os.path.exists(output_decrypted_false):
+        decrypted_false_hash = calculate_file_hash(output_decrypted_false)
+
+    # 比較結果
+    true_match = original_true_hash == decrypted_true_hash
+    false_match = original_false_hash == decrypted_false_hash
+
+    # レポートをログに記録
+    log_message("\n====== 準同型暗号マスキング方式 検証結果 ======", markdown=True)
+    log_message(f"元の真ファイルハッシュ: {original_true_hash}", markdown=True)
+    log_message(f"復号された真ファイルハッシュ: {decrypted_true_hash}", markdown=True)
+    log_message(f"真ファイル一致: {'成功 ✅' if true_match else '失敗 ❌'}", markdown=True)
+    log_message(f"元の偽ファイルハッシュ: {original_false_hash}", markdown=True)
+    log_message(f"復号された偽ファイルハッシュ: {decrypted_false_hash}", markdown=True)
+    log_message(f"偽ファイル一致: {'成功 ✅' if false_match else '失敗 ❌'}", markdown=True)
+
+    # グラフでの視覚化
+    plt.figure(figsize=(10, 6))
+
+    # 元ファイルと復号ファイルのサイズ比較
+    file_sizes = [
+        os.path.getsize(TRUE_TEXT_PATH) if os.path.exists(TRUE_TEXT_PATH) else 0,
+        os.path.getsize(output_decrypted_true) if os.path.exists(output_decrypted_true) else 0,
+        os.path.getsize(FALSE_TEXT_PATH) if os.path.exists(FALSE_TEXT_PATH) else 0,
+        os.path.getsize(output_decrypted_false) if os.path.exists(output_decrypted_false) else 0
+    ]
+
+    file_labels = [
+        '元の真ファイル',
+        '復号された真ファイル',
+        '元の偽ファイル',
+        '復号された偽ファイル'
+    ]
+
+    # 色の設定
+    colors = ['green', 'lightgreen', 'red', 'lightcoral']
+
+    # バーのエッジに色を付ける
+    edge_colors = []
+    for i, size in enumerate(file_sizes):
+        if i == 0 and i + 1 < len(file_sizes) and file_sizes[i] == file_sizes[i + 1]:
+            # 元の真ファイルと復号された真ファイルが一致
+            edge_colors.append('darkgreen')
+        elif i == 2 and i + 1 < len(file_sizes) and file_sizes[i] == file_sizes[i + 1]:
+            # 元の偽ファイルと復号された偽ファイルが一致
+            edge_colors.append('darkred')
+        else:
+            edge_colors.append(colors[i])
+
+    # グラフのプロット
+    plt.bar(file_labels, file_sizes, color=colors, edgecolor=edge_colors, linewidth=2)
+    plt.title('準同型暗号マスキング方式検証結果')
+    plt.ylabel('ファイルサイズ (バイト)')
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+
+    # 一致/不一致のマーカーを追加
+    for i in range(2):
+        x = i * 2  # 0, 2
+        is_match = true_match if i == 0 else false_match
+        y = max(file_sizes) * 0.95
+        color = 'green' if is_match else 'red'
+        marker = '✓' if is_match else '✗'
+        plt.text(x + 0.5, y, marker, fontsize=20, color=color,
+                ha='center', va='center', backgroundcolor='white')
+
+    # グラフを保存
+    verification_graph_file = os.path.join(OUTPUT_DIR, f"verification_result_{TIMESTAMP}.png")
+    plt.savefig(verification_graph_file)
+    log_message(f"検証結果グラフを保存しました: {verification_graph_file}", markdown=True)
+
+    # 結果の概要
+    if true_match and false_match:
+        log_message("\n✅ 検証成功: 準同型暗号マスキング方式は正しく機能しています。", markdown=True)
+        log_message("  - 真の鍵で復号すると元の真ファイルが得られます。", markdown=True)
+        log_message("  - 偽の鍵で復号すると元の偽ファイルが得られます。", markdown=True)
+        log_message("  - 攻撃者はソースコードを入手しても復号結果の真偽を判別できません。", markdown=True)
+    else:
+        log_message("\n❌ 検証失敗: 暗号化または復号化に問題があります。", markdown=True)
+        if not true_match:
+            log_message("  - 真の鍵による復号で元の真ファイルが得られませんでした。", markdown=True)
+        if not false_match:
+            log_message("  - 偽の鍵による復号で元の偽ファイルが得られませんでした。", markdown=True)
+
+    return verification_graph_file
+
+def calculate_file_hash(file_path: str) -> str:
+    """ファイルのSHA-256ハッシュを計算"""
+    try:
+        with open(file_path, 'rb') as f:
+            file_data = f.read()
+            return hashlib.sha256(file_data).hexdigest()
+    except Exception as e:
+        log_message(f"ハッシュ計算エラー: {e}")
+        return "hash_error"
 
 #------------------------------------------------------------------------------
 # メイン関数
@@ -2401,6 +2545,11 @@ def main():
         if TEST_TYPE in ['all', 'performance']:
             TEST_RESULTS['performance'] = test_performance()
 
+        # 検証結果のグラフ作成
+        if TEST_TYPE in ['all', 'basic']:
+            verification_graph = create_verification_report()
+            TEST_RESULTS['verification_graph'] = verification_graph
+
         # テスト結果のレポート生成
         report_file = generate_report(TEST_RESULTS)
 
@@ -2414,8 +2563,17 @@ def main():
         log_message(f"- ログファイル: {LOG_FILE}", markdown=True)
 
         # テスト結果の概要を表示
-        success_count = sum(1 for test in TEST_RESULTS.values() if test.get('success', False))
-        total_count = len(TEST_RESULTS)
+        success_count = 0
+        total_count = 0
+
+        for test_name, test_result in TEST_RESULTS.items():
+            # verification_graphはstringなのでスキップ
+            if test_name == 'verification_graph':
+                continue
+
+            if isinstance(test_result, dict) and test_result.get('success', False):
+                success_count += 1
+            total_count += 1
 
         log_message(f"- 成功したテスト: {success_count}/{total_count}", markdown=True)
 

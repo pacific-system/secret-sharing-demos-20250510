@@ -1,176 +1,212 @@
 #!/usr/bin/env python3
 """
-不確定性転写暗号化方式の使用例
+不確定性転写暗号化方式 - サンプル実行スクリプト
 
-暗号化と復号の基本的な使用方法を示します。
+暗号化と復号の一連の流れを実行するサンプルスクリプトです。
+正規・非正規の両方の鍵で復号し、結果を比較します。
 """
 
 import os
 import sys
 import time
-import argparse
-from typing import Dict, List, Tuple, Optional, Union, Any
+import binascii
+import hashlib
+import tempfile
+from typing import Tuple, Dict, Any
 
-# パッケージとして利用する場合と直接実行する場合でインポートを切り替え
-if __name__ == "__main__":
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    if current_dir not in sys.path:
-        sys.path.append(current_dir)
-    from encrypt import encrypt_file_cli
-    from decrypt import decrypt_file_cli
-    from probability_engine import TRUE_PATH, FALSE_PATH
-else:
-    from .encrypt import encrypt_file_cli
-    from .decrypt import decrypt_file_cli
-    from .probability_engine import TRUE_PATH, FALSE_PATH
+# 相対インポートのためにパスを追加
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_dir = os.path.dirname(current_dir)
+if project_dir not in sys.path:
+    sys.path.insert(0, project_dir)
+
+try:
+    # パッケージとして実行する場合
+    from method_10_indeterministic.encrypt import encrypt_files
+    from method_10_indeterministic.decrypt import decrypt_file
+    from method_10_indeterministic.config import TRUE_TEXT_PATH, FALSE_TEXT_PATH
+except ImportError:
+    # ローカルモジュールとして実行する場合
+    from encrypt import encrypt_files
+    from decrypt import decrypt_file
+    from config import TRUE_TEXT_PATH, FALSE_TEXT_PATH
 
 
-def create_sample_file(content: str, file_path: str) -> bool:
+def prepare_test_files() -> Tuple[str, str, str]:
     """
-    サンプルファイルの作成
-
-    Args:
-        content: ファイルの内容
-        file_path: 出力ファイルのパス
+    テスト用の一時ファイルを準備
 
     Returns:
-        成功した場合はTrue、失敗した場合はFalse
+        (正規ファイルパス, 非正規ファイルパス, 暗号化ファイルパス)
     """
-    try:
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        return True
-    except Exception as e:
-        print(f"サンプルファイルの作成に失敗しました: {e}", file=sys.stderr)
-        return False
+    # 共通ディレクトリの確認
+    common_dir = os.path.join(project_dir, "common", "true-false-text")
+    os.makedirs(common_dir, exist_ok=True)
+
+    # テスト用の文字列
+    true_content = "これは正規のファイルです。正しい鍵で復号されたことを示します。"
+    false_content = "これは非正規のファイルです。不正な鍵で復号されたことを示します。"
+
+    # ファイルがなければ作成
+    if not os.path.exists(TRUE_TEXT_PATH):
+        with open(TRUE_TEXT_PATH, "w", encoding="utf-8") as f:
+            f.write(true_content)
+
+    if not os.path.exists(FALSE_TEXT_PATH):
+        with open(FALSE_TEXT_PATH, "w", encoding="utf-8") as f:
+            f.write(false_content)
+
+    # 一時ファイルパスの生成
+    temp_dir = tempfile.gettempdir()
+    encrypted_path = os.path.join(temp_dir, "example_encrypted.indet")
+
+    return TRUE_TEXT_PATH, FALSE_TEXT_PATH, encrypted_path
 
 
-def run_example(input_file: str = None, true_password: str = None, false_password: str = None) -> None:
+def test_encryption_decryption() -> Dict[str, Any]:
     """
-    暗号化と復号の例を実行
+    暗号化・復号のテスト
+
+    Returns:
+        テスト結果の辞書
+    """
+    results = {}
+
+    print("=== 不確定性転写暗号化方式 サンプル実行 ===")
+
+    # テストファイルの準備
+    true_path, false_path, encrypted_path = prepare_test_files()
+    print(f"テストファイル準備完了:")
+    print(f"  正規ファイル: {true_path}")
+    print(f"  非正規ファイル: {false_path}")
+    print(f"  暗号化出力先: {encrypted_path}")
+
+    # 暗号化の実行
+    print("\n--- 暗号化処理開始 ---")
+    start_time = time.time()
+    key, metadata = encrypt_files(true_path, false_path, encrypted_path)
+    encryption_time = time.time() - start_time
+
+    print(f"暗号化処理時間: {encryption_time:.2f}秒")
+    print(f"生成された鍵: {binascii.hexlify(key).decode('ascii')}")
+    print(f"メタデータ: {metadata}")
+
+    # 正規復号の実行
+    print("\n--- 正規復号処理開始 ---")
+    true_output_path = os.path.join(tempfile.gettempdir(), "example_true_decrypted.txt")
+    start_time = time.time()
+    decrypt_file(encrypted_path, key, true_output_path)
+    true_decryption_time = time.time() - start_time
+
+    # 復号結果の確認
+    with open(true_output_path, "rb") as f:
+        true_decrypted = f.read()
+
+    print(f"正規復号結果: {true_decrypted.decode('utf-8', errors='replace')}")
+    print(f"正規復号処理時間: {true_decryption_time:.2f}秒")
+
+    # 非正規鍵の生成（元の鍵を少し変更）
+    false_key = bytearray(key)
+    false_key[0] ^= 0xFF  # 最初のバイトを反転
+    false_key = bytes(false_key)
+
+    # 非正規復号の実行
+    print("\n--- 非正規復号処理開始 ---")
+    false_output_path = os.path.join(tempfile.gettempdir(), "example_false_decrypted.txt")
+    start_time = time.time()
+    decrypt_file(encrypted_path, false_key, false_output_path)
+    false_decryption_time = time.time() - start_time
+
+    # 復号結果の確認
+    with open(false_output_path, "rb") as f:
+        false_decrypted = f.read()
+
+    print(f"非正規復号結果: {false_decrypted.decode('utf-8', errors='replace')}")
+    print(f"非正規復号処理時間: {false_decryption_time:.2f}秒")
+
+    # 結果の検証
+    with open(true_path, "rb") as f:
+        original_true = f.read()
+
+    with open(false_path, "rb") as f:
+        original_false = f.read()
+
+    # 正規鍵で元の正規テキストが復元されたか
+    true_match = original_true in true_decrypted
+
+    # 非正規鍵で元の非正規テキストが復元されたか
+    false_match = original_false in false_decrypted
+
+    # 真偽テキストが相互に含まれていないか（コンタミがないか）
+    no_contamination = original_true not in false_decrypted and original_false not in true_decrypted
+
+    print("\n--- 検証結果 ---")
+    print(f"正規鍵での復号結果が正規テキストと一致: {true_match}")
+    print(f"非正規鍵での復号結果が非正規テキストと一致: {false_match}")
+    print(f"テキスト間のコンタミネーションなし: {no_contamination}")
+
+    # 結果をまとめて返す
+    results["encryption_time"] = encryption_time
+    results["true_decryption_time"] = true_decryption_time
+    results["false_decryption_time"] = false_decryption_time
+    results["true_match"] = true_match
+    results["false_match"] = false_match
+    results["no_contamination"] = no_contamination
+    results["encrypted_size"] = os.path.getsize(encrypted_path)
+    results["original_true_size"] = len(original_true)
+    results["original_false_size"] = len(original_false)
+    results["true_key"] = binascii.hexlify(key).decode('ascii')
+    results["false_key"] = binascii.hexlify(false_key).decode('ascii')
+
+    return results
+
+
+def display_summary(results: Dict[str, Any]):
+    """
+    テスト結果のサマリーを表示
 
     Args:
-        input_file: 入力ファイル（指定がない場合は一時ファイルを作成）
-        true_password: TRUE鍵のパスワード（指定がない場合はランダム生成）
-        false_password: FALSE鍵のパスワード（指定がない場合はランダム生成）
+        results: テスト結果の辞書
     """
-    # 一時ディレクトリの作成
-    temp_dir = os.path.join(os.getcwd(), "temp")
-    os.makedirs(temp_dir, exist_ok=True)
+    print("\n=== サマリー ===")
+    print(f"暗号化時間: {results['encryption_time']:.2f}秒")
+    print(f"正規復号時間: {results['true_decryption_time']:.2f}秒")
+    print(f"非正規復号時間: {results['false_decryption_time']:.2f}秒")
 
+    print(f"\n暗号化ファイルサイズ: {results['encrypted_size']} バイト")
+    print(f"オリジナル正規ファイルサイズ: {results['original_true_size']} バイト")
+    print(f"オリジナル非正規ファイルサイズ: {results['original_false_size']} バイト")
+
+    expansion_ratio = results['encrypted_size'] / (results['original_true_size'] + results['original_false_size'])
+    print(f"サイズ拡大率: {expansion_ratio:.2f}倍")
+
+    all_tests_passed = results["true_match"] and results["false_match"] and results["no_contamination"]
+    print(f"\n全てのテストに合格: {'はい' if all_tests_passed else 'いいえ'}")
+
+    if not all_tests_passed:
+        if not results["true_match"]:
+            print("  - 正規鍵での復号が正しくありません")
+        if not results["false_match"]:
+            print("  - 非正規鍵での復号が正しくありません")
+        if not results["no_contamination"]:
+            print("  - テキスト間にコンタミネーションがあります")
+
+
+def main():
+    """
+    メイン関数
+    """
     try:
-        # 入力ファイルの準備
-        if not input_file:
-            # サンプルの入力ファイルを作成
-            input_file = os.path.join(temp_dir, "sample_input.txt")
-            content = """これは不確定性転写暗号化方式のテストファイルです。
-
-秘密情報: パスワードは「password123」です。
-重要度: 高
-
-このファイルは暗号化された後も、TRUE/FALSE 2種類の鍵で復号できますが、
-その結果は異なります。「不確定性」により、攻撃者にとっては
-どちらの情報が真実かを判断することはできません。
-"""
-            if not create_sample_file(content, input_file):
-                print("サンプルファイルの作成に失敗しました。終了します。")
-                return
-
-        # パスワードの準備
-        if not true_password:
-            true_password = "true_password_123"  # 実運用時はより強力なパスワードを使用すべき
-        if not false_password:
-            false_password = "false_password_123"  # 実運用時はより強力なパスワードを使用すべき
-
-        # 暗号化ファイルの準備
-        encrypted_file = os.path.join(temp_dir, "encrypted.bin")
-        true_decrypted_file = os.path.join(temp_dir, "decrypted_true.txt")
-        false_decrypted_file = os.path.join(temp_dir, "decrypted_false.txt")
-
-        print("===== 不確定性転写暗号化方式のデモ =====")
-        print(f"入力ファイル: {input_file}")
-        print(f"TRUE鍵パスワード: {true_password}")
-        print(f"FALSE鍵パスワード: {false_password}")
-
-        # TRUEモードで暗号化
-        print("\n----- TRUEモードで暗号化 -----")
-        encrypt_success = encrypt_file_cli(
-            input_file,
-            encrypted_file,
-            true_password,
-            false_password,
-            TRUE_PATH
-        )
-
-        if not encrypt_success:
-            print("暗号化に失敗しました。終了します。")
-            return
-
-        # 暗号化ファイル情報の表示
-        encrypted_file_size = os.path.getsize(encrypted_file)
-        print(f"暗号化ファイル: {encrypted_file} ({encrypted_file_size} バイト)")
-
-        # TRUEモードで復号
-        print("\n----- TRUEモードで復号 -----")
-        true_decrypt_success = decrypt_file_cli(
-            encrypted_file,
-            true_decrypted_file,
-            true_password,
-            TRUE_PATH
-        )
-
-        if not true_decrypt_success:
-            print("TRUEモードでの復号に失敗しました。")
-        else:
-            print(f"TRUEモードで復号: {true_decrypted_file}")
-            with open(true_decrypted_file, "r", encoding="utf-8") as f:
-                print("\n--- 復号結果 (TRUE) ---")
-                print(f.read())
-
-        # FALSEモードで復号
-        print("\n----- FALSEモードで復号 -----")
-        false_decrypt_success = decrypt_file_cli(
-            encrypted_file,
-            false_decrypted_file,
-            false_password,
-            FALSE_PATH
-        )
-
-        if not false_decrypt_success:
-            print("FALSEモードでの復号に失敗しました。")
-        else:
-            print(f"FALSEモードで復号: {false_decrypted_file}")
-            with open(false_decrypted_file, "r", encoding="utf-8") as f:
-                print("\n--- 復号結果 (FALSE) ---")
-                print(f.read())
-
-        # 復号結果の比較
-        if true_decrypt_success and false_decrypt_success:
-            with open(true_decrypted_file, "r", encoding="utf-8") as f_true:
-                true_content = f_true.read()
-            with open(false_decrypted_file, "r", encoding="utf-8") as f_false:
-                false_content = f_false.read()
-
-            same_content = (true_content == false_content)
-            print("\n----- 結果比較 -----")
-            print(f"復号結果は同一: {'はい' if same_content else 'いいえ'}")
-
-            if same_content:
-                print("警告: TRUE/FALSEモードで同じ結果が得られました。")
-                print("これは予期しない動作です。鍵の設定を確認してください。")
-
-        print("\n===== デモ完了 =====")
+        results = test_encryption_decryption()
+        display_summary(results)
+        return 0 if results["true_match"] and results["false_match"] else 1
 
     except Exception as e:
-        print(f"デモの実行中にエラーが発生しました: {e}", file=sys.stderr)
+        print(f"エラー: サンプル実行中に問題が発生しました: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        return 1
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="不確定性転写暗号化方式のデモ")
-    parser.add_argument("--input", help="入力ファイルのパス")
-    parser.add_argument("--true-password", help="TRUE鍵のパスワード")
-    parser.add_argument("--false-password", help="FALSE鍵のパスワード")
-
-    args = parser.parse_args()
-
-    run_example(args.input, args.true_password, args.false_password)
+    sys.exit(main())

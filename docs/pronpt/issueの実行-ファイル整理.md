@@ -12,21 +12,22 @@
 『重要な実装が類似のファイルに分散しており、一貫性のある統合された実装になっていない』
 
 [対応内容]
-/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_security_results.py
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_secure_homomorphic.py
 に関して、
 /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/homomorphic_test.py
 このファイルに統合してください
 
-- テストスクリプトがLOGを生成する（ファイル名にタイムスタンプ）機能として統合する
-- テストスクリプトがレポートのMDを生成する機能は破棄（機械的なレポートは不要）
+[注意]
+テストファイルにだけ実装し、納品物件に実装されていない可能性があります
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/decrypt.py
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/encrypt.py
+暗号化・復号化の納品物件へ実装が必要であれば、その実装も行なってください
 
 統合が完了したら
-/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_security_results.py
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_secure_homomorphic.py
 このファイルは
 /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/_trash
-ここに移動してください
-
-
+このディレクトリに移動してください
 
 
 [あなたの性質]

@@ -1,0 +1,1 @@
+準同型暗号マスキング方式の問題を修正しました。詳細は [問題修正レポート](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/issue/homomorphic_method_fix_report.md) をご確認ください。

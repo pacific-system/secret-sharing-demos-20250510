@@ -1,28 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-################################################################################
-#                                                                              #
-#                 ██████  ███████  ██████ ██████  ██    ██ ██████  ████████    #
-#                 ██   ██ ██      ██      ██   ██  ██  ██  ██   ██    ██       #
-#                 ██   ██ █████   ██      ██████    ████   ██████     ██       #
-#                 ██   ██ ██      ██      ██   ██    ██    ██         ██       #
-#                 ██████  ███████  ██████ ██   ██    ██    ██         ██       #
-#                                                                              #
-#               【復号を実行するメインスクリプト - MAIN DECRYPTION SCRIPT】      #
-#                                                                              #
-#     このファイルは準同型暗号マスキング方式の「復号」機能のメインエントリーポイントです       #
-#     最終成果物として、ユーザーはこのファイルを直接実行してファイルを復号します         #
-#                                                                              #
-################################################################################
-
 """
-準同型暗号マスキング方式の復号実行ファイル
+準同型暗号マスキング方式の復号実行ファイル - セキュリティ強化版
 
 このモジュールは、準同型暗号マスキング方式を使用して暗号化されたファイルを復号するための
-コマンドラインツールを提供します。マスク関数を使って暗号化されたファイルを、
-鍵に応じて真または偽の状態に復号します。どちらの鍵が「正規」か「非正規」かは
-ユーザーの意図によって決まります。
+コマンドラインツールを提供します。元のdecrypt.pyよりもセキュリティが強化されており、
+ソースコード改変攻撃への耐性が向上しています。
 """
 
 import os
@@ -38,8 +22,8 @@ import math
 import secrets
 import sympy
 import string
-import traceback
 from typing import Dict, Any, Tuple, List, Optional, Union
+import traceback
 
 # 親ディレクトリをインポートパスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -66,13 +50,6 @@ from method_8_homomorphic.crypto_mask import (
     MaskFunctionGenerator, AdvancedMaskFunctionGenerator,
     extract_by_key_type
 )
-from method_8_homomorphic.key_analyzer_robust import (
-    analyze_key_type, extract_seed_from_key
-)
-from method_8_homomorphic.crypto_adapters import (
-    process_data_for_encryption, process_data_after_decryption,
-    DataAdapter, TextAdapter, BinaryAdapter
-)
 
 # 強化版の依存関係
 from method_8_homomorphic.key_analyzer_enhanced import (
@@ -94,7 +71,7 @@ def parse_arguments() -> argparse.Namespace:
         解析された引数
     """
     parser = argparse.ArgumentParser(
-        description='準同型暗号マスキング方式による復号ツール'
+        description='準同型暗号マスキング方式による復号ツール（セキュリティ強化版）'
     )
 
     parser.add_argument(
@@ -393,77 +370,6 @@ def derive_homomorphic_keys(master_key: bytes, public_key: Optional[Dict[str, An
         return public_key, private_key
 
 
-def decrypt_file(input_file: str, output_file: str, key_type: str = "true",
-               key_file: str = None, key_bytes: bytes = None, password: str = None,
-               use_enhanced_security: bool = True) -> Dict[str, Any]:
-    """
-    暗号化されたファイルを復号する
-
-    Args:
-        input_file: 入力ファイルパス
-        output_file: 出力ファイルパス
-        key_type: 鍵タイプ（"true" または "false"）
-        key_file: 鍵ファイルパス（オプション）
-        key_bytes: 鍵バイト列（オプション）
-        password: パスワード（オプション）
-        use_enhanced_security: セキュリティ強化版の機能を使用するかどうか
-
-    Returns:
-        処理結果の辞書
-    """
-    start_time = time.time()
-    result = {
-        "success": False,
-        "input_file": input_file,
-        "output_file": output_file,
-        "time": 0
-    }
-
-    try:
-        # パスワードか鍵ファイルのいずれかが必要
-        if password is None and key_file is None and key_bytes is None:
-            raise ValueError("パスワードまたは鍵ファイルが必要です")
-
-        # 鍵の取得
-        key = None
-        if key_file:
-            with open(key_file, 'rb') as f:
-                key = f.read()
-        elif key_bytes:
-            key = key_bytes
-        elif password:
-            key = hashlib.sha256(password.encode()).digest()
-
-        # 復号の実行
-        print(f"準同型暗号マスキング方式で復号を開始します...")
-        start_time = time.time()
-
-        success = decrypt_file_with_progress(
-            encrypted_file_path=input_file,
-            key=key,
-            output_path=output_file,
-            key_type=key_type,
-            verbose=False,
-            force_binary=False,
-            force_text=False,
-            data_type='auto',
-            use_enhanced_security=use_enhanced_security
-        )
-
-        result["success"] = success
-    except Exception as e:
-        print(f"エラー: 復号中に問題が発生しました: {e}")
-        result["error"] = str(e)
-        import traceback
-        traceback.print_exc()
-
-    # 処理時間を記録
-    end_time = time.time()
-    result["time"] = end_time - start_time
-
-    return result
-
-
 def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path: str,
                               key_type: Optional[str] = None,
                               verbose: bool = True,
@@ -531,7 +437,8 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
                 print(f"鍵を堅牢に解析しました: {key_type}鍵として識別されました")
             else:
                 # 標準の鍵解析を使用
-                key_type = analyze_key_type(key)
+                from method_8_homomorphic.key_analyzer import analyze_key_type as legacy_analyze_key_type
+                key_type = legacy_analyze_key_type(key)
                 print(f"鍵を解析しました: {key_type}鍵として識別されました")
         else:
             print(f"明示的に指定された鍵タイプを使用: {key_type}")
@@ -673,6 +580,9 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
 
         # データアダプタの決定とデータ処理
         try:
+            from method_8_homomorphic.crypto_adapters import process_data_after_decryption
+            from method_8_homomorphic.crypto_adapters import TextAdapter, BinaryAdapter, DataAdapter
+
             # データタイプに基づいてアダプタを選択
             adapter_type = None
             if force_text:
@@ -729,87 +639,52 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
 
 
 def main():
-    """
-    メイン関数
-    """
-    # コマンドライン引数の解析
+    """メイン関数"""
     args = parse_arguments()
 
-    # 入力ファイルの存在確認
-    if not os.path.exists(args.input_file):
-        print(f"エラー: 暗号化ファイル '{args.input_file}' が見つかりません", file=sys.stderr)
-        return 1
+    # 鍵の解析
+    key = None
 
-    try:
-        # 鍵の解析
-        if args.password:
-            # パスワードから鍵を導出
-            print(f"パスワードから鍵を導出します...")
-            key = derive_key_from_password(args.password)
-            print(f"パスワードから鍵を導出しました: {key.hex()}")
-        else:
-            # 鍵の解析
-            try:
-                key = parse_key(args.key)
-            except ValueError as e:
-                print(f"エラー: 鍵の解析に失敗しました: {e}", file=sys.stderr)
-                return 1
-
-        # 出力ファイル名の決定
-        if args.output:
-            output_path = args.output
-        else:
-            # 入力ファイル名から自動生成
-            base_name = os.path.splitext(os.path.basename(args.input_file))[0]
-            output_path = f"{base_name}_decrypted.txt"
-
-        # 出力ディレクトリの存在確認
-        output_dir = os.path.dirname(output_path)
-        if output_dir and not os.path.exists(output_dir):
-            try:
-                os.makedirs(output_dir)
-                print(f"ディレクトリを作成しました: {output_dir}")
-            except OSError as e:
-                print(f"エラー: 出力ディレクトリの作成に失敗しました: {e}", file=sys.stderr)
-                return 1
-
-        # セキュリティ強化モードの判定
-        use_enhanced_security = args.use_enhanced_security and not args.compatibility_mode
-        if use_enhanced_security:
-            print("セキュリティ強化版の機能を使用します")
-        else:
-            print("互換モードで動作します（セキュリティ強化機能無効）")
-
-        # 復号の実行
-        print(f"準同型暗号マスキング方式で復号を開始します...")
-        start_time = time.time()
-
-        success = decrypt_file_with_progress(
-            encrypted_file_path=args.input_file,
-            key=key,
-            output_path=output_path,
-            key_type=args.key_type,
-            verbose=args.verbose,
-            force_binary=args.force_binary,
-            force_text=args.force_text,
-            data_type=args.data_type,
-            use_enhanced_security=use_enhanced_security
-        )
-
-        elapsed_time = time.time() - start_time
-
-        if success:
-            print(f"復号が完了しました（所要時間: {elapsed_time:.2f}秒）")
-            return 0
-        else:
-            print(f"復号に失敗しました（所要時間: {elapsed_time:.2f}秒）", file=sys.stderr)
+    # パスワードが指定されている場合はパスワードから鍵を導出
+    if args.password:
+        key = derive_key_from_password(args.password)
+        print(f"パスワードから鍵を導出しました: {key.hex()}")
+    # 鍵が指定されている場合は解析
+    elif args.key:
+        try:
+            key = parse_key(args.key)
+            if args.verbose:
+                print(f"鍵を正常に解析しました: {key.hex()}")
+        except Exception as e:
+            print(f"エラー: 鍵の解析に失敗しました: {e}", file=sys.stderr)
             return 1
 
-    except Exception as e:
-        print(f"エラー: 予期しない問題が発生しました: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
+    # 入力ファイルのチェック
+    if not os.path.exists(args.input_file):
+        print(f"エラー: 入力ファイルが存在しません: {args.input_file}", file=sys.stderr)
         return 1
+
+    # セキュリティ強化モードの判定
+    use_enhanced_security = args.use_enhanced_security and not args.compatibility_mode
+    if use_enhanced_security:
+        print("セキュリティ強化版の機能を使用します")
+    else:
+        print("互換モードで動作します（セキュリティ強化機能無効）")
+
+    # 復号実行
+    success = decrypt_file_with_progress(
+        args.input_file,
+        key,
+        args.output,
+        args.key_type,
+        args.verbose,
+        args.force_binary,
+        args.force_text,
+        args.data_type,
+        use_enhanced_security
+    )
+
+    return 0 if success else 1
 
 
 if __name__ == "__main__":

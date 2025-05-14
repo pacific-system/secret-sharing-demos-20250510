@@ -144,6 +144,13 @@ class PaillierCrypto:
         if private_key is None:
             raise ValueError("秘密鍵が設定されていません")
 
+        # リスト型の場合は最初の要素を使用（互換性のため）
+        if isinstance(c, list):
+            if len(c) > 0:
+                c = c[0]
+            else:
+                raise ValueError("暗号文リストが空です")
+
         n = private_key['n']
         lambda_val = private_key['lambda']
         mu = private_key['mu']

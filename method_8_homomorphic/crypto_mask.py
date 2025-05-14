@@ -348,6 +348,10 @@ class MaskFunctionGenerator:
         if isinstance(encrypted_chunks, int):
             encrypted_chunks = [encrypted_chunks]
 
+        # encrypted_chunksが空の場合は空のリストを返す
+        if not encrypted_chunks:
+            return []
+
         # マスクのパラメータを取得
         params = mask["params"]
         additive_masks = params["additive"]

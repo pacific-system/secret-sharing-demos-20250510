@@ -710,37 +710,69 @@ def test_masking_functions() -> Dict[str, Any]:
             advanced_masks.append(temp_adv_mask)
 
         # 基本的な統計チェック（非常に簡易的な手法）
-        basic_avg = sum(basic_masks) / len(basic_masks)
-        advanced_avg = sum(advanced_masks) / len(advanced_masks)
+        # マスクの統計的特性を調べるため、params内の値を使用
+        basic_additive_values = []
+        basic_multiplicative_values = []
+        advanced_additive_values = []
+        advanced_multiplicative_values = []
+
+        # 各マスクからパラメータを抽出
+        for mask in basic_masks:
+            if isinstance(mask, dict) and "params" in mask:
+                if "additive" in mask["params"]:
+                    basic_additive_values.extend(mask["params"]["additive"])
+                if "multiplicative" in mask["params"]:
+                    basic_multiplicative_values.extend(mask["params"]["multiplicative"])
+
+        for mask in advanced_masks:
+            if isinstance(mask, dict) and "params" in mask:
+                if "additive" in mask["params"]:
+                    advanced_additive_values.extend(mask["params"]["additive"])
+                if "multiplicative" in mask["params"]:
+                    advanced_multiplicative_values.extend(mask["params"]["multiplicative"])
+
+        # 平均を計算
+        basic_avg_additive = sum(basic_additive_values) / len(basic_additive_values) if basic_additive_values else 0
+        basic_avg_multiplicative = sum(basic_multiplicative_values) / len(basic_multiplicative_values) if basic_multiplicative_values else 0
+        advanced_avg_additive = sum(advanced_additive_values) / len(advanced_additive_values) if advanced_additive_values else 0
+        advanced_avg_multiplicative = sum(advanced_multiplicative_values) / len(advanced_multiplicative_values) if advanced_multiplicative_values else 0
 
         # 分散を計算
-        basic_var = sum((x - basic_avg) ** 2 for x in basic_masks) / len(basic_masks)
-        advanced_var = sum((x - advanced_avg) ** 2 for x in advanced_masks) / len(advanced_masks)
+        basic_var_additive = sum((x - basic_avg_additive) ** 2 for x in basic_additive_values) / len(basic_additive_values) if basic_additive_values else 0
+        basic_var_multiplicative = sum((x - basic_avg_multiplicative) ** 2 for x in basic_multiplicative_values) / len(basic_multiplicative_values) if basic_multiplicative_values else 0
+        advanced_var_additive = sum((x - advanced_avg_additive) ** 2 for x in advanced_additive_values) / len(advanced_additive_values) if advanced_additive_values else 0
+        advanced_var_multiplicative = sum((x - advanced_avg_multiplicative) ** 2 for x in advanced_multiplicative_values) / len(advanced_multiplicative_values) if advanced_multiplicative_values else 0
 
         log_message(f"基本マスクの統計:")
-        log_message(f"  平均: {basic_avg}")
-        log_message(f"  分散: {basic_var}")
+        log_message(f"  加算パラメータ平均: {basic_avg_additive}")
+        log_message(f"  加算パラメータ分散: {basic_var_additive}")
+        log_message(f"  乗算パラメータ平均: {basic_avg_multiplicative}")
+        log_message(f"  乗算パラメータ分散: {basic_var_multiplicative}")
 
         log_message(f"高度マスクの統計:")
-        log_message(f"  平均: {advanced_avg}")
-        log_message(f"  分散: {advanced_var}")
+        log_message(f"  加算パラメータ平均: {advanced_avg_additive}")
+        log_message(f"  加算パラメータ分散: {advanced_var_additive}")
+        log_message(f"  乗算パラメータ平均: {advanced_avg_multiplicative}")
+        log_message(f"  乗算パラメータ分散: {advanced_var_multiplicative}")
 
         # マスク関数の強度を比較するための簡易指標
-        mask_difference = advanced_var / basic_var if basic_var > 0 else float('inf')
+        mask_difference = (advanced_var_additive + advanced_var_multiplicative) / (basic_var_additive + basic_var_multiplicative) if (basic_var_additive + basic_var_multiplicative) > 0 else float('inf')
         results["mask_difference"] = mask_difference
 
         # マスク分布をプロット
         plt.figure(figsize=(10, 6))
 
         plt.subplot(2, 1, 1)
-        plt.hist(basic_masks, bins=20, alpha=0.7, label='基本マスク')
-        plt.axvline(basic_avg, color='r', linestyle='dashed', linewidth=1, label='平均')
+        # dictオブジェクトの代わりに抽出したパラメータ値をプロット
+        plt.hist(basic_additive_values, bins=20, alpha=0.7, label='基本マスク(加算パラメータ)')
+        plt.axvline(basic_avg_additive, color='r', linestyle='dashed', linewidth=1, label='平均')
         plt.title('基本マスク関数の分布')
         plt.legend()
 
         plt.subplot(2, 1, 2)
-        plt.hist(advanced_masks, bins=20, alpha=0.7, label='高度マスク')
-        plt.axvline(advanced_avg, color='r', linestyle='dashed', linewidth=1, label='平均')
+        # dictオブジェクトの代わりに抽出したパラメータ値をプロット
+        plt.hist(advanced_additive_values, bins=20, alpha=0.7, label='高度マスク(加算パラメータ)')
+        plt.axvline(advanced_avg_additive, color='r', linestyle='dashed', linewidth=1, label='平均')
         plt.title('高度マスク関数の分布')
         plt.legend()
 
@@ -753,9 +785,9 @@ def test_masking_functions() -> Dict[str, Any]:
 
         # 簡易統計テスト結果
         # マスクが十分にランダムであれば、分散は大きくなるはず
-        statistical_pass = advanced_var > 1e5  # 適当な閾値
+        statistical_pass = advanced_var_additive > 1e5  # 適当な閾値
         results["statistical_test"]["passed"] = statistical_pass
-        results["statistical_test"]["p_value"] = advanced_var  # 統計的検定ではないが、参考値として
+        results["statistical_test"]["p_value"] = advanced_var_additive  # 統計的検定ではないが、参考値として
 
         log_message(f"統計的特性テスト結果: {'合格' if statistical_pass else '不合格'}")
 

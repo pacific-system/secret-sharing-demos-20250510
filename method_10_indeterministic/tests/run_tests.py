@@ -22,6 +22,18 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 # テスト出力ディレクトリ
 TEST_OUTPUT_DIR = "test_output"
 
+class ExtendedTestResult(unittest.TestResult):
+    """
+    拡張されたテスト結果クラス
+    """
+    def __init__(self):
+        super().__init__()
+        self.successes = []
+
+    def addSuccess(self, test):
+        super().addSuccess(test)
+        self.successes.append(test)
+
 def discover_tests() -> List[str]:
     """
     テストファイルを検出
@@ -60,32 +72,42 @@ def run_test_module(module_name: str) -> Tuple[Dict[str, Any], Dict[str, float]]
         suite = unittest.defaultTestLoader.loadTestsFromModule(module)
 
         # テスト結果を保存するオブジェクト
-        test_result = unittest.TestResult()
+        test_result = ExtendedTestResult()
 
         # 各テストの実行時間を記録
         timings = {}
 
-        # 各テストケースを実行
-        for test_case in unittest.defaultTestLoader.getTestCaseNames(module.TestCase):
-            test_method = getattr(module.TestCase(test_case), test_case)
+        # テストケースを発見 - unittestのTestCaseを継承したクラスを検索
+        test_case_classes = []
+        for name in dir(module):
+            obj = getattr(module, name)
+            if isinstance(obj, type) and issubclass(obj, unittest.TestCase) and obj != unittest.TestCase:
+                test_case_classes.append(obj)
 
-            # 開始時間
-            start_time = time.time()
+        if not test_case_classes:
+            print(f"警告: モジュール {module_name} にテストケースクラスが見つかりません")
+            return {"module": module_name, "result": None, "success": False, "error": "テストケースクラスが見つかりません"}, {}
 
-            # テスト実行
-            test = module.TestCase(test_case)
-            test.run(test_result)
+        # 各テストケースクラスを実行
+        for test_case_class in test_case_classes:
+            for test_name in unittest.defaultTestLoader.getTestCaseNames(test_case_class):
+                # 開始時間
+                start_time = time.time()
 
-            # 終了時間と所要時間
-            end_time = time.time()
-            elapsed = end_time - start_time
+                # テスト実行
+                test = test_case_class(test_name)
+                test.run(test_result)
 
-            # 時間を記録
-            timings[test_case] = elapsed
+                # 終了時間と所要時間
+                end_time = time.time()
+                elapsed = end_time - start_time
 
-            # 結果を表示
-            status = "成功" if not (test_case in [f.id().split(".")[-1] for f in test_result.failures + test_result.errors]) else "失敗"
-            print(f"  {test_case}: {status} ({elapsed:.2f}秒)")
+                # 時間を記録
+                timings[f"{test_case_class.__name__}.{test_name}"] = elapsed
+
+                # 結果を表示
+                status = "成功" if not (f"{test_case_class.__name__}.{test_name}" in [f.id().split(".")[-2] + "." + f.id().split(".")[-1] for f in test_result.failures + test_result.errors]) else "失敗"
+                print(f"  {test_case_class.__name__}.{test_name}: {status} ({elapsed:.2f}秒)")
 
         # 最終結果を表示
         print(f"\n結果: {test_result.testsRun}件実行, {len(test_result.failures)}件失敗, {len(test_result.errors)}件エラー")

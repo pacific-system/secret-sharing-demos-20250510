@@ -1,0 +1,12 @@
+{
+  "metadata": {
+    "strategy": "honeypot",
+    "decoy_factor": 0.8,
+    "setup_time": "2025-05-14T17:21:23.295744"
+  },
+  "creation_time": "2025-05-14T17:21:23.295722",
+  "true_key": "8f7d8a07ab37d6c8489125c6de452ac49e53bebeeedd647f5252b87371ca5402",
+  "false_key": "6acc4647d2f57ec0f2ae26436b50e04ad42fdb53b292bc440ac6c63b5223387f",
+  "honeypot_key": "547874377d92e1bf171fb35bcce0080123c848843b2d4c60e7475ad798e1b826",
+  "trap_signature": "c613a011226b58d2b1845d3b750fd9b8cee8fbcc78ff6d8030b2479eb5d2efed"
+}

@@ -18,6 +18,9 @@ from typing import Tuple, Dict, Any, List
 # テスト用にモジュールパスを追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+# プロジェクトのルートディレクトリを取得
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # テスト対象のモジュールをインポート
 from method_10_indeterministic.state_capsule import StateCapsule, create_state_capsule
 from method_10_indeterministic.indeterministic import IndeterministicCapsule, create_indeterministic_capsule
@@ -26,12 +29,15 @@ from method_10_indeterministic.state_matrix import StateMatrix, generate_state_m
 from method_10_indeterministic.probability_engine import ProbabilityEngine, calculate_probability_distribution
 from method_10_indeterministic.encrypt import generate_master_key
 from method_10_indeterministic.config import (
-    TRUE_TEXT_PATH, FALSE_TEXT_PATH, KEY_SIZE_BYTES,
     STATE_MATRIX_SIZE, OUTPUT_FORMAT, OUTPUT_EXTENSION
 )
 
+# パスを絶対パスに変更
+TRUE_TEXT_PATH = os.path.join(ROOT_DIR, "common/true-false-text/true.text")
+FALSE_TEXT_PATH = os.path.join(ROOT_DIR, "common/true-false-text/false.text")
+
 # テスト出力ディレクトリ
-TEST_OUTPUT_DIR = "test_output"
+TEST_OUTPUT_DIR = os.path.join(ROOT_DIR, "test_output")
 
 class TestCapsule(unittest.TestCase):
     """カプセル機能のテスト"""

@@ -45,8 +45,8 @@ class ProbabilityEngine:
         # 鍵のハッシュを計算
         self.key_hash = hashlib.sha512(key).digest()
 
-        # シード値を抽出
-        seed = int.from_bytes(self.key_hash[:8], byteorder='big')
+        # シード値を抽出（32ビットに制限）
+        seed = int.from_bytes(self.key_hash[:4], byteorder='big')
 
         # 乱数発生器を初期化
         rng = np.random.RandomState(seed)

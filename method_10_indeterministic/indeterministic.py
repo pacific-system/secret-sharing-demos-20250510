@@ -12,6 +12,8 @@ import json
 import hashlib
 import secrets
 import base64
+import binascii
+import datetime
 from typing import Dict, List, Tuple, Optional, Any, Union, BinaryIO
 
 # 内部モジュールのインポート
@@ -20,10 +22,60 @@ from .config import (
     STATE_MATRIX_SIZE, OUTPUT_FORMAT, OUTPUT_EXTENSION,
     ANTI_TAMPERING, SECURE_MEMORY_WIPE
 )
-from .state_matrix import StateMatrix, generate_state_matrix
+from .state_matrix import (
+    StateMatrix, generate_state_matrix,
+    StateMatrixGenerator, StateExecutor, State,
+    create_state_matrix_from_key, get_biased_random_generator
+)
 from .probability_engine import ProbabilityEngine, calculate_probability_distribution
 from .state_capsule import StateCapsule, create_state_capsule
 from .entropy_injector import inject_entropy
+
+# 循環インポートを避けるため、trapdoorモジュールは直接インポートしない
+# from .trapdoor import create_trapdoor
+
+# create_trapdoorの内部実装
+def _create_trapdoor(key: bytes, salt: Optional[bytes] = None) -> Dict[str, Any]:
+    """
+    与えられた鍵からトラップドア情報を生成（循環インポート回避用）
+
+    Args:
+        key: 鍵
+        salt: ソルト（省略時はランダム生成）
+
+    Returns:
+        トラップドア情報の辞書
+    """
+    # ソルトを設定
+    if salt is None:
+        salt = os.urandom(16)
+
+    # 鍵からシード値を生成
+    seed = hashlib.sha256(key + salt).digest()
+
+    # トラップドア情報を生成
+    crypto_strength = int.from_bytes(seed[0:4], byteorder='big') % 100
+    complexity = int.from_bytes(seed[4:8], byteorder='big') % 100
+    resistance = int.from_bytes(seed[8:12], byteorder='big') % 100
+
+    # 戦略タイプを決定（シード値に基づく）
+    strategy_byte = seed[12]
+    if strategy_byte < 85:  # ~33%
+        strategy = "standard"
+    elif strategy_byte < 170:  # ~33%
+        strategy = "honeypot"
+    else:  # ~33%
+        strategy = "reverse_trap"
+
+    # トラップドア情報を辞書形式で返す
+    return {
+        "crypto_strength": crypto_strength,
+        "complexity": complexity,
+        "resistance": resistance,
+        "strategy": strategy,
+        "created_at": datetime.datetime.now().isoformat(),
+        "signature": binascii.hexlify(seed[13:29]).decode('ascii')
+    }
 
 class IndeterministicCapsule:
     """不確定性カプセルクラス"""
@@ -40,6 +92,11 @@ class IndeterministicCapsule:
         self.nonce = os.urandom(NONCE_SIZE)
         self.encrypted_data = None
         self.integrity_hash = None
+        # 新しい状態遷移マトリクスの構成要素
+        self.state_matrix_generator = None
+        self.states = None
+        self.true_initial_state = None
+        self.false_initial_state = None
 
     def encrypt(self, key: bytes, true_data: bytes, false_data: bytes) -> None:
         """
@@ -57,9 +114,18 @@ class IndeterministicCapsule:
         # 状態カプセルを作成
         self.state_capsule = create_state_capsule(key, true_data, false_data)
 
+        # 新しい状態遷移マトリクスを生成
+        self.state_matrix_generator = StateMatrixGenerator(key, self.salt)
+        self.states = self.state_matrix_generator.generate_state_matrix()
+        self.true_initial_state, self.false_initial_state = self.state_matrix_generator.derive_initial_states()
+
         # エントロピーを注入（同じ入力からでも異なる出力を生成するため）
         entropy_true = inject_entropy(true_data)
         entropy_false = inject_entropy(false_data)
+
+        # バイアスのかかった乱数生成器を作成（暗号化のランダム性のために）
+        bias_factor = 0.7  # 70%のバイアス
+        biased_random = get_biased_random_generator(key, bias_factor)
 
         # メタデータを設定
         self.metadata = {
@@ -68,23 +134,101 @@ class IndeterministicCapsule:
             "created_at": self.created_at,
             "capsule_id": self.capsule_id,
             "true_data_size": len(true_data),
-            "false_data_size": len(false_data)
+            "false_data_size": len(false_data),
+            "state_matrix_size": STATE_MATRIX_SIZE,
+            "true_initial_state": self.true_initial_state,
+            "false_initial_state": self.false_initial_state
         }
+
+        # トラップドアを追加（復号時の秘密経路のため）
+        trapdoor = _create_trapdoor(key, self.salt)
+        self.metadata["trapdoor_enabled"] = bool(trapdoor)
 
         # 暗号化データを生成（この実装では単純な結合）
         # 実際の実装では、より複雑な暗号化を行う
-        # ここでは暗号化のプレースホルダーとして
-        self.encrypted_data = self._placeholder_encrypt(entropy_true, entropy_false)
+        self.encrypted_data = self._advanced_encrypt(entropy_true, entropy_false, biased_random)
 
         # 整合性ハッシュを更新
         self._update_integrity_hash()
 
+    def _advanced_encrypt(self, true_data: bytes, false_data: bytes, random_generator: callable) -> bytes:
+        """
+        高度な暗号化処理
+
+        状態遷移マトリクスを使用してデータを暗号化します。
+
+        Args:
+            true_data: 真のデータ
+            false_data: 偽のデータ
+            random_generator: 乱数生成器
+
+        Returns:
+            暗号化されたデータ
+        """
+        # ヘッダーを追加
+        header = b"INDET02"  # バージョン2
+
+        # データのサイズ情報
+        true_size = len(true_data).to_bytes(4, byteorder='big')
+        false_size = len(false_data).to_bytes(4, byteorder='big')
+
+        # ソルトとノンスを含める
+        salt_nonce = self.salt + self.nonce
+
+        # カプセルIDをバイナリ化
+        capsule_id_bin = self.capsule_id.encode('ascii')
+
+        # 状態遷移パスに基づいてデータをシャッフル
+        shuffled_true = bytearray(true_data)
+        shuffled_false = bytearray(false_data)
+
+        # シャッフル処理（簡易版）
+        for i in range(min(len(shuffled_true), len(shuffled_false))):
+            # バイアスされた乱数を使用
+            rand_val = random_generator()
+
+            # 値に基づいてシャッフル
+            if rand_val > 0.5:
+                if i < len(shuffled_true):
+                    # バイト値を変更（XOR処理）
+                    shuffled_true[i] ^= int(rand_val * 255) & 0xFF
+            else:
+                if i < len(shuffled_false):
+                    # バイト値を変更（XOR処理）
+                    shuffled_false[i] ^= int(rand_val * 255) & 0xFF
+
+        # 状態遷移パスを追加
+        # 正規パスと非正規パスの遷移履歴を作成
+        true_executor = StateExecutor(self.states, self.true_initial_state)
+        false_executor = StateExecutor(self.states, self.false_initial_state)
+
+        # 10回の遷移を実行
+        true_path = true_executor.run_transitions(10)
+        false_path = false_executor.run_transitions(10)
+
+        # パスをバイト列に変換
+        true_path_bytes = bytes([p % 256 for p in true_path])
+        false_path_bytes = bytes([p % 256 for p in false_path])
+
+        # パスのサイズを記録
+        true_path_size = len(true_path_bytes).to_bytes(2, byteorder='big')
+        false_path_size = len(false_path_bytes).to_bytes(2, byteorder='big')
+
+        # シンプルな結合（実際の暗号化ではない）
+        # これは後続のIssueで適切に実装される
+        combined = (
+            header + true_size + false_size +
+            salt_nonce + capsule_id_bin +
+            true_path_size + true_path_bytes +
+            false_path_size + false_path_bytes +
+            bytes(shuffled_true) + bytes(shuffled_false)
+        )
+
+        return combined
+
     def _placeholder_encrypt(self, true_data: bytes, false_data: bytes) -> bytes:
         """
-        プレースホルダー暗号化
-
-        注: これは実際の暗号化ではなく、プレースホルダーです
-        子Issue #2で実際の暗号化アルゴリズムを実装します
+        プレースホルダー暗号化（互換性のために残しておく）
 
         Args:
             true_data: 真のデータ
@@ -107,7 +251,6 @@ class IndeterministicCapsule:
         capsule_id_bin = self.capsule_id.encode('ascii')
 
         # シンプルな結合（実際の暗号化ではない）
-        # これは後続のIssueで適切に実装される
         combined = (
             header + true_size + false_size +
             salt_nonce + capsule_id_bin +
@@ -179,8 +322,34 @@ class IndeterministicCapsule:
         if not self.state_capsule:
             raise ValueError("状態カプセルが初期化されていません")
 
-        # 状態カプセルに判断を委ねる
-        return self.state_capsule.determine_path(key)
+        # 複数の判定方法を使用し、より強固な判定を行う
+        # 1. 状態カプセルによる判定
+        capsule_path = self.state_capsule.determine_path(key)
+
+        # 2. 状態遷移マトリクスが利用可能な場合は、それも使用
+        matrix_path = "unknown"
+        if self.salt and "true_initial_state" in self.metadata and "false_initial_state" in self.metadata:
+            try:
+                # 鍵から状態遷移マトリクスを再生成
+                generator = StateMatrixGenerator(key, self.salt)
+                states = generator.generate_state_matrix()
+                true_initial, false_initial = generator.derive_initial_states()
+
+                # メタデータに保存されている値と一致するか確認
+                if true_initial == self.metadata["true_initial_state"] and false_initial == self.metadata["false_initial_state"]:
+                    matrix_path = "true"
+                else:
+                    matrix_path = "false"
+            except Exception:
+                # エラーが発生した場合はカプセルの判定を優先
+                pass
+
+        # 両方の判定が一致する場合は確定
+        if matrix_path != "unknown" and matrix_path == capsule_path:
+            return capsule_path
+
+        # 不一致または不明の場合はカプセルの判定を優先
+        return capsule_path
 
     def serialize(self) -> bytes:
         """

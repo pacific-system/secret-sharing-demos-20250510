@@ -21,7 +21,9 @@ from .config import (
 )
 from .state_matrix import StateMatrix
 from .probability_engine import ProbabilityEngine, calculate_probability_distribution
-from .indeterministic import create_indeterministic_capsule, IndeterministicCapsule
+
+# 循環インポートを避けるため、indeterministicモジュールはインポートしない
+# from .indeterministic import create_indeterministic_capsule, IndeterministicCapsule
 
 class TrapdoorStrategy:
     """トラップドア戦略クラス"""
@@ -134,9 +136,12 @@ class TrapdoorStrategy:
             "importance_factor": importance_factor
         }
 
-    def create_trap_capsule(self, true_data: bytes, false_data: bytes) -> IndeterministicCapsule:
+    def create_trap_capsule(self, true_data: bytes, false_data: bytes):
         """
         トラップカプセルを作成
+
+        注: 循環インポートを避けるため、こちらでは実装せず
+        indeterministic.pyから直接呼び出すように変更
 
         Args:
             true_data: 真のデータ
@@ -145,18 +150,11 @@ class TrapdoorStrategy:
         Returns:
             初期化された不確定性カプセル
         """
-        if not self.true_key:
-            raise ValueError("真の鍵が設定されていません")
-
-        # 設定済みの戦略に基づいてカプセルを作成
-        if self.metadata.get("strategy") == "reverse_trap":
-            # リバーストラップの場合は真/偽を入れ替え
-            capsule = create_indeterministic_capsule(self.true_key, false_data, true_data)
-        else:
-            # 通常またはハニーポット戦略の場合
-            capsule = create_indeterministic_capsule(self.true_key, true_data, false_data)
-
-        return capsule
+        # この機能は削除し、代わりにindeterministic.pyで直接実装
+        raise NotImplementedError(
+            "このメソッドは循環インポートを避けるため削除されました。" +
+            "代わりにindeterministic.pyのcreate_indeterministic_capsuleを使用してください。"
+        )
 
     def verify_key(self, key: bytes) -> Dict[str, Any]:
         """
@@ -260,6 +258,48 @@ class TrapdoorStrategy:
             strategy.trap_signature = binascii.unhexlify(data["trap_signature"])
 
         return strategy
+
+def create_trapdoor(key: bytes, salt: Optional[bytes] = None) -> Dict[str, Any]:
+    """
+    与えられた鍵からトラップドア情報を生成
+
+    Args:
+        key: 鍵
+        salt: ソルト（省略時はランダム生成）
+
+    Returns:
+        トラップドア情報の辞書
+    """
+    # ソルトを設定
+    if salt is None:
+        salt = os.urandom(16)
+
+    # 鍵からシード値を生成
+    seed = hashlib.sha256(key + salt).digest()
+
+    # トラップドア情報を生成
+    crypto_strength = int.from_bytes(seed[0:4], byteorder='big') % 100
+    complexity = int.from_bytes(seed[4:8], byteorder='big') % 100
+    resistance = int.from_bytes(seed[8:12], byteorder='big') % 100
+
+    # 戦略タイプを決定（シード値に基づく）
+    strategy_byte = seed[12]
+    if strategy_byte < 85:  # ~33%
+        strategy = "standard"
+    elif strategy_byte < 170:  # ~33%
+        strategy = "honeypot"
+    else:  # ~33%
+        strategy = "reverse_trap"
+
+    # トラップドア情報を辞書形式で返す
+    return {
+        "crypto_strength": crypto_strength,
+        "complexity": complexity,
+        "resistance": resistance,
+        "strategy": strategy,
+        "created_at": datetime.datetime.now().isoformat(),
+        "signature": binascii.hexlify(seed[13:29]).decode('ascii')
+    }
 
 def create_honeypot_strategy(decoy_factor: float = 0.8) -> TrapdoorStrategy:
     """

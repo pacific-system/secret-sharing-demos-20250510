@@ -20,13 +20,20 @@ from typing import Tuple, Dict, Any, Union, Optional
 # テスト用にモジュールパスを追加
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+# プロジェクトのルートディレクトリを取得
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # 設定のインポート
 from method_10_indeterministic.config import (
-    TRUE_TEXT_PATH, FALSE_TEXT_PATH, OUTPUT_FORMAT, OUTPUT_EXTENSION
+    OUTPUT_FORMAT, OUTPUT_EXTENSION
 )
 
+# パスを絶対パスに変更
+TRUE_TEXT_PATH = os.path.join(ROOT_DIR, "common/true-false-text/true.text")
+FALSE_TEXT_PATH = os.path.join(ROOT_DIR, "common/true-false-text/false.text")
+
 # 出力ディレクトリ
-TEST_OUTPUT_DIR = "test_output"
+TEST_OUTPUT_DIR = os.path.join(ROOT_DIR, "test_output")
 
 # テスト用簡易暗号化関数
 def simple_encrypt(true_file: str, false_file: str, output_file: str,

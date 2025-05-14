@@ -25,6 +25,8 @@ CAPSULE_VERSION = 1  # カプセル形式バージョン
 # 出力ファイル形式
 OUTPUT_FORMAT = "honeypot"
 OUTPUT_EXTENSION = ".hpot"
+DEFAULT_OUTPUT_DIR = "output"  # デフォルトの出力ディレクトリ
+DEFAULT_PREFIX = "honeypot_"  # 出力ファイル名のデフォルトプレフィックス
 
 # デバッグフラグ（本番では必ずFalseにする）
 DEBUG = False
@@ -41,6 +43,18 @@ TIME_VARIANCE_MS = 15  # 処理時間のばらつき（ミリ秒）
 DECOY_VERIFICATION_ROUNDS = 3  # 偽の検証ラウンド数
 HONEYTRAP_DETECTION_ENABLED = True  # ハニートラップ検出機能
 TAMPER_RESPONSE_MODE = "silent"  # 改ざん検出時の応答モード
+
+# スクリプト改変耐性設定 - 新規追加
+INTEGRITY_CHECK_INTERVAL_MS = 500  # 整合性チェック間隔（ミリ秒）
+CODE_VERIFICATION_ROUNDS = 5  # コード検証の冗長ラウンド数
+RUNTIME_VERIFICATION_ENABLED = True  # 実行時検証の有効化
+POLYGLOT_VERIFICATION = True  # 多角的検証方法の有効化
+DYNAMIC_ROUTE_COUNT = 7  # 動的経路の数
+DECEPTION_LAYERS = 3  # 欺瞞層の数
+SECURE_MEMORY_WIPE = True  # 安全なメモリ消去
+RANDOMIZED_FUNCTION_NAMES = True  # 関数名のランダム化
+DEFAULT_CHUNK_SIZE = 10 * 1024 * 1024  # 10MB: デフォルトのチャンクサイズ
+USE_DYNAMIC_THRESHOLD = True  # 動的閾値の使用
 
 # 真の判定ロジックは別の場所に分散して配置されており、
 # これらのパラメータは参照されません

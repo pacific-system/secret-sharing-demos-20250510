@@ -1,0 +1,454 @@
+=== 暗号学的ハニーポット方式 - テストスイート ===
+実行日時: 2025-05-14 15:47:52
+Python バージョン: 3.12.8 (v3.12.8:2dc476bcb91, Dec  3 2024, 14:43:20) [Clang 13.0.0 (clang-1300.0.29.30)]
+テスト開始...
+
+test_capsule_creation (test_capsule.TestHoneypotCapsule.test_capsule_creation)
+カプセル作成のテスト ... 
+=== カプセル作成のテスト ===
+シリアライズされたカプセルのサイズ: 831 バイト
+カプセル作成とブロック追加: 成功
+ok
+test_capsule_serialization (test_capsule.TestHoneypotCapsule.test_capsule_serialization)
+カプセルのシリアライズとデシリアライズのテスト ... 
+=== カプセルのシリアライズとデシリアライズのテスト ===
+シリアライズされたカプセルのサイズ: 794 バイト
+復元されたメタデータ: {
+  "description": "Test honeypot capsule",
+  "timestamp": 1747205273,
+  "version": "1.0",
+  "test_id": 6049
+}
+カプセルのシリアライズとデシリアライズ: 成功
+ok
+test_data_extraction (test_capsule.TestHoneypotCapsule.test_data_extraction)
+カプセルからのデータ抽出テスト ... 
+=== カプセルからのデータ抽出テスト ===
+正規データ抽出: This is the true data that should be revealed with the correct key.
+非正規データ抽出: This is the false data that will be shown with an incorrect key.
+データ抽出テスト: 成功
+ok
+test_error_handling (test_capsule.TestHoneypotCapsule.test_error_handling)
+エラー処理のテスト ... 
+=== エラー処理のテスト ===
+エラー処理: 成功
+ok
+test_honeypot_file_functions (test_capsule.TestHoneypotCapsule.test_honeypot_file_functions)
+ハニーポットファイル作成・読み取り関数のテスト ... 
+=== ハニーポットファイル関数のテスト ===
+ハニーポットファイルのサイズ: 958 バイト
+ハニーポットファイル作成・読み取り: 成功
+ok
+test_large_data_handling (test_capsule.TestHoneypotCapsule.test_large_data_handling)
+大きなデータの処理テスト ... 
+=== 大きなデータの処理テスト ===
+ハニーポットファイルのサイズ: 128 KB
+大きなデータのサイズ比較 - 元:64KB, 抽出:64KB
+大きなデータの処理: 成功
+ok
+test_basic_decryption (test_decrypt.TestDecrypt.test_basic_decryption)
+基本的な復号機能のテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmp79v9x3c5/encrypted.hpot' に暗号文を書き込みました。
+
+=== 基本的な復号機能のテスト ===
+正規鍵での復号...
+非正規鍵での復号...
+基本的な復号機能: テスト成功
+ok
+test_determine_key_type (test_decrypt.TestDecrypt.test_determine_key_type)
+鍵タイプ判定機能のテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpaz4i3r3z/encrypted.hpot' に暗号文を書き込みました。
+
+=== 鍵タイプ判定機能のテスト ===
+正規鍵の判定...
+非正規鍵の判定...
+鍵タイプ判定: テスト完了
+ok
+test_error_handling (test_decrypt.TestDecrypt.test_error_handling)
+エラー処理のテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpchcv5la5/encrypted.hpot' に暗号文を書き込みました。
+
+=== エラー処理のテスト ===
+存在しないファイルの読み込み...
+エラー: ファイル 'non_existent_file.hpot' が見つかりません。
+不正な16進数形式の鍵...
+エラー: 不正な16進数形式の鍵です: invalid_hex_key
+不正な形式のファイル...
+エラー処理: テスト成功
+ok
+test_invalid_key (test_decrypt.TestDecrypt.test_invalid_key)
+不正な鍵での復号テスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpa4cgajcn/encrypted.hpot' に暗号文を書き込みました。
+
+=== 不正な鍵での復号テスト ===
+不正な鍵: 7846d70d13531c6c6016bf221069c291bafbbc4555c1561529d354783c19353d
+エラー: 実行時エラー: 復号に失敗しました: 認証に失敗しました。データが改ざんされている可能性があります。
+不正な鍵での復号: 期待通りにエラーが発生
+ok
+test_key_from_file (test_decrypt.TestDecrypt.test_key_from_file)
+鍵ファイルからの読み込みテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmp4mvwp3df/encrypted.hpot' に暗号文を書き込みました。
+
+=== 鍵ファイルからの読み込みテスト ===
+鍵ファイルからの読み込み: テスト成功
+ok
+test_key_from_hex (test_decrypt.TestDecrypt.test_key_from_hex)
+16進数形式の鍵からの読み込みテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpurtikozj/encrypted.hpot' に暗号文を書き込みました。
+
+=== 16進数形式の鍵からの読み込みテスト ===
+16進数形式の鍵からの読み込み: テスト成功
+ok
+test_large_file_processing (test_decrypt.TestDecrypt.test_large_file_processing)
+大きなファイル処理のテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpy6pzoz7k/encrypted.hpot' に暗号文を書き込みました。
+
+=== 大きなファイル処理のテスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpy6pzoz7k/large_encrypted.hpot' に暗号文を書き込みました。
+チャンクサイズ 32768 バイトで大きなファイルを処理...
+復号処理を開始します...
+暗号化ファイル '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpy6pzoz7k/large_encrypted.hpot' を読み込みました（262912 バイト）
+フォーマット: honeypot
+バージョン: 1.0
+鍵の検証が完了しました
+初期化ベクトル（IV）を取得しました
+ハニーポットカプセルからデータを抽出しました（131088 バイト）
+データの復号が完了しました
+復号データを '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpy6pzoz7k/large_decrypted_true.bin' に保存しました
+通常の復号処理で成功
+大きなファイル処理: テスト成功
+ok
+test_read_encrypted_file (test_decrypt.TestDecrypt.test_read_encrypted_file)
+暗号化ファイル読み込み機能のテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpp514k37y/encrypted.hpot' に暗号文を書き込みました。
+
+=== 暗号化ファイル読み込み機能のテスト ===
+暗号化ファイル読み込み機能: テスト成功
+ok
+test_timing_attack_resistance (test_decrypt.TestDecrypt.test_timing_attack_resistance)
+タイミング攻撃耐性のテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpjb8fihqz/encrypted.hpot' に暗号文を書き込みました。
+
+=== タイミング攻撃耐性のテスト ===
+10回の繰り返しでタイミングを測定...
+正規鍵平均時間: 0.033464秒
+非正規鍵平均時間: 0.035599秒
+時間差: 0.002135秒
+タイミング攻撃耐性: 優良（時間差が非常に小さい）
+ok
+test_verbose_mode (test_decrypt.TestDecrypt.test_verbose_mode)
+詳細表示モードのテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpm6cqhjxm/encrypted.hpot' に暗号文を書き込みました。
+
+=== 詳細表示モードのテスト ===
+詳細表示モード: テスト成功
+ok
+test_encrypt_files (test_encrypt.TestEncrypt.test_encrypt_files)
+ファイル暗号化機能のテスト ... 暗号化処理を開始します...
+正規ファイル '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpawj3zktu/true.text' を読み込みました（67 バイト）
+非正規ファイル '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpawj3zktu/false.text' を読み込みました（64 バイト）
+マスター鍵を生成しました
+トラップドアパラメータを生成しました
+正規鍵と非正規鍵を導出しました
+データの暗号化を完了しました
+ハニーポットカプセルを生成中...
+カプセルデータを生成しました（1647 バイト）
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpawj3zktu/output/test_encrypt.hpot' に暗号文を書き込みました。
+暗号化ファイルサイズ: 1647 バイト
+ok
+test_end_to_end (test_encrypt.TestEncrypt.test_end_to_end)
+エンドツーエンドのテスト（暗号化から復号まで） ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmp2y06ce_s/output/test_encrypt.hpot' に暗号文を書き込みました。
+エンドツーエンドテスト成功: 正規データと非正規データが正しく取得できました
+エンドツーエンドテスト成功: 正規データと非正規データが正しく復元されました
+ok
+test_read_file (test_encrypt.TestEncrypt.test_read_file)
+ファイル読み込み機能のテスト ... エラー: ファイル '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpco20txtz/nonexistent.txt' が見つかりません。
+ok
+test_save_keys (test_encrypt.TestEncrypt.test_save_keys)
+鍵保存機能のテスト ... true鍵を保存しました: /var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpslf90fc_/output/test_key.true.key
+false鍵を保存しました: /var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpslf90fc_/output/test_key.false.key
+master_key鍵を保存しました: /var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpslf90fc_/output/test_key.master_key.key
+ok
+test_symmetric_encrypt (test_encrypt.TestEncrypt.test_symmetric_encrypt)
+対称暗号化機能のテスト ... ok
+test_encrypt_decrypt_basic (test_encrypt_decrypt.TestEncryptDecrypt.test_encrypt_decrypt_basic)
+基本的な暗号化と復号のテスト ... 
+=== 基本的な暗号化と復号のテスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpym9clgga/encrypted.hpot' に暗号文を書き込みました。
+暗号化ファイル: /var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpym9clgga/encrypted.hpot
+正規鍵: f910b2c8ba94337372b93bc5926649825a64588aba86b35ff5c81af41439a4ef
+非正規鍵: b443b240550806cbfd7e7ef466978e8c327aed62038073e8b5ca16ec21d1fe40
+
+正規鍵での復号:
+
+非正規鍵での復号:
+復号結果:
+正規データ: これは正規の平文です。正しい鍵で読み取られるべきデータです。
+非正規データ: これは非正規の平文です。不正な鍵で読み取られるデータです。
+ok
+test_invalid_keys (test_encrypt_decrypt.TestEncryptDecrypt.test_invalid_keys)
+不正な鍵でのエラー処理のテスト ... 
+=== 不正な鍵でのエラー処理のテスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpnttxyoqj/encrypted.hpot' に暗号文を書き込みました。
+不正な鍵: 9a12aacb2e12ee991e7155c5072fa4d7d00dd0696fece792902a5bef4f8ae72b
+エラー: 実行時エラー: 復号に失敗しました: 認証に失敗しました。データが改ざんされている可能性があります。
+不正な鍵での復号: 期待通りにエラーが発生しました
+ok
+test_performance (test_encrypt_decrypt.TestEncryptDecrypt.test_performance)
+パフォーマンステスト ... 
+=== パフォーマンステスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpalir4r4s/large_encrypted.hpot' に暗号文を書き込みました。
+1MBファイルの暗号化時間: 0.09秒
+1MBファイルの正規鍵復号時間: 0.09秒
+1MBファイルの非正規鍵復号時間: 0.10秒
+ok
+test_real_files (test_encrypt_decrypt.TestEncryptDecrypt.test_real_files)
+実際のtrue.textとfalse.textを使用した暗号化と復号のテスト ... 
+=== 実際のファイルを使用した暗号化と復号のテスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpp_e8r9zm/real_encrypted.hpot' に暗号文を書き込みました。
+実際のファイルでのテスト: 成功
+ok
+test_timing_attacks (test_encrypt_decrypt.TestEncryptDecrypt.test_timing_attacks)
+タイミング攻撃耐性のテスト ... 
+=== タイミング攻撃耐性のテスト ===
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmps88o0zxy/encrypted.hpot' に暗号文を書き込みました。
+正規鍵の復号時間: 0.032339秒
+非正規鍵の復号時間: 0.030133秒
+時間差: 0.002206秒
+タイミング攻撃耐性: 優良（時間差が非常に小さい）
+ok
+test_cli_interface (test_integration.TestIntegration.test_cli_interface)
+コマンドラインインターフェースのテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpkmv8fgb8/test_data.hpot' に暗号文を書き込みました。
+ok
+test_encrypt_decrypt_cycle (test_integration.TestIntegration.test_encrypt_decrypt_cycle)
+暗号化・復号サイクルのテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmpb527ehjq/test_data.hpot' に暗号文を書き込みました。
+ok
+test_error_handling (test_integration.TestIntegration.test_error_handling)
+エラー処理のテスト ... エラー: ファイル '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmp92upa8y5/nonexistent.hpot' が見つかりません。
+エラー: ファイル '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmp92upa8y5/nonexistent.hpot' が見つかりません。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmp92upa8y5/test_data.hpot' に暗号文を書き込みました。
+エラー: 実行時エラー: 復号に失敗しました: 認証に失敗しました。データが改ざんされている可能性があります。
+ok
+test_key_loading_and_verification (test_integration.TestIntegration.test_key_loading_and_verification)
+鍵のロードと検証フローのテスト ... ok
+test_multiple_encrypt_decrypt_cycles (test_integration.TestIntegration.test_multiple_encrypt_decrypt_cycles)
+複数回の暗号化・復号サイクルの一貫性テスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmp2n_lxq4v/test_data_0.hpot' に暗号文を書き込みました。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmp2n_lxq4v/test_data_1.hpot' に暗号文を書き込みました。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmp2n_lxq4v/test_data_2.hpot' に暗号文を書き込みました。
+ok
+test_performance (test_integration.TestIntegration.test_performance)
+性能測定のテスト ... 暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmphdzeurns/test_data_1024.hpot' に暗号文を書き込みました。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmphdzeurns/test_data_1024.hpot' に暗号文を書き込みました。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmphdzeurns/test_data_1024.hpot' に暗号文を書き込みました。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmphdzeurns/test_data_10240.hpot' に暗号文を書き込みました。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmphdzeurns/test_data_10240.hpot' に暗号文を書き込みました。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmphdzeurns/test_data_10240.hpot' に暗号文を書き込みました。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmphdzeurns/test_data_102400.hpot' に暗号文を書き込みました。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmphdzeurns/test_data_102400.hpot' に暗号文を書き込みました。
+暗号化完了: '/var/folders/n7/2tzd1f213r54sjlyz6cw4z7h0000gn/T/tmphdzeurns/test_data_102400.hpot' に暗号文を書き込みました。
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12487 (\N{KATAKANA LETTER DE}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12540 (\N{KATAKANA-HIRAGANA PROLONGED SOUND MARK}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12479 (\N{KATAKANA LETTER TA}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12469 (\N{KATAKANA LETTER SA}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12452 (\N{KATAKANA LETTER I}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12474 (\N{KATAKANA LETTER ZU}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 20966 (\N{CJK UNIFIED IDEOGRAPH-51E6}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 29702 (\N{CJK UNIFIED IDEOGRAPH-7406}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 26178 (\N{CJK UNIFIED IDEOGRAPH-6642}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 38291 (\N{CJK UNIFIED IDEOGRAPH-9593}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 31186 (\N{CJK UNIFIED IDEOGRAPH-79D2}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12495 (\N{KATAKANA LETTER HA}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12491 (\N{KATAKANA LETTER NI}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12509 (\N{KATAKANA LETTER PO}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12483 (\N{KATAKANA LETTER SMALL TU}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12488 (\N{KATAKANA LETTER TO}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 26263 (\N{CJK UNIFIED IDEOGRAPH-6697}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 21495 (\N{CJK UNIFIED IDEOGRAPH-53F7}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 21270 (\N{CJK UNIFIED IDEOGRAPH-5316}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 26041 (\N{CJK UNIFIED IDEOGRAPH-65B9}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 24335 (\N{CJK UNIFIED IDEOGRAPH-5F0F}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 12398 (\N{HIRAGANA LETTER NO}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 24615 (\N{CJK UNIFIED IDEOGRAPH-6027}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 33021 (\N{CJK UNIFIED IDEOGRAPH-80FD}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 28204 (\N{CJK UNIFIED IDEOGRAPH-6E2C}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 23450 (\N{CJK UNIFIED IDEOGRAPH-5B9A}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 27491 (\N{CJK UNIFIED IDEOGRAPH-6B63}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 35215 (\N{CJK UNIFIED IDEOGRAPH-898F}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 37749 (\N{CJK UNIFIED IDEOGRAPH-9375}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 24489 (\N{CJK UNIFIED IDEOGRAPH-5FA9}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:471: UserWarning: Glyph 38750 (\N{CJK UNIFIED IDEOGRAPH-975E}) missing from font(s) DejaVu Sans.
+  plt.tight_layout()
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12487 (\N{KATAKANA LETTER DE}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12540 (\N{KATAKANA-HIRAGANA PROLONGED SOUND MARK}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12479 (\N{KATAKANA LETTER TA}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12469 (\N{KATAKANA LETTER SA}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12452 (\N{KATAKANA LETTER I}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12474 (\N{KATAKANA LETTER ZU}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 20966 (\N{CJK UNIFIED IDEOGRAPH-51E6}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 29702 (\N{CJK UNIFIED IDEOGRAPH-7406}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 26178 (\N{CJK UNIFIED IDEOGRAPH-6642}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 38291 (\N{CJK UNIFIED IDEOGRAPH-9593}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 31186 (\N{CJK UNIFIED IDEOGRAPH-79D2}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12495 (\N{KATAKANA LETTER HA}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12491 (\N{KATAKANA LETTER NI}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12509 (\N{KATAKANA LETTER PO}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12483 (\N{KATAKANA LETTER SMALL TU}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12488 (\N{KATAKANA LETTER TO}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 26263 (\N{CJK UNIFIED IDEOGRAPH-6697}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 21495 (\N{CJK UNIFIED IDEOGRAPH-53F7}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 21270 (\N{CJK UNIFIED IDEOGRAPH-5316}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 26041 (\N{CJK UNIFIED IDEOGRAPH-65B9}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 24335 (\N{CJK UNIFIED IDEOGRAPH-5F0F}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 12398 (\N{HIRAGANA LETTER NO}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 24615 (\N{CJK UNIFIED IDEOGRAPH-6027}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 33021 (\N{CJK UNIFIED IDEOGRAPH-80FD}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 28204 (\N{CJK UNIFIED IDEOGRAPH-6E2C}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 23450 (\N{CJK UNIFIED IDEOGRAPH-5B9A}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 27491 (\N{CJK UNIFIED IDEOGRAPH-6B63}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 35215 (\N{CJK UNIFIED IDEOGRAPH-898F}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 37749 (\N{CJK UNIFIED IDEOGRAPH-9375}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 24489 (\N{CJK UNIFIED IDEOGRAPH-5FA9}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_integration.py:472: UserWarning: Glyph 38750 (\N{CJK UNIFIED IDEOGRAPH-975E}) missing from font(s) DejaVu Sans.
+  plt.savefig(output_file)
+性能グラフを保存しました: test_output/performance_graph_20250514_154801.png
+ok
+test_deception_manager (test_key_verification.TestKeyVerification.test_deception_manager)
+DeceptionManagerクラスのテスト ... ok
+test_honey_token_manager (test_key_verification.TestKeyVerification.test_honey_token_manager)
+HoneyTokenManagerクラスのテスト ... ok
+test_key_verifier (test_key_verification.TestKeyVerification.test_key_verifier)
+KeyVerifierクラスのテスト ... ok
+test_timing_resistance (test_key_verification.TestKeyVerification.test_timing_resistance)
+タイミング攻撃耐性のテスト ... ok
+test_verify_key_and_select_path (test_key_verification.TestKeyVerification.test_verify_key_and_select_path)
+完全な鍵検証ワークフローのテスト ... ok
+test_decision_function_complexity (test_tamper_resistance.TestTamperResistance.test_decision_function_complexity)
+判定関数の複雑性と難読化のテスト ... 
+=== 判定関数の複雑性と難読化のテスト ===
+判定関数の数: 5
+関数の評価 - 重み: 3, 正規: False, 非正規: False
+関数の評価 - 重み: 3, 正規: False, 非正規: False
+関数の評価 - 重み: 2, 正規: False, 非正規: False
+関数の評価 - 重み: 1, 正規: False, 非正規: False
+関数の評価 - 重み: 1, 正規: False, 非正規: False
+正規鍵に対するTrue判定の関数数: 0/5
+非正規鍵に対するFalse判定の関数数: 5/5
+FAIL
+test_dynamic_path_selection (test_tamper_resistance.TestTamperResistance.test_dynamic_path_selection)
+動的経路選択のテスト ... 
+=== 動的経路選択のテスト ===
+正規鍵の経路選択結果: true
+非正規鍵の経路選択結果: false
+正規鍵の経路選択結果（複数回）: ['true', 'true', 'true', 'true', 'true']
+非正規鍵の経路選択結果（複数回）: ['false', 'false', 'false', 'false', 'false']
+ok
+test_module_integrity_verification (test_tamper_resistance.TestTamperResistance.test_module_integrity_verification)
+モジュール整合性検証のテスト ... 
+=== モジュール整合性検証のテスト ===
+モジュール 'trapdoor' のハッシュ: 06c0e8e9a0253c74e69ed8dfd9fbe0142be0763fb671871c934c7ed73efe3370
+モジュール 'key_verification' のハッシュ: 781e65a06f8a5a51ac7d8d898564f6937764ea6f2cc4220fd0d4ece002da5ade
+モジュール 'honeypot_capsule' のハッシュ: db8ace04a10f440392755dcda1b385c85514dcfd152ad70ead13dfd620d668b2
+モジュール 'encrypt' のハッシュ: 41d7a6b74bac97557ddd5e30e123a00a932292a306c8465f24774fcb6c44b422
+モジュール 'decrypt' のハッシュ: 36be8966bd4cf8745fc3e558ab8f23822d90232dc337679df01b997cd8118755
+モジュール 'deception' のハッシュ: b04c42766797afabdee60afbec086d0eeb89a640b36a3f99fe03350e353c2ebc
+モジュール 'trapdoor' の整合性検証インターフェイスを確認: 成功
+モジュール 'encrypt' の整合性検証インターフェイスを確認: 成功
+モジュール 'decrypt' の整合性検証インターフェイスを確認: 成功
+ok
+test_obfuscated_verifier (test_tamper_resistance.TestTamperResistance.test_obfuscated_verifier)
+難読化された検証機構のテスト ... 
+=== 難読化された検証機構のテスト ===
+正規鍵の検証結果: True
+非正規鍵の検証結果: False
+正規鍵の検証結果（複数回）: [True, True, True, True, True]
+非正規鍵の検証結果（複数回）: [False, False, False, False, False]
+ok
+test_tamper_resistance_verification (test_tamper_resistance.TestTamperResistance.test_tamper_resistance_verification)
+改変耐性を備えた検証のテスト ... 
+=== 改変耐性を備えた検証のテスト ===
+正規鍵の検証結果: true
+非正規鍵の検証結果: false
+改変後の正規鍵の検証結果: false
+改変後の非正規鍵の検証結果: false
+ok
+test_honey_token (test_trapdoor.TestTrapdoor.test_honey_token)
+ハニートークン生成のテスト ... ok
+test_key_evaluation (test_trapdoor.TestTrapdoor.test_key_evaluation)
+鍵評価のテスト ... ok
+test_key_generation (test_trapdoor.TestTrapdoor.test_key_generation)
+鍵生成のテスト ... ok
+test_timing_resistance (test_trapdoor.TestTrapdoor.test_timing_resistance)
+タイミング攻撃耐性のテスト ... ok
+
+======================================================================
+FAIL: test_decision_function_complexity (test_tamper_resistance.TestTamperResistance.test_decision_function_complexity)
+判定関数の複雑性と難読化のテスト
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_7_honeypot/tests/test_tamper_resistance.py", line 265, in test_decision_function_complexity
+    self.assertGreaterEqual(true_positive_count, 1,
+AssertionError: 0 not greater than or equal to 1 : 正規鍵に対してすべての判定関数がFalseを返しています
+
+----------------------------------------------------------------------
+Ran 46 tests in 11.174s
+
+FAILED (failures=1)
+
+===== テスト実行サマリー =====
+実行日時: 2025-05-14 15:48:04
+テスト数: 46
+成功: 45
+失敗: 1
+エラー: 0
+スキップ: 0
+総実行時間: 11.17秒

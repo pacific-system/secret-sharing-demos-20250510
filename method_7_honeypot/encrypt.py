@@ -20,6 +20,7 @@ import time
 import secrets
 import binascii
 import random
+import tempfile
 from typing import Dict, Tuple, Any, Optional, List, Union
 from pathlib import Path
 from datetime import datetime
@@ -355,6 +356,189 @@ def parse_arguments():
     return parser.parse_args()
 
 
+def process_large_file(true_file_path: str, false_file_path: str, output_path: str,
+                     max_chunk_size: int = 10 * 1024 * 1024, verbose: bool = False) -> Tuple[Dict[str, bytes], Dict[str, Any]]:
+    """
+    大きなファイルを分割して処理
+
+    Args:
+        true_file_path: 正規ファイルのパス
+        false_file_path: 非正規ファイルのパス
+        output_path: 出力ファイルのパス
+        max_chunk_size: 最大チャンクサイズ（バイト）
+        verbose: 詳細表示モード
+
+    Returns:
+        (keys, metadata): 鍵ペアとメタデータ
+    """
+    # ファイルサイズを取得
+    true_file_size = os.path.getsize(true_file_path)
+    false_file_size = os.path.getsize(false_file_path)
+
+    # どちらのファイルも小さい場合は通常処理
+    if true_file_size <= max_chunk_size and false_file_size <= max_chunk_size:
+        return encrypt_files(true_file_path, false_file_path, output_path, verbose)
+
+    if verbose:
+        print(f"大きなファイル（true: {true_file_size} バイト, false: {false_file_size} バイト）を分割処理します...")
+
+    # マスター鍵の生成
+    master_key = create_master_key()
+    if verbose:
+        print("マスター鍵を生成しました")
+
+    # トラップドアパラメータの生成
+    trapdoor_params = create_trapdoor_parameters(master_key)
+    if verbose:
+        print("トラップドアパラメータを生成しました")
+
+    # 鍵ペアの導出
+    keys, salt = derive_keys_from_trapdoor(trapdoor_params)
+    if verbose:
+        print("正規鍵と非正規鍵を導出しました")
+
+    # 動的判定閾値の設定
+    # 注: 実際の判定には使用されない
+    dynamic_threshold = DECISION_THRESHOLD
+    if RANDOMIZATION_FACTOR > 0:
+        dynamic_threshold += (random.random() * RANDOMIZATION_FACTOR - RANDOMIZATION_FACTOR/2)
+
+    # ファイルを分割して処理
+    with open(true_file_path, 'rb') as f_true, open(false_file_path, 'rb') as f_false:
+        # 出力ディレクトリの作成
+        output_dir = os.path.dirname(output_path)
+        if output_dir and not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+
+        # チャンク分割が必要な場合は一時ディレクトリを作成
+        temp_dir = os.path.join(output_dir, "temp_chunks")
+        os.makedirs(temp_dir, exist_ok=True)
+
+        # チャンク情報
+        true_chunks = []
+        false_chunks = []
+
+        # チャンク番号
+        chunk_number = 0
+
+        # チャンク処理ループ
+        while True:
+            # チャンクデータの読み込み
+            true_chunk = f_true.read(max_chunk_size)
+            false_chunk = f_false.read(max_chunk_size)
+
+            # 両方のチャンクが空の場合は終了
+            if not true_chunk and not false_chunk:
+                break
+
+            # チャンクファイルの名前
+            chunk_file = os.path.join(temp_dir, f"chunk_{chunk_number}.hpot")
+
+            # 一時ファイルの作成
+            with tempfile.NamedTemporaryFile(delete=False) as temp_true, tempfile.NamedTemporaryFile(delete=False) as temp_false:
+                temp_true.write(true_chunk)
+                temp_false.write(false_chunk)
+                temp_true_path = temp_true.name
+                temp_false_path = temp_false.name
+
+            # チャンクの暗号化
+            if verbose:
+                print(f"チャンク {chunk_number} を処理中...")
+
+            # チャンクの暗号化（鍵は再利用）
+            chunk_data = encrypt_chunk(temp_true_path, temp_false_path, keys, salt, trapdoor_params, chunk_file, verbose)
+
+            # チャンク情報を保存
+            true_chunks.append({"size": len(true_chunk), "path": chunk_file})
+            false_chunks.append({"size": len(false_chunk), "path": chunk_file})
+
+            # 一時ファイルを削除
+            os.unlink(temp_true_path)
+            os.unlink(temp_false_path)
+
+            # チャンク番号を増加
+            chunk_number += 1
+
+        # チャンク情報メタデータ
+        metadata = {
+            "format": OUTPUT_FORMAT,
+            "version": "1.0",
+            "algorithm": "honeypot_chunked",
+            "salt": base64.b64encode(salt).decode('ascii'),
+            "chunks": chunk_number,
+            "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
+            "true_file": os.path.basename(true_file_path),
+            "false_file": os.path.basename(false_file_path),
+            "true_size": true_file_size,
+            "false_size": false_file_size
+        }
+
+        # メタデータファイルの作成
+        meta_path = output_path + ".meta"
+        with open(meta_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        if verbose:
+            print(f"分割処理完了: {chunk_number} チャンクを生成しました")
+            print(f"メタデータを '{meta_path}' に保存しました")
+
+        # 鍵情報を返却
+        key_info = {
+            KEY_TYPE_TRUE: keys[KEY_TYPE_TRUE],
+            KEY_TYPE_FALSE: keys[KEY_TYPE_FALSE],
+            "master_key": master_key
+        }
+
+        return key_info, metadata
+
+def encrypt_chunk(true_chunk_path: str, false_chunk_path: str, keys: Dict[str, bytes],
+                 salt: bytes, trapdoor_params: Dict[str, Any], output_path: str,
+                 verbose: bool = False) -> bytes:
+    """
+    チャンクを暗号化
+
+    Args:
+        true_chunk_path: 正規チャンクファイルのパス
+        false_chunk_path: 非正規チャンクファイルのパス
+        keys: 鍵ペア
+        salt: ソルト
+        trapdoor_params: トラップドアパラメータ
+        output_path: 出力パス
+        verbose: 詳細表示モード
+
+    Returns:
+        暗号化されたチャンクデータ
+    """
+    # チャンクデータの読み込み
+    true_data = read_file(true_chunk_path)
+    false_data = read_file(false_chunk_path)
+
+    # データの対称暗号化
+    true_encrypted, true_iv = symmetric_encrypt(true_data, keys[KEY_TYPE_TRUE])
+    false_encrypted, false_iv = symmetric_encrypt(false_data, keys[KEY_TYPE_FALSE])
+
+    # メタデータの作成
+    chunk_metadata = {
+        "true_iv": base64.b64encode(true_iv).decode('ascii'),
+        "false_iv": base64.b64encode(false_iv).decode('ascii'),
+        "true_size": len(true_data),
+        "false_size": len(false_data)
+    }
+
+    # ハニーポットカプセルの作成
+    capsule_data = create_honeypot_file(
+        true_encrypted, false_encrypted, trapdoor_params, chunk_metadata
+    )
+
+    # チャンクデータを保存
+    with open(output_path, 'wb') as f:
+        f.write(capsule_data)
+
+    if verbose:
+        print(f"チャンクを '{output_path}' に保存しました（{len(capsule_data)} バイト）")
+
+    return capsule_data
+
 def main():
     """
     メイン関数
@@ -395,10 +579,23 @@ def main():
                 return 1
 
     try:
-        # 暗号化の実行
-        key_info, metadata = encrypt_files(
-            args.true_file, args.false_file, args.output, args.verbose
-        )
+        # ファイルのサイズを確認
+        true_file_size = os.path.getsize(args.true_file)
+        false_file_size = os.path.getsize(args.false_file)
+
+        # 大きなファイルの場合は分割処理
+        large_file_threshold = 10 * 1024 * 1024  # 10MB
+        if true_file_size > large_file_threshold or false_file_size > large_file_threshold:
+            if args.verbose:
+                print(f"大きなファイルを検出しました。分割処理を開始します...")
+            key_info, metadata = process_large_file(
+                args.true_file, args.false_file, args.output, large_file_threshold, args.verbose
+            )
+        else:
+            # 通常の暗号化
+            key_info, metadata = encrypt_files(
+                args.true_file, args.false_file, args.output, args.verbose
+            )
 
         # メタデータのダンプ（オプション）
         if args.dump_metadata:

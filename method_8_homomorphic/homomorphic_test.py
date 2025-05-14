@@ -1206,6 +1206,542 @@ def test_security_features() -> Dict[str, Any]:
         return results
 
 #------------------------------------------------------------------------------
+# 拡張セキュリティテスト (セキュリティ監査機能)
+#------------------------------------------------------------------------------
+
+def generate_test_files():
+    """テスト用のtrueとfalseファイルを生成"""
+    # 真のコンテンツ（重要な情報）
+    true_content = """
+===== 機密情報: 真のコンテンツ =====
+
+プロジェクト名: ALPHA-X
+開始日: 2025年6月1日
+予算: 5,000万円
+主要メンバー:
+- 山田太郎 (プロジェクトリーダー)
+- 佐藤次郎 (技術担当)
+- 鈴木花子 (マーケティング)
+
+目標:
+新技術を活用した次世代システムの開発と市場投入。
+競合他社より6か月早く展開する。
+
+ALPHA-Xの成否は企業の将来を左右する重要案件です。
+""".strip()
+
+    # 偽のコンテンツ（ダミー情報）
+    false_content = """
+===== 非機密情報: サンプルデータ =====
+
+プロジェクト名: BETA-Z
+開始日: 2025年10月1日
+予算: 1,000万円
+担当者:
+- 山本一郎 (プロジェクトリーダー)
+- 中村二郎 (アシスタント)
+
+目標:
+既存システムのマイナーアップデートとUI改善。
+来年度中の完了を目指す。
+
+標準的なメンテナンスプロジェクトです。
+""".strip()
+
+    # ファイルに保存
+    true_path = os.path.join(OUTPUT_DIR, "secure_true.txt")
+    false_path = os.path.join(OUTPUT_DIR, "secure_false.txt")
+
+    with open(true_path, 'w', encoding='utf-8') as f:
+        f.write(true_content)
+
+    with open(false_path, 'w', encoding='utf-8') as f:
+        f.write(false_content)
+
+    log_message(f"テストファイルを生成しました: {true_path}, {false_path}")
+    return true_path, false_path
+
+def perform_original_encryption(true_file, false_file):
+    """元の実装での暗号化テスト"""
+    print_section_header("元の実装での暗号化テスト", 2)
+
+    # テストディレクトリ
+    test_output_dir = os.path.join(OUTPUT_DIR, "original")
+    ensure_directory(test_output_dir)
+
+    results = {
+        "success": False,
+        "encryption_time": 0,
+        "file_size": 0,
+        "has_true_str": False,
+        "has_false_str": False
+    }
+
+    try:
+        # データの読み込み
+        with open(true_file, 'rb') as f:
+            true_content = f.read()
+
+        with open(false_file, 'rb') as f:
+            false_content = f.read()
+
+        # Paillier暗号の初期化
+        from method_8_homomorphic.homomorphic import PaillierCrypto
+        paillier = PaillierCrypto(bits=1024)
+        public_key, private_key = paillier.generate_keys()
+
+        # 整数に変換
+        true_int = int.from_bytes(true_content, 'big')
+        false_int = int.from_bytes(false_content, 'big')
+
+        # 暗号化（時間計測）
+        start_time = time.time()
+        true_enc = [paillier.encrypt(true_int, public_key)]
+        false_enc = [paillier.encrypt(false_int, public_key)]
+
+        # マスク関数生成器
+        from method_8_homomorphic.crypto_mask import MaskFunctionGenerator
+        mask_generator = MaskFunctionGenerator(paillier)
+
+        # 変換
+        masked_true, masked_false, true_mask, false_mask = transform_between_true_false(
+            paillier, true_enc, false_enc, mask_generator)
+
+        # 区別不可能な形式に変換
+        indistinguishable = create_indistinguishable_form(
+            masked_true, masked_false, true_mask, false_mask,
+            {"paillier_public_key": public_key, "paillier_private_key": private_key}
+        )
+
+        encryption_time = time.time() - start_time
+        results["encryption_time"] = encryption_time
+
+        # 暗号化データを保存
+        encrypted_file = os.path.join(test_output_dir, f"encrypted_{TIMESTAMP}.json")
+        with open(encrypted_file, 'w') as f:
+            json.dump(indistinguishable, f, indent=2)
+
+        # 鍵情報も保存（テスト用）
+        key_info = {
+            "paillier_public_key": public_key,
+            "paillier_private_key": private_key,
+            "true_mask": true_mask,
+            "false_mask": false_mask
+        }
+
+        key_file = os.path.join(test_output_dir, f"key_info_{TIMESTAMP}.json")
+        with open(key_file, 'w') as f:
+            json.dump(key_info, f, indent=2)
+
+        # 暗号化ファイルのサイズ
+        file_size = os.path.getsize(encrypted_file)
+        results["file_size"] = file_size
+        log_message(f"元の実装での暗号化時間: {encryption_time:.6f}秒")
+        log_message(f"元の実装での暗号化ファイルサイズ: {file_size}バイト")
+
+        # バイナリデータでの暗号ファイル解析
+        with open(encrypted_file, 'rb') as f:
+            binary_content = f.read()
+
+        # 文字列を検索
+        has_true_str = b'true' in binary_content
+        has_false_str = b'false' in binary_content
+        results["has_true_str"] = has_true_str
+        results["has_false_str"] = has_false_str
+        log_message(f"元の実装での'true'文字列の含有: {has_true_str}")
+        log_message(f"元の実装での'false'文字列の含有: {has_false_str}")
+
+        results["encrypted_file"] = encrypted_file
+        results["key_file"] = key_file
+        results["success"] = True
+
+        return results
+
+    except Exception as e:
+        log_message(f"元の実装での暗号化テストでエラーが発生しました: {e}")
+        import traceback
+        log_message(traceback.format_exc())
+        results["error"] = str(e)
+        results["traceback"] = traceback.format_exc()
+        return results
+
+def perform_improved_encryption(true_file, false_file):
+    """改良実装での暗号化テスト"""
+    print_section_header("改良実装での暗号化テスト", 2)
+
+    # テストディレクトリ
+    test_output_dir = os.path.join(OUTPUT_DIR, "improved")
+    ensure_directory(test_output_dir)
+
+    results = {
+        "success": False,
+        "encryption_time": 0,
+        "file_size": 0,
+        "has_true_str": False,
+        "has_false_str": False,
+        "files_differ": False
+    }
+
+    try:
+        # 出力ファイルパス
+        encrypted_file = os.path.join(test_output_dir, f"encrypted_{TIMESTAMP}.hmc")
+
+        # 暗号化の実行（時間計測）
+        start_time = time.time()
+
+        from method_8_homomorphic.indistinguishable_crypto import encrypt_file_with_dual_keys
+        encrypt_file_with_dual_keys(
+            true_file, false_file, encrypted_file,
+            key_bits=1024, use_advanced_masks=True
+        )
+
+        encryption_time = time.time() - start_time
+        results["encryption_time"] = encryption_time
+
+        # 暗号化ファイルのサイズ
+        file_size = os.path.getsize(encrypted_file)
+        results["file_size"] = file_size
+        log_message(f"改良実装での暗号化時間: {encryption_time:.6f}秒")
+        log_message(f"改良実装での暗号化ファイルサイズ: {file_size}バイト")
+
+        # バイナリデータでの暗号ファイル解析
+        with open(encrypted_file, 'rb') as f:
+            binary_content = f.read()
+
+        # 文字列を検索
+        has_true_str = b'true' in binary_content
+        has_false_str = b'false' in binary_content
+        results["has_true_str"] = has_true_str
+        results["has_false_str"] = has_false_str
+        log_message(f"改良実装での'true'文字列の含有: {has_true_str}")
+        log_message(f"改良実装での'false'文字列の含有: {has_false_str}")
+
+        # 同じファイルを複数回暗号化して結果が変わるか
+        encrypted_file2 = os.path.join(test_output_dir, f"encrypted2_{TIMESTAMP}.hmc")
+        encrypt_file_with_dual_keys(
+            true_file, false_file, encrypted_file2,
+            key_bits=1024, use_advanced_masks=True
+        )
+
+        with open(encrypted_file, 'rb') as f1, open(encrypted_file2, 'rb') as f2:
+            content1 = f1.read()
+            content2 = f2.read()
+
+        files_differ = content1 != content2
+        results["files_differ"] = files_differ
+        log_message(f"複数回の暗号化で結果が変化するか: {files_differ}")
+
+        results["encrypted_file"] = encrypted_file
+        results["key_file"] = os.path.join(test_output_dir, f"key_info_{TIMESTAMP}.json")
+        results["success"] = True
+
+        return results
+
+    except Exception as e:
+        log_message(f"改良実装での暗号化テストでエラーが発生しました: {e}")
+        import traceback
+        log_message(traceback.format_exc())
+        results["error"] = str(e)
+        results["traceback"] = traceback.format_exc()
+        return results
+
+def test_decryption_times(original_results, improved_results):
+    """復号処理の時間を計測"""
+    print_section_header("復号時間の比較", 2)
+
+    results = {
+        "success": False,
+        "original_true_time": 0,
+        "original_false_time": 0,
+        "improved_true_time": 0,
+        "improved_false_time": 0
+    }
+
+    try:
+        # 元の実装での復号時間
+        log_message("元の実装での復号テスト:")
+
+        for key_type in ["true", "false"]:
+            # 元の実装での復号
+            from method_8_homomorphic.homomorphic import PaillierCrypto
+
+            # 暗号化データを読み込み
+            with open(original_results["encrypted_file"], 'r') as f:
+                data = json.load(f)
+
+            # 鍵情報を読み込み
+            with open(original_results["key_file"], 'r') as f:
+                key_info = json.load(f)
+
+            # Paillier暗号の初期化
+            paillier = PaillierCrypto()
+            paillier.public_key = key_info["paillier_public_key"]
+            paillier.private_key = key_info["paillier_private_key"]
+
+            # 復号時間計測
+            start_time = time.time()
+
+            # 復号
+            chunks, mask_info = extract_by_key_type(data, key_type)
+
+            # シードからマスクを再生成
+            from method_8_homomorphic.crypto_mask import MaskFunctionGenerator
+            import base64
+
+            seed = base64.b64decode(mask_info["seed"])
+            mask_generator = MaskFunctionGenerator(paillier, seed)
+
+            # マスクを生成
+            if key_type == "true":
+                mask = key_info["true_mask"]
+            else:
+                mask = key_info["false_mask"]
+
+            # マスク除去
+            unmasked = mask_generator.remove_mask(chunks, mask)
+
+            # 復号
+            decrypted_int = paillier.decrypt(unmasked[0], paillier.private_key)
+
+            # 整数をバイト列に変換
+            byte_length = (decrypted_int.bit_length() + 7) // 8
+            decrypted_bytes = decrypted_int.to_bytes(byte_length, 'big')
+
+            try:
+                decoded = decrypted_bytes.decode('utf-8')
+            except:
+                decoded = None
+
+            decryption_time = time.time() - start_time
+
+            # 出力ファイルに保存
+            output_dir = os.path.dirname(original_results["encrypted_file"])
+            output_file = os.path.join(output_dir, f"decrypted_{key_type}_{TIMESTAMP}.txt")
+            with open(output_file, 'wb') as f:
+                f.write(decrypted_bytes)
+
+            log_message(f"  {key_type}キーでの復号時間: {decryption_time:.6f}秒")
+
+            if key_type == "true":
+                results["original_true_time"] = decryption_time
+            else:
+                results["original_false_time"] = decryption_time
+
+        # 改良実装での復号時間
+        log_message("改良実装での復号テスト:")
+
+        for key_type in ["true", "false"]:
+            # 改良実装での復号
+            start_time = time.time()
+
+            output_dir = os.path.dirname(improved_results["encrypted_file"])
+            output_file = os.path.join(output_dir, f"decrypted_{key_type}_{TIMESTAMP}.txt")
+
+            from method_8_homomorphic.indistinguishable_crypto import decrypt_file_with_key
+            decrypt_file_with_key(
+                improved_results["encrypted_file"], output_file, key_type=key_type,
+                key_file=improved_results["key_file"]
+            )
+
+            decryption_time = time.time() - start_time
+
+            log_message(f"  {key_type}キーでの復号時間: {decryption_time:.6f}秒")
+
+            if key_type == "true":
+                results["improved_true_time"] = decryption_time
+            else:
+                results["improved_false_time"] = decryption_time
+
+        results["success"] = True
+        return results
+
+    except Exception as e:
+        log_message(f"復号時間比較テストでエラーが発生しました: {e}")
+        import traceback
+        log_message(traceback.format_exc())
+        results["error"] = str(e)
+        results["traceback"] = traceback.format_exc()
+        return results
+
+def generate_comparative_charts(original_results, improved_results, timing_results):
+    """比較グラフを生成"""
+    print_section_header("比較グラフの生成", 2)
+
+    chart_results = {
+        "success": False,
+        "size_chart": "",
+        "time_chart": ""
+    }
+
+    try:
+        # 出力ディレクトリの確認
+        charts_dir = os.path.join(OUTPUT_DIR, "charts")
+        ensure_directory(charts_dir)
+
+        # ファイルサイズの比較
+        # テスト用ファイルのサイズ
+        true_file = original_results.get("true_file", os.path.join(OUTPUT_DIR, "secure_true.txt"))
+        false_file = original_results.get("false_file", os.path.join(OUTPUT_DIR, "secure_false.txt"))
+
+        with open(true_file, 'rb') as f:
+            true_size = len(f.read())
+
+        with open(false_file, 'rb') as f:
+            false_size = len(f.read())
+
+        # サイズデータ
+        sizes = [
+            true_size,
+            false_size,
+            original_results["file_size"],
+            improved_results["file_size"]
+        ]
+
+        labels = ["真のファイル", "偽のファイル", "元の暗号化", "改良後の暗号化"]
+
+        # ファイルサイズ比較グラフ
+        plt.figure(figsize=(10, 6))
+        plt.bar(labels, sizes, color=['green', 'blue', 'red', 'purple'])
+        plt.title('ファイルサイズの比較')
+        plt.ylabel('サイズ (バイト)')
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+        # データラベルを追加
+        for i, size in enumerate(sizes):
+            plt.text(i, size + 100, f"{size}B", ha='center')
+
+        plt.tight_layout()
+
+        # 保存（タイムスタンプ付き）
+        size_chart_file = os.path.join(charts_dir, f"file_size_comparison_{TIMESTAMP}.png")
+        plt.savefig(size_chart_file)
+        plt.close()
+
+        log_message(f"ファイルサイズ比較グラフを保存しました: {size_chart_file}")
+        chart_results["size_chart"] = size_chart_file
+
+        # 処理時間の比較
+        times = [
+            original_results["encryption_time"],
+            improved_results["encryption_time"],
+            timing_results["original_true_time"],
+            timing_results["original_false_time"],
+            timing_results["improved_true_time"],
+            timing_results["improved_false_time"]
+        ]
+
+        time_labels = [
+            "元の暗号化",
+            "改良後の暗号化",
+            "元の真復号",
+            "元の偽復号",
+            "改良後の真復号",
+            "改良後の偽復号"
+        ]
+
+        # 時間比較グラフ
+        plt.figure(figsize=(12, 6))
+        plt.bar(time_labels, times, color=['red', 'purple', 'green', 'blue', 'orange', 'cyan'])
+        plt.title('処理時間の比較')
+        plt.ylabel('時間 (秒)')
+        plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+        # データラベルを追加
+        for i, t in enumerate(times):
+            plt.text(i, t + 0.005, f"{t:.4f}秒", ha='center')
+
+        plt.tight_layout()
+
+        # 保存（タイムスタンプ付き）
+        time_chart_file = os.path.join(charts_dir, f"processing_time_comparison_{TIMESTAMP}.png")
+        plt.savefig(time_chart_file)
+        plt.close()
+
+        log_message(f"処理時間比較グラフを保存しました: {time_chart_file}")
+        chart_results["time_chart"] = time_chart_file
+        chart_results["success"] = True
+
+        return chart_results
+
+    except Exception as e:
+        log_message(f"比較グラフ生成でエラーが発生しました: {e}")
+        import traceback
+        log_message(traceback.format_exc())
+        chart_results["error"] = str(e)
+        chart_results["traceback"] = traceback.format_exc()
+        return chart_results
+
+def test_security_features_extended():
+    """拡張されたセキュリティ機能テスト（セキュリティ監査機能を統合）"""
+    print_section_header("拡張セキュリティテスト", 1)
+
+    results = {
+        "success": False,
+        "original": {},
+        "improved": {},
+        "timing": {},
+        "charts": {}
+    }
+
+    try:
+        # テスト用ファイルの生成
+        true_file, false_file = generate_test_files()
+        results["true_file"] = true_file
+        results["false_file"] = false_file
+
+        # 元の実装でのテスト
+        results["original"] = perform_original_encryption(true_file, false_file)
+
+        # 改良実装でのテスト
+        results["improved"] = perform_improved_encryption(true_file, false_file)
+
+        # 復号時間の比較
+        results["timing"] = test_decryption_times(results["original"], results["improved"])
+
+        # 比較グラフの生成
+        results["charts"] = generate_comparative_charts(results["original"], results["improved"], results["timing"])
+
+        # 暗号方式の比較表
+        print_section_header("暗号方式の比較表", 2)
+
+        # 表データ
+        comparison = [
+            ["項目", "元の実装", "改良後の実装"],
+            ["暗号化方式", "Paillier (加法準同型)", "Paillier (加法準同型)"],
+            ["識別子", "明示的 ('true'/'false')", "暗号化ハッシュによる難読化"],
+            ["チャンク順序", "固定", "ランダム化"],
+            ["マスク方式", "基本マスク関数", "高度マスク関数 (オプション)"],
+            ["暗号文の一貫性", "一貫（同一入力で同一出力）", "非一貫（同一入力で異なる出力）"],
+            ["ソース解析耐性", "低", "高"],
+            ["タイミング攻撃耐性", "低〜中", "中〜高"],
+            ["復号速度", "やや速い", "標準"]
+        ]
+
+        # 表の出力
+        for row in comparison:
+            log_message(f"| {' | '.join(row)} |")
+            if row[0] == "項目":
+                log_message(f"| {'-|' * (len(row) - 1)}- |")
+
+        results["comparison"] = comparison
+        results["success"] = (
+            results["original"].get("success", False) and
+            results["improved"].get("success", False) and
+            results["timing"].get("success", False) and
+            results["charts"].get("success", False)
+        )
+
+        return results
+
+    except Exception as e:
+        log_message(f"拡張セキュリティテストでエラーが発生しました: {e}")
+        import traceback
+        log_message(traceback.format_exc())
+        results["error"] = str(e)
+        results["traceback"] = traceback.format_exc()
+        return results
+
+#------------------------------------------------------------------------------
 # パフォーマンステスト
 #------------------------------------------------------------------------------
 

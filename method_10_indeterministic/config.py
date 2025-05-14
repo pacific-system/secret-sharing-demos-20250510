@@ -25,5 +25,23 @@ PROBABILITY_STEPS = 100    # 確率ステップ数
 OUTPUT_FORMAT = "indeterministic"
 OUTPUT_EXTENSION = ".indet"
 
+# 長大ファイル分割設定
+MAX_CHUNK_SIZE = 10 * 1024 * 1024  # 10MB: ファイル分割の最大チャンクサイズ
+FILE_THRESHOLD_SIZE = 50 * 1024 * 1024  # 50MB: この閾値を超えるとファイルを分割
+DEFAULT_CHUNK_COUNT = 5  # デフォルトのチャンク数（大きなファイルを何分割するか）
+
+# セキュリティ設定
+SECURE_MEMORY_WIPE = True  # メモリからの鍵情報を安全に消去
+ANTI_TAMPERING = True      # コード改変検知機能の有効化
+USE_DYNAMIC_THRESHOLD = True  # 動的判定閾値の使用
+RUNTIME_VERIFICATION = True  # 実行時検証の有効化
+INTEGRITY_CHECK_INTERVAL = 500  # 整合性チェックの間隔（ミリ秒）
+MAX_RETRY_COUNT = 3  # 処理失敗時の最大再試行回数
+
+# バックドア・バイパス防止設定
+ERROR_ON_SUSPICIOUS_BEHAVIOR = True  # 不審な動作を検出した場合にエラーを発生
+ENFORCE_PATH_ISOLATION = True  # 正規/非正規パス間の分離を強制
+PREVENT_OUTPUT_BYPASS = True  # 出力バイパスを防止
+
 # デバッグフラグ（本番では必ずFalseにする）
 DEBUG = False

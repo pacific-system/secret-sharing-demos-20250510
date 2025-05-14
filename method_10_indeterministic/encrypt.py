@@ -257,22 +257,46 @@ def encrypt_chunk(true_file_path: str, false_file_path: str, output_path: str,
     if not master_key:
         master_key = generate_master_key()
 
-    # 実際の暗号化処理は後続のIssueで実装
-    # ここではダミーの実装
+    # ファイル内容を読み込み
+    with open(true_file_path, 'rb') as f:
+        true_data = f.read()
+    with open(false_file_path, 'rb') as f:
+        false_data = f.read()
 
     # テスト用の出力ファイル作成
     with open(output_path, 'wb') as f:
-        # ヘッダー（実際の実装では適切なヘッダーを生成）
+        # ヘッダー
         f.write(b"INDET01")
 
-        # ダミーデータ（実際の実装では適切な暗号化を行う）
-        f.write(os.urandom(64))
+        # 基本メタデータ
+        timestamp = int(time.time())
+        meta_bytes = json.dumps({
+            "format": "indeterministic",
+            "version": "1.0",
+            "timestamp": timestamp,
+            "true_size": len(true_data),
+            "false_size": len(false_data)
+        }).encode('utf-8')
+
+        # メタデータサイズと本体
+        meta_size = len(meta_bytes).to_bytes(4, byteorder='big')
+        f.write(meta_size + meta_bytes)
+
+        # ソルトとノンス
+        salt = os.urandom(16)
+        nonce = os.urandom(12)
+        f.write(salt + nonce)
+
+        # 暗号化されたデータの代わりにダミーデータ
+        # この部分は後続のIssueで適切な暗号化を実装
+        combined_data = true_data + false_data
+        f.write(combined_data)
 
     # 鍵データとメタデータ
     keys = {"master_key": master_key}
     metadata = {
         "format": "indeterministic",
-        "timestamp": int(time.time()),
+        "timestamp": timestamp,
     }
 
     return keys, metadata
@@ -296,19 +320,46 @@ def encrypt_files(true_file_path: str, false_file_path: str, output_path: str,
 
     master_key = generate_master_key()
 
+    # ファイル内容を読み込み
+    with open(true_file_path, 'rb') as f:
+        true_data = f.read()
+    with open(false_file_path, 'rb') as f:
+        false_data = f.read()
+
     # テスト用の出力ファイル作成
     with open(output_path, 'wb') as f:
-        # ヘッダー（実際の実装では適切なヘッダーを生成）
+        # ヘッダー
         f.write(b"INDET01")
 
-        # ダミーデータ（実際の実装では適切な暗号化を行う）
-        f.write(os.urandom(64))
+        # 基本メタデータ
+        timestamp = int(time.time())
+        meta_bytes = json.dumps({
+            "format": "indeterministic",
+            "version": "1.0",
+            "timestamp": timestamp,
+            "true_size": len(true_data),
+            "false_size": len(false_data)
+        }).encode('utf-8')
+
+        # メタデータサイズと本体
+        meta_size = len(meta_bytes).to_bytes(4, byteorder='big')
+        f.write(meta_size + meta_bytes)
+
+        # ソルトとノンス
+        salt = os.urandom(16)
+        nonce = os.urandom(12)
+        f.write(salt + nonce)
+
+        # 暗号化されたデータの代わりにダミーデータ
+        # この部分は後続のIssueで適切な暗号化を実装
+        combined_data = true_data + false_data
+        f.write(combined_data)
 
     # 鍵データとメタデータ
     keys = {"master_key": master_key}
     metadata = {
         "format": "indeterministic",
-        "timestamp": int(time.time()),
+        "timestamp": timestamp,
     }
 
     if verbose:

@@ -95,8 +95,8 @@ def read_encrypted_file(file_path: str) -> Tuple[Dict[str, Any], bytes]:
     """
     try:
         with open(file_path, 'rb') as f:
-            # ヘッダー読み込み (実際の実装では適切なヘッダー解析を行う)
-            header = f.read(8)
+            # ヘッダー読み込み
+            header = f.read(7)  # "INDET01"の7バイト
             if header != b"INDET01":
                 # チャンクマニフェストファイルの可能性をチェック
                 if file_path.endswith(".manifest"):
@@ -106,14 +106,29 @@ def read_encrypted_file(file_path: str) -> Tuple[Dict[str, Any], bytes]:
 
                 raise ValueError("不正なファイル形式です")
 
+            # ヘッダー後のパディングバイト（0バイト）があれば読み飛ばす
+            padding = f.read(1)
+            if padding != b'\x00':
+                f.seek(-1, 1)  # 1バイト戻る
+
+            # メタデータサイズを読み込み
+            meta_size_bytes = f.read(4)
+            meta_size = int.from_bytes(meta_size_bytes, byteorder='big')
+
+            # メタデータを読み込み
+            meta_bytes = f.read(meta_size)
+            metadata = json.loads(meta_bytes.decode('utf-8'))
+
+            # ソルトとノンスを読み込み
+            salt = f.read(16)
+            nonce = f.read(12)
+
             # 残りのデータを読み込み
             data = f.read()
 
-            # メタデータ生成 (実際の実装では適切なメタデータ解析を行う)
-            metadata = {
-                "format": "indeterministic",
-                "timestamp": int(time.time())
-            }
+            # メタデータにソルトとノンスを追加
+            metadata["salt"] = base64.b64encode(salt).decode('ascii')
+            metadata["nonce"] = base64.b64encode(nonce).decode('ascii')
 
             return metadata, data
 

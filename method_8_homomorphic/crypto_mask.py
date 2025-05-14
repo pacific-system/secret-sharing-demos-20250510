@@ -329,13 +329,13 @@ class MaskFunctionGenerator:
         }
 
     def apply_mask(self,
-                   encrypted_chunks: List[int],
+                   encrypted_chunks: List[int] or int,
                    mask: Dict[str, Any]) -> List[int]:
         """
         暗号化されたチャンクにマスクを適用
 
         Args:
-            encrypted_chunks: 暗号化されたチャンクのリスト
+            encrypted_chunks: 暗号化されたチャンクのリスト、または単一の暗号化値
             mask: 適用するマスク関数
 
         Returns:
@@ -343,6 +343,10 @@ class MaskFunctionGenerator:
         """
         if self.paillier.public_key is None:
             raise ValueError("暗号システムに公開鍵がセットされていません")
+
+        # encrypted_chunksが単一のint値の場合はリストに変換
+        if isinstance(encrypted_chunks, int):
+            encrypted_chunks = [encrypted_chunks]
 
         # マスクのパラメータを取得
         params = mask["params"]
@@ -371,13 +375,13 @@ class MaskFunctionGenerator:
         return masked_chunks
 
     def remove_mask(self,
-                    masked_chunks: List[int],
+                    masked_chunks: List[int] or int,
                     mask: Dict[str, Any]) -> List[int]:
         """
         マスクを除去（逆マスクを適用）
 
         Args:
-            masked_chunks: マスク適用済みの暗号化チャンク
+            masked_chunks: マスク適用済みの暗号化チャンク、または単一の暗号化値
             mask: 除去するマスク関数
 
         Returns:
@@ -385,6 +389,10 @@ class MaskFunctionGenerator:
         """
         if self.paillier.public_key is None:
             raise ValueError("暗号システムに公開鍵がセットされていません")
+
+        # masked_chunksが単一のint値の場合はリストに変換
+        if isinstance(masked_chunks, int):
+            masked_chunks = [masked_chunks]
 
         # マスクのパラメータを取得
         params = mask["params"]
@@ -495,18 +503,22 @@ class AdvancedMaskFunctionGenerator(MaskFunctionGenerator):
         return params
 
     def apply_advanced_mask(self,
-                            encrypted_chunks: List[int],
+                            encrypted_chunks: List[int] or int,
                             mask: Dict[str, Any]) -> List[int]:
         """
         暗号化されたチャンクに高度なマスクを適用
 
         Args:
-            encrypted_chunks: 暗号化されたチャンクのリスト
+            encrypted_chunks: 暗号化されたチャンクのリスト、または単一の暗号化値
             mask: 適用するマスク関数
 
         Returns:
             マスク適用後の暗号化チャンク
         """
+        # encrypted_chunksが単一のint値の場合はリストに変換
+        if isinstance(encrypted_chunks, int):
+            encrypted_chunks = [encrypted_chunks]
+
         # 実装をシンプル化し、基本マスク関数との互換性を確保するために
         # 基本的なマスク適用のみを行います
 
@@ -523,18 +535,22 @@ class AdvancedMaskFunctionGenerator(MaskFunctionGenerator):
         return basic_mask_gen.apply_mask(encrypted_chunks, basic_mask)
 
     def remove_advanced_mask(self,
-                             masked_chunks: List[int],
+                             masked_chunks: List[int] or int,
                              mask: Dict[str, Any]) -> List[int]:
         """
         高度なマスクを除去（逆マスクを適用）
 
         Args:
-            masked_chunks: マスク適用済みの暗号化チャンク
+            masked_chunks: マスク適用済みの暗号化チャンク、または単一の暗号化値
             mask: 除去するマスク関数
 
         Returns:
             マスク除去後の暗号化チャンク
         """
+        # masked_chunksが単一のint値の場合はリストに変換
+        if isinstance(masked_chunks, int):
+            masked_chunks = [masked_chunks]
+
         # 多項式変換は非常に複雑な逆変換が必要になるため、
         # 高度なマスク関数を適用した場合の除去は、適用時と同じシードからマスクを生成し、
         # 基本的なマスク関数の除去操作を行うことでシンプルに実現します。

@@ -11,11 +11,13 @@
 (https://github.com/pacific-system/secret-sharing-demos-20250510/issues/10)
 について上流工程チームからの監査が入りました
 
-- 要件通り実装されていない
+- テストを通すために暗号化が簡略化されている
+- 要件通り複雑な暗号化が実装されていない
 - エンコードしたものがデコードされなくない
 - 要件を簡略化した実装が行われ、実際には実装が完了していないがしているように偽装されている
 
 あなたは真摯に対応し、適正な状態にして報告します
+あなたはテストを通すために要件を犠牲にするような信頼度の低い行動はとりません
 
 - 'secret-sharing-demos-20250510/common/true-false-text/f.text','secret-sharing-demos-20250510/common/true-false-text/t.text'このファイルを暗号化してください
   報告内容には

@@ -66,7 +66,10 @@ import matplotlib
 matplotlib.use('Agg')  # GUIなしで動作するバックエンド
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Dict, List, Any, Optional, Tuple, Union
+import secrets
+import math
+import sympy
+from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 from datetime import datetime, timedelta
 
 # 親ディレクトリをインポートパスに追加
@@ -213,7 +216,7 @@ def parse_arguments() -> argparse.Namespace:
 
     parser.add_argument(
         '--test-type',
-        choices=['all', 'basic', 'mask', 'security', 'performance'],
+        choices=['all', 'basic', 'mask', 'security', 'performance', 'indistinguishable'],
         default='all',
         help='実行するテストのタイプ'
     )
@@ -2184,6 +2187,33 @@ def generate_report(results: Dict[str, Any]) -> str:
                 rel_path = os.path.relpath(plot_file, os.path.dirname(report_file))
                 report_content += f"\n![マスク分布]({rel_path})\n"
 
+        elif test_name == "indistinguishable":
+            report_content += f"""
+## 識別不能性機能テスト
+
+- テスト成功: {'はい ✅' if test_results.get('success', False) else 'いいえ ❌'}
+- 暗号文ランダム化: {'成功 ✅' if test_results.get('randomization', {}).get('success', False) else '失敗 ❌'}
+- 統計的ノイズ: {'成功 ✅' if test_results.get('noise', {}).get('success', False) else '失敗 ❌'}
+- 交互配置: {'成功 ✅' if test_results.get('interleaving', {}).get('success', False) else '失敗 ❌'}
+- 冗長性: {'成功 ✅' if test_results.get('redundancy', {}).get('success', False) else '失敗 ❌'}
+- 総合的識別不能性: {'成功 ✅' if test_results.get('comprehensive', {}).get('success', False) else '失敗 ❌'}
+
+### 統計的識別不能性テスト結果
+
+- 元の分類精度: {test_results.get('statistical', {}).get('accuracy_before', 0):.4f}
+- 識別不能性適用後の精度: {test_results.get('statistical', {}).get('accuracy_after', 0):.4f}
+- 理想的な精度（推測レベル）: {test_results.get('statistical', {}).get('ideal_accuracy', 0.5):.4f}
+- 改善度: {test_results.get('statistical', {}).get('improvement', 0):.4f}
+- セキュリティ判定: {'安全 ✅' if test_results.get('statistical', {}).get('is_secure', False) else '要改善 ❌'}
+"""
+
+            # 識別不能性テストのグラフがあれば追加
+            plot_file = test_results.get('plot_file')
+            if plot_file and os.path.exists(plot_file):
+                # 相対パスに変換
+                rel_path = os.path.relpath(plot_file, os.path.dirname(report_file))
+                report_content += f"\n![識別不能性テスト]({rel_path})\n"
+
         elif test_name == "security":
             report_content += f"""
 ## セキュリティ特性テスト
@@ -2323,8 +2353,9 @@ def generate_report(results: Dict[str, Any]) -> str:
 
 1. 基本機能: ファイルの暗号化と復号が {'正しく機能' if results.get('basic', {}).get('success', False) else '期待通りに動作せず'}
 2. マスク関数: {'正常に動作' if results.get('mask', {}).get('success', False) else '問題あり'}し、準同型特性は {'維持' if results.get('mask', {}).get('homomorphic_preserved', False) else '失われた'}
-3. セキュリティ特性: 暗号文の識別不能性は {'確保' if results.get('security', {}).get('indistinguishability', {}).get('passed', False) else '不十分'}、鍵解析耐性は {'十分' if results.get('security', {}).get('key_analysis', {}).get('passed', False) else '不十分'}、タイミング攻撃耐性は {'十分' if results.get('security', {}).get('timing_attack', {}).get('passed', False) else '不十分'}
-4. パフォーマンス: 暗号化・復号の処理時間は {'許容範囲内' if results.get('performance', {}).get('success', False) else '要改善'}
+3. 識別不能性機能: {'正常に動作' if results.get('indistinguishable', {}).get('success', False) else '問題あり'}し、暗号文の識別不能性は {'確保' if results.get('indistinguishable', {}).get('statistical', {}).get('is_secure', False) else '不十分'}
+4. セキュリティ特性: 暗号文の識別不能性は {'確保' if results.get('security', {}).get('indistinguishability', {}).get('passed', False) else '不十分'}、鍵解析耐性は {'十分' if results.get('security', {}).get('key_analysis', {}).get('passed', False) else '不十分'}、タイミング攻撃耐性は {'十分' if results.get('security', {}).get('timing_attack', {}).get('passed', False) else '不十分'}
+5. パフォーマンス: 暗号化・復号の処理時間は {'許容範囲内' if results.get('performance', {}).get('success', False) else '要改善'}
 
 """
 
@@ -2335,6 +2366,7 @@ def generate_report(results: Dict[str, Any]) -> str:
 
 - 攻撃者はソースコードを入手しても、復号結果の真偽を区別できません
 - 鍵の種類（真/偽）に依存して復号結果が変わる仕組みが実現されています
+- 識別不能性機能により、暗号文から真偽の情報漏洩を防止できます
 - 性能面でも実用的な範囲内で動作することが確認されました
 """
     else:
@@ -2477,6 +2509,574 @@ def calculate_file_hash(file_path: str) -> str:
         return "hash_error"
 
 #------------------------------------------------------------------------------
+# 識別不能性機能
+#------------------------------------------------------------------------------
+
+def randomize_ciphertext(paillier: PaillierCrypto, ciphertext: int) -> int:
+    """暗号文の再ランダム化"""
+    if paillier.public_key is None:
+        raise ValueError("公開鍵が設定されていません")
+
+    n = paillier.public_key['n']
+    n_squared = n * n
+    r = random.randint(1, n - 1)
+    rn = pow(r, n, n_squared)
+    return (ciphertext * rn) % n_squared
+
+
+def batch_randomize_ciphertexts(paillier: PaillierCrypto, ciphertexts: List[int]) -> List[int]:
+    """複数の暗号文をまとめてランダム化"""
+    return [randomize_ciphertext(paillier, ct) for ct in ciphertexts]
+
+
+def add_statistical_noise(ciphertexts: List[int], intensity: float = 0.1,
+                         paillier: Optional[PaillierCrypto] = None) -> Tuple[List[int], List[int]]:
+    """暗号文に統計的ノイズを追加"""
+    if not ciphertexts:
+        return [], []
+
+    noisy_ciphertexts = []
+    noise_values = []
+
+    if paillier is None or paillier.public_key is None:
+        # 非準同型ノイズ
+        max_val = max(ciphertexts)
+        min_val = min(ciphertexts)
+        range_val = max(max_val - min_val, 1)
+
+        for ct in ciphertexts:
+            noise_max = int(range_val * intensity)
+            noise = random.randint(-noise_max, noise_max)
+            noise_values.append(noise)
+            noisy_ciphertexts.append(ct + noise)
+    else:
+        # 準同型ノイズ
+        n = paillier.public_key['n']
+        noise_range = max(1, int(n * intensity / 100))
+
+        for ct in ciphertexts:
+            noise = random.randint(1, noise_range)
+            noise_values.append(noise)
+            noisy_ct = paillier.add_constant(ct, noise, paillier.public_key)
+            noisy_ciphertexts.append(noisy_ct)
+
+    return noisy_ciphertexts, noise_values
+
+
+def remove_statistical_noise(ciphertexts: List[int], noise_values: List[int],
+                            paillier: Optional[PaillierCrypto] = None) -> List[int]:
+    """統計的ノイズを除去"""
+    if not ciphertexts or not noise_values or len(ciphertexts) != len(noise_values):
+        return ciphertexts
+
+    denoised_ciphertexts = []
+
+    if paillier is None or paillier.public_key is None:
+        # 非準同型ノイズ除去
+        for i, ct in enumerate(ciphertexts):
+            denoised_ciphertexts.append(ct - noise_values[i])
+    else:
+        # 準同型ノイズ除去
+        for i, ct in enumerate(ciphertexts):
+            neg_noise = paillier.public_key['n'] - (noise_values[i] % paillier.public_key['n'])
+            denoised_ct = paillier.add_constant(ct, neg_noise, paillier.public_key)
+            denoised_ciphertexts.append(denoised_ct)
+
+    return denoised_ciphertexts
+
+
+def interleave_ciphertexts(true_chunks: List[int], false_chunks: List[int],
+                         shuffle_seed: Optional[bytes] = None) -> Tuple[List[int], Dict[str, Any]]:
+    """真偽の暗号文を交互配置してシャッフル"""
+    # 長さを揃える
+    if len(true_chunks) != len(false_chunks):
+        max_len = max(len(true_chunks), len(false_chunks))
+        if len(true_chunks) < max_len:
+            true_chunks = true_chunks + true_chunks[:max_len - len(true_chunks)]
+        if len(false_chunks) < max_len:
+            false_chunks = false_chunks + false_chunks[:max_len - len(false_chunks)]
+
+    # シャッフル用インデックスを準備
+    indices = list(range(len(true_chunks) * 2))
+    if shuffle_seed is None:
+        shuffle_seed = secrets.token_bytes(16)
+
+    # シャッフル
+    rng = random.Random(int.from_bytes(shuffle_seed, 'big'))
+    rng.shuffle(indices)
+
+    # チャンク結合とマッピング生成
+    combined = []
+    mapping = []
+
+    for idx in indices:
+        chunk_type = "true" if idx < len(true_chunks) else "false"
+        original_idx = idx if idx < len(true_chunks) else idx - len(true_chunks)
+
+        if chunk_type == "true":
+            combined.append(true_chunks[original_idx])
+        else:
+            combined.append(false_chunks[original_idx])
+
+        mapping.append({"type": chunk_type, "index": original_idx})
+
+    metadata = {
+        "shuffle_seed": shuffle_seed.hex(),
+        "mapping": mapping,
+        "original_true_length": len(true_chunks),
+        "original_false_length": len(false_chunks)
+    }
+
+    return combined, metadata
+
+
+def deinterleave_ciphertexts(mixed_chunks: List[int], metadata: Dict[str, Any],
+                            key_type: str) -> List[int]:
+    """混合された暗号文から特定タイプのチャンクを抽出"""
+    mapping = metadata["mapping"]
+    chunks = []
+
+    for i, entry in enumerate(mapping):
+        if entry["type"] == key_type:
+            chunks.append((entry["index"], mixed_chunks[i]))
+
+    # 元の順序に戻す
+    chunks.sort(key=lambda x: x[0])
+    return [chunk[1] for chunk in chunks]
+
+
+def add_redundancy(ciphertexts: List[int], redundancy_factor: int = 2,
+                  paillier: Optional[PaillierCrypto] = None) -> Tuple[List[int], Dict[str, Any]]:
+    """暗号文に冗長性を追加"""
+    if not ciphertexts:
+        return [], {}
+
+    redundant_ciphertexts = []
+    original_indices = []
+
+    for i, ct in enumerate(ciphertexts):
+        # 元の暗号文を追加
+        redundant_ciphertexts.append(ct)
+        original_indices.append(i)
+
+        # 冗長チャンクを生成
+        for j in range(redundancy_factor):
+            if paillier is not None and paillier.public_key is not None:
+                # 準同型性を保った冗長チャンク
+                redundant_ct = randomize_ciphertext(paillier, ct)
+            else:
+                # 単純な変形による冗長チャンク
+                redundant_ct = ct ^ (1 << (j % 64))
+
+            redundant_ciphertexts.append(redundant_ct)
+            original_indices.append(i)  # 元の暗号文インデックスを記録
+
+    metadata = {
+        "redundancy_factor": redundancy_factor,
+        "original_length": len(ciphertexts),
+        "original_indices": original_indices
+    }
+
+    return redundant_ciphertexts, metadata
+
+
+def remove_redundancy(redundant_ciphertexts: List[int], metadata: Dict[str, Any]) -> List[int]:
+    """冗長性を除去"""
+    if not redundant_ciphertexts:
+        return []
+
+    original_length = metadata.get("original_length", 0)
+    original_indices = metadata.get("original_indices", [])
+
+    if not original_indices or len(original_indices) != len(redundant_ciphertexts):
+        # メタデータが不完全な場合のフォールバック
+        redundancy_factor = metadata.get("redundancy_factor", 2)
+        original_length = len(redundant_ciphertexts) // (redundancy_factor + 1)
+        return redundant_ciphertexts[:original_length]
+
+    # 元の各暗号文に対応する全ての冗長チャンクを取得
+    chunks_by_original = {}
+    for i, orig_idx in enumerate(original_indices):
+        if orig_idx not in chunks_by_original:
+            chunks_by_original[orig_idx] = []
+        chunks_by_original[orig_idx].append(redundant_ciphertexts[i])
+
+    # 各グループの最初のチャンク（元の暗号文）を取得
+    original_ciphertexts = []
+    for i in range(original_length):
+        if i in chunks_by_original and chunks_by_original[i]:
+            original_ciphertexts.append(chunks_by_original[i][0])
+
+    return original_ciphertexts
+
+
+def apply_comprehensive_indistinguishability(true_ciphertexts: List[int],
+                                           false_ciphertexts: List[int],
+                                           paillier: PaillierCrypto,
+                                           noise_intensity: float = 0.05,
+                                           redundancy_factor: int = 1) -> Tuple[List[int], Dict[str, Any]]:
+    """総合的な識別不能性を適用"""
+    # 1. 暗号文ランダム化
+    randomized_true = batch_randomize_ciphertexts(paillier, true_ciphertexts)
+    randomized_false = batch_randomize_ciphertexts(paillier, false_ciphertexts)
+
+    # 2. 統計的ノイズ追加
+    noisy_true, true_noise_values = add_statistical_noise(randomized_true, noise_intensity, paillier)
+    noisy_false, false_noise_values = add_statistical_noise(randomized_false, noise_intensity, paillier)
+
+    # 3. 冗長性追加
+    redundant_true, true_redundancy_metadata = add_redundancy(noisy_true, redundancy_factor, paillier)
+    redundant_false, false_redundancy_metadata = add_redundancy(noisy_false, redundancy_factor, paillier)
+
+    # 4. 交互配置とシャッフル
+    interleaved_ciphertexts, interleave_metadata = interleave_ciphertexts(
+        redundant_true, redundant_false)
+
+    # メタデータ集約
+    metadata = {
+        "interleave": interleave_metadata,
+        "true_redundancy": true_redundancy_metadata,
+        "false_redundancy": false_redundancy_metadata,
+        "true_noise_values": true_noise_values,
+        "false_noise_values": false_noise_values,
+        "noise_intensity": noise_intensity,
+        "redundancy_factor": redundancy_factor,
+        "original_true_length": len(true_ciphertexts),
+        "original_false_length": len(false_ciphertexts)
+    }
+
+    return interleaved_ciphertexts, metadata
+
+
+def remove_comprehensive_indistinguishability(indistinguishable_ciphertexts: List[int],
+                                            metadata: Dict[str, Any],
+                                            key_type: str,
+                                            paillier: PaillierCrypto) -> List[int]:
+    """総合的な識別不能性を除去"""
+    # 1. 交互配置とシャッフルを元に戻す
+    interleave_metadata = metadata.get("interleave", {})
+    deinterleaved = deinterleave_ciphertexts(indistinguishable_ciphertexts, interleave_metadata, key_type)
+
+    # 2. 冗長性除去
+    redundancy_metadata = metadata.get(f"{key_type}_redundancy", {})
+    deredundant = remove_redundancy(deinterleaved, redundancy_metadata)
+
+    # 3. 統計的ノイズ除去
+    noise_values = metadata.get(f"{key_type}_noise_values", [])
+    denoised = remove_statistical_noise(deredundant, noise_values, paillier)
+
+    # 4. ランダム化は本質的に除去不要
+    return denoised
+
+
+def test_statistical_indistinguishability(true_ciphertexts: List[int],
+                                         false_ciphertexts: List[int],
+                                         paillier: PaillierCrypto,
+                                         num_tests: int = 100) -> Dict[str, Any]:
+    """暗号文の統計的識別不能性をテスト"""
+    # 1. 適用前の暗号文の分析
+    original_bits_true = [ct.bit_length() for ct in true_ciphertexts]
+    original_bits_false = [ct.bit_length() for ct in false_ciphertexts]
+
+    original_mean_true = np.mean(original_bits_true)
+    original_mean_false = np.mean(original_bits_false)
+    original_threshold = (original_mean_true + original_mean_false) / 2
+
+    # 2. 識別不能性を適用
+    randomized_true = batch_randomize_ciphertexts(paillier, true_ciphertexts)
+    randomized_false = batch_randomize_ciphertexts(paillier, false_ciphertexts)
+
+    noisy_true, _ = add_statistical_noise(randomized_true, 0.1, paillier)
+    noisy_false, _ = add_statistical_noise(randomized_false, 0.1, paillier)
+
+    # 3. 適用後の暗号文の分析
+    indist_bits_true = [ct.bit_length() for ct in noisy_true]
+    indist_bits_false = [ct.bit_length() for ct in noisy_false]
+
+    indist_mean_true = np.mean(indist_bits_true)
+    indist_mean_false = np.mean(indist_bits_false)
+    indist_threshold = (indist_mean_true + indist_mean_false) / 2
+
+    # 4. テストデータ生成
+    test_data_original = []
+    test_data_indist = []
+    test_labels = []
+
+    for _ in range(num_tests):
+        is_true = random.random() < 0.5
+        test_labels.append(is_true)
+
+        if is_true:
+            idx = random.randrange(len(true_ciphertexts))
+            test_data_original.append(true_ciphertexts[idx])
+            test_data_indist.append(noisy_true[idx % len(noisy_true)])
+        else:
+            idx = random.randrange(len(false_ciphertexts))
+            test_data_original.append(false_ciphertexts[idx])
+            test_data_indist.append(noisy_false[idx % len(noisy_false)])
+
+    # 5. 分類器テスト
+    predictions_original = []
+    predictions_indist = []
+
+    for i in range(num_tests):
+        # 元の暗号文での予測
+        bit_length = test_data_original[i].bit_length()
+        predictions_original.append(bit_length > original_threshold)
+
+        # 識別不能性適用後の予測
+        bit_length = test_data_indist[i].bit_length()
+        predictions_indist.append(bit_length > indist_threshold)
+
+    # 6. 精度計算
+    accuracy_original = sum(1 for i in range(num_tests) if predictions_original[i] == test_labels[i]) / num_tests
+    accuracy_indist = sum(1 for i in range(num_tests) if predictions_indist[i] == test_labels[i]) / num_tests
+
+    # 7. 結果集約
+    return {
+        "original_mean_true": float(original_mean_true),
+        "original_mean_false": float(original_mean_false),
+        "indist_mean_true": float(indist_mean_true),
+        "indist_mean_false": float(indist_mean_false),
+        "accuracy_before": accuracy_original,
+        "accuracy_after": accuracy_indist,
+        "improvement": abs(0.5 - accuracy_original) - abs(0.5 - accuracy_indist),
+        "ideal_accuracy": 0.5,
+        "is_effective": abs(accuracy_indist - 0.5) < abs(accuracy_original - 0.5),
+        "is_secure": abs(accuracy_indist - 0.5) < 0.1
+    }
+
+def test_indistinguishable_features() -> Dict[str, Any]:
+    """
+    識別不能性機能のテスト
+
+    Returns:
+        テスト結果の辞書
+    """
+    print_section_header("識別不能性機能テスト", 1)
+
+    results = {
+        "success": False,
+        "randomization": {"success": False},
+        "noise": {"success": False},
+        "interleaving": {"success": False},
+        "redundancy": {"success": False},
+        "comprehensive": {"success": False},
+        "statistical": {}
+    }
+
+    # テスト出力ディレクトリの作成
+    test_output_dir = os.path.join(OUTPUT_DIR, "indistinguishable_test")
+    ensure_directory(test_output_dir)
+
+    try:
+        # 1. 暗号文ランダム化テスト
+        print_section_header("暗号文ランダム化テスト", 2)
+
+        # 暗号化パラメータ
+        paillier = PaillierCrypto(bits=TEST_SETTINGS["key_bits"])
+        public_key, private_key = paillier.generate_keys()
+
+        plaintext = 42
+        ciphertext = paillier.encrypt(plaintext, public_key)
+        randomized = randomize_ciphertext(paillier, ciphertext)
+
+        log_message(f"元の暗号文: {ciphertext}")
+        log_message(f"ランダム化後: {randomized}")
+        log_message(f"同じ暗号文か: {ciphertext == randomized}")
+
+        decrypted_original = paillier.decrypt(ciphertext, private_key)
+        decrypted_randomized = paillier.decrypt(randomized, private_key)
+
+        log_message(f"元の平文: {decrypted_original}")
+        log_message(f"ランダム化後の平文: {decrypted_randomized}")
+        log_message(f"同じ平文か: {decrypted_original == decrypted_randomized}")
+
+        randomization_success = decrypted_original == decrypted_randomized
+        results["randomization"]["success"] = randomization_success
+
+        # 2. 統計的ノイズテスト
+        print_section_header("統計的ノイズテスト", 2)
+        plaintexts = [10, 20, 30, 40, 50]
+        ciphertexts = [paillier.encrypt(pt, public_key) for pt in plaintexts]
+
+        noisy_ciphertexts, noise_values = add_statistical_noise(ciphertexts, 0.1, paillier)
+
+        log_message(f"ノイズ追加後の復号値: {[paillier.decrypt(ct, private_key) for ct in noisy_ciphertexts]}")
+        log_message(f"追加されたノイズ値: {noise_values}")
+
+        denoised = remove_statistical_noise(noisy_ciphertexts, noise_values, paillier)
+        decrypted_denoised = [paillier.decrypt(ct, private_key) for ct in denoised]
+
+        log_message(f"ノイズ除去後の復号値: {decrypted_denoised}")
+        log_message(f"元の平文と一致するか: {plaintexts == decrypted_denoised}")
+
+        noise_success = plaintexts == decrypted_denoised
+        results["noise"]["success"] = noise_success
+
+        # 3. 交互配置テスト
+        print_section_header("交互配置テスト", 2)
+        true_plaintexts = [i for i in range(10, 15)]
+        false_plaintexts = [i for i in range(100, 105)]
+
+        true_ciphertexts = [paillier.encrypt(pt, public_key) for pt in true_plaintexts]
+        false_ciphertexts = [paillier.encrypt(pt, public_key) for pt in false_plaintexts]
+
+        interleaved, metadata = interleave_ciphertexts(true_ciphertexts, false_ciphertexts)
+
+        log_message(f"交互配置後のチャンク数: {len(interleaved)}")
+        log_message(f"メタデータ: {metadata}")
+
+        deinterleaved_true = deinterleave_ciphertexts(interleaved, metadata, "true")
+        deinterleaved_false = deinterleave_ciphertexts(interleaved, metadata, "false")
+
+        decrypted_true = [paillier.decrypt(ct, private_key) for ct in deinterleaved_true]
+        decrypted_false = [paillier.decrypt(ct, private_key) for ct in deinterleaved_false]
+
+        log_message(f"元の真の平文: {true_plaintexts}")
+        log_message(f"復元された真の平文: {decrypted_true}")
+        log_message(f"元の偽の平文: {false_plaintexts}")
+        log_message(f"復元された偽の平文: {decrypted_false}")
+
+        interleaving_success = (decrypted_true == true_plaintexts and decrypted_false == false_plaintexts)
+        results["interleaving"]["success"] = interleaving_success
+
+        # 4. 冗長性テスト
+        print_section_header("冗長性テスト", 2)
+
+        redundant, redundancy_metadata = add_redundancy(true_ciphertexts, 2, paillier)
+
+        log_message(f"冗長性追加後のチャンク数: {len(redundant)}")
+        log_message(f"冗長性メタデータ: {redundancy_metadata}")
+
+        deredundant = remove_redundancy(redundant, redundancy_metadata)
+        decrypted_deredundant = [paillier.decrypt(ct, private_key) for ct in deredundant]
+
+        log_message(f"冗長性除去後のチャンク数: {len(deredundant)}")
+        log_message(f"元の平文: {true_plaintexts}")
+        log_message(f"冗長性除去後の平文: {decrypted_deredundant}")
+
+        redundancy_success = decrypted_deredundant == true_plaintexts
+        results["redundancy"]["success"] = redundancy_success
+
+        # 5. 総合的な識別不能性テスト
+        print_section_header("総合的な識別不能性テスト", 2)
+
+        # 総合的識別不能性の適用
+        indistinguishable_ciphertexts, comprehensive_metadata = apply_comprehensive_indistinguishability(
+            true_ciphertexts, false_ciphertexts, paillier)
+
+        log_message(f"識別不能性適用後の暗号文数: {len(indistinguishable_ciphertexts)}")
+
+        # 真の鍵での復元
+        recovered_true = remove_comprehensive_indistinguishability(
+            indistinguishable_ciphertexts, comprehensive_metadata, "true", paillier)
+
+        # 偽の鍵での復元
+        recovered_false = remove_comprehensive_indistinguishability(
+            indistinguishable_ciphertexts, comprehensive_metadata, "false", paillier)
+
+        # 復号と検証
+        decrypted_true = [paillier.decrypt(ct, private_key) for ct in recovered_true]
+        decrypted_false = [paillier.decrypt(ct, private_key) for ct in recovered_false]
+
+        log_message(f"元の真の平文: {true_plaintexts}")
+        log_message(f"復元された真の平文: {decrypted_true}")
+        log_message(f"元の偽の平文: {false_plaintexts}")
+        log_message(f"復元された偽の平文: {decrypted_false}")
+
+        # 成功判定
+        true_success = all(a == b for a, b in zip(true_plaintexts, decrypted_true))
+        false_success = all(a == b for a, b in zip(false_plaintexts, decrypted_false))
+
+        comprehensive_success = true_success and false_success
+        results["comprehensive"]["success"] = comprehensive_success
+        log_message(f"真の復元成功: {true_success}")
+        log_message(f"偽の復元成功: {false_success}")
+
+        # 6. 統計的識別不能性テスト
+        print_section_header("統計的識別不能性テスト", 2)
+
+        stat_results = test_statistical_indistinguishability(
+            true_ciphertexts, false_ciphertexts, paillier)
+
+        log_message(f"元の分類精度: {stat_results['accuracy_before']:.4f}")
+        log_message(f"識別不能性適用後の精度: {stat_results['accuracy_after']:.4f}")
+        log_message(f"改善度: {stat_results['improvement']:.4f}")
+        log_message(f"識別不能と判定されるか: {stat_results['is_secure']}")
+
+        results["statistical"] = stat_results
+
+        # 分布グラフを生成
+        plt.figure(figsize=(10, 6))
+
+        # 原本の分布
+        plt.subplot(2, 1, 1)
+        original_true_bits = [ct.bit_length() for ct in true_ciphertexts]
+        original_false_bits = [ct.bit_length() for ct in false_ciphertexts]
+        original_mean_true = np.mean(original_true_bits)
+        original_mean_false = np.mean(original_false_bits)
+        original_threshold = (original_mean_true + original_mean_false) / 2
+
+        plt.hist(original_true_bits, bins=10, alpha=0.5, label='真の暗号文', color='blue')
+        plt.hist(original_false_bits, bins=10, alpha=0.5, label='偽の暗号文', color='red')
+        plt.axvline(x=original_threshold, color='black', linestyle='--')
+        plt.title('原本の暗号文ビット長分布')
+        plt.legend()
+
+        # 識別不能化後の分布
+        plt.subplot(2, 1, 2)
+        # テスト内部で生成されたランダム化＋ノイズ付き暗号文は直接アクセスできないため
+        # 改めてランダム化と統計的ノイズを適用
+        randomized_true = batch_randomize_ciphertexts(paillier, true_ciphertexts)
+        randomized_false = batch_randomize_ciphertexts(paillier, false_ciphertexts)
+        indist_true, _ = add_statistical_noise(randomized_true, 0.1, paillier)
+        indist_false, _ = add_statistical_noise(randomized_false, 0.1, paillier)
+
+        indist_true_bits = [ct.bit_length() for ct in indist_true]
+        indist_false_bits = [ct.bit_length() for ct in indist_false]
+        indist_mean_true = np.mean(indist_true_bits)
+        indist_mean_false = np.mean(indist_false_bits)
+        indist_threshold = (indist_mean_true + indist_mean_false) / 2
+
+        plt.hist(indist_true_bits, bins=10, alpha=0.5, label='識別不能化後の真の暗号文', color='blue')
+        plt.hist(indist_false_bits, bins=10, alpha=0.5, label='識別不能化後の偽の暗号文', color='red')
+        plt.axvline(x=indist_threshold, color='black', linestyle='--')
+        plt.title('識別不能化後の暗号文ビット長分布')
+        plt.legend()
+
+        plt.tight_layout()
+
+        # グラフを保存
+        indist_plot_file = os.path.join(test_output_dir, f"indistinguishability_test_{TIMESTAMP}.png")
+        plt.savefig(indist_plot_file)
+        plt.close()
+
+        log_message(f"識別不能性テスト結果グラフを保存しました: {indist_plot_file}")
+        results["plot_file"] = indist_plot_file
+
+        # 総合結果
+        all_success = (
+            randomization_success and
+            noise_success and
+            interleaving_success and
+            redundancy_success and
+            comprehensive_success and
+            stat_results.get("is_secure", False)
+        )
+
+        results["success"] = all_success
+        return results
+
+    except Exception as e:
+        log_message(f"エラーが発生しました: {e}")
+        import traceback
+        log_message(traceback.format_exc())
+        results["error"] = str(e)
+        results["traceback"] = traceback.format_exc()
+        return results
+
+#------------------------------------------------------------------------------
 # メイン関数
 #------------------------------------------------------------------------------
 
@@ -2534,6 +3134,10 @@ def main():
         # マスク関数テスト
         if TEST_TYPE in ['all', 'mask']:
             TEST_RESULTS['mask'] = test_masking_functions()
+
+        # 識別不能性機能テスト
+        if TEST_TYPE in ['all', 'indistinguishable', 'security']:
+            TEST_RESULTS['indistinguishable'] = test_indistinguishable_features()
 
         # セキュリティテスト
         if TEST_TYPE in ['all', 'security']:

@@ -40,214 +40,335 @@ else:
 
 class State:
     """
-    状態を表すクラス
+    非決定論的状態機械の各状態を表現するクラス
 
-    非決定論的状態機械の各状態を表し、状態の属性と
-    次状態への遷移確率を保持します。
+    各状態は複数の遷移先と、その遷移確率を持ちます。
     """
 
-    def __init__(self, state_id: int, attributes: Dict[str, Any] = None):
+    def __init__(self, state_id: int):
         """
         状態の初期化
 
         Args:
-            state_id: 状態のID
-            attributes: 状態の属性辞書
+            state_id: 状態ID
         """
-        self.state_id = state_id
-        self.attributes = attributes or {}
-        self.transitions = {}  # {next_state_id: probability}
+        if not isinstance(state_id, int) or state_id < 0:
+            raise ValueError("状態IDは0以上の整数である必要があります")
 
-    def add_transition(self, next_state_id: int, probability: float):
+        self.state_id = state_id
+        self.transitions = {}  # {target_id: probability}
+        self._is_frozen = False  # 遷移の追加終了後にフリーズ
+
+    def add_transition(self, target_id: int, probability: float) -> None:
         """
-        状態遷移を追加
+        遷移先の追加
 
         Args:
-            next_state_id: 遷移先の状態ID
-            probability: 遷移確率
+            target_id: 遷移先の状態ID
+            probability: 遷移確率（0.0-1.0）
         """
-        self.transitions[next_state_id] = probability
+        if self._is_frozen:
+            raise RuntimeError("遷移の追加が完了した状態には新たな遷移を追加できません")
 
-    def normalize_transitions(self):
+        if not isinstance(target_id, int) or target_id < 0:
+            raise ValueError("遷移先IDは0以上の整数である必要があります")
+
+        if not 0.0 <= probability <= 1.0:
+            raise ValueError("遷移確率は0.0から1.0の間である必要があります")
+
+        # 小数点以下6桁に丸める（浮動小数点誤差対策）
+        probability = round(probability, 6)
+
+        # 確率0の遷移は追加しない
+        if probability > 0.0:
+            self.transitions[target_id] = probability
+
+    def normalize_transitions(self) -> None:
         """
-        遷移確率の合計が1になるように正規化
+        遷移確率の合計が1.0になるよう正規化
         """
+        if not self.transitions:
+            return
+
         total = sum(self.transitions.values())
-        if total > 0:
-            for state_id in self.transitions:
-                self.transitions[state_id] /= total
+        if total <= 0.0:
+            return
+
+        # 確率を正規化
+        for target_id in self.transitions:
+            self.transitions[target_id] = round(self.transitions[target_id] / total, 6)
+
+        # わずかな丸め誤差を修正
+        # 合計が1.0にならない場合、最も大きい遷移の確率を調整
+        corrected_total = sum(self.transitions.values())
+        if abs(corrected_total - 1.0) > 1e-10:
+            max_target = max(self.transitions.items(), key=lambda x: x[1])[0]
+            self.transitions[max_target] += round(1.0 - corrected_total, 6)
+
+        # 遷移の追加を完了としてフリーズ
+        self._is_frozen = True
 
     def next_state(self, random_value: float) -> int:
         """
-        次の状態を確率的に決定
+        乱数に基づいて次状態を決定
 
         Args:
-            random_value: 0から1の間の乱数
+            random_value: 0.0-1.0の乱数
 
         Returns:
             次の状態ID
         """
-        cumulative = 0.0
-        for state_id, prob in self.transitions.items():
-            cumulative += prob
-            if random_value <= cumulative:
-                return state_id
+        if not 0.0 <= random_value <= 1.0:
+            raise ValueError("乱数は0.0から1.0の間である必要があります")
 
-        # 浮動小数点誤差対策（通常ここには到達しない）
-        if self.transitions:
-            return list(self.transitions.keys())[-1]
-        return self.state_id  # 遷移先がなければ自分自身
+        if not self.transitions:
+            raise ValueError(f"状態 {self.state_id} に遷移先が定義されていません")
 
+        # 累積確率で次状態を決定
+        cumulative_prob = 0.0
+        for target_id, probability in sorted(self.transitions.items()):
+            cumulative_prob += probability
+            if random_value <= cumulative_prob:
+                return target_id
+
+        # 丸め誤差などで全ての確率を超えた場合は最後の遷移先を返す
+        return sorted(self.transitions.keys())[-1]
+
+    def get_transition_count(self) -> int:
+        """
+        遷移先の数を取得
+
+        Returns:
+            遷移先の数
+        """
+        return len(self.transitions)
+
+    def is_terminal(self) -> bool:
+        """
+        終端状態かどうかを判定
+
+        Returns:
+            終端状態の場合True
+        """
+        # 自己ループのみの場合を終端状態とみなす
+        return len(self.transitions) == 1 and self.state_id in self.transitions
+
+    def get_entropy(self) -> float:
+        """
+        状態のエントロピーを計算
+
+        遷移の不確実性の指標として、確率分布のエントロピーを計算します。
+        高いエントロピーは予測困難性を示します。
+
+        Returns:
+            エントロピー値
+        """
+        if not self.transitions:
+            return 0.0
+
+        # シャノンエントロピーの計算
+        entropy = 0.0
+        for prob in self.transitions.values():
+            if prob > 0.0:  # log(0)を防止
+                entropy -= prob * math.log2(prob)
+
+        return entropy
 
 class StateMatrixGenerator:
     """
     状態遷移マトリクス生成器
 
-    鍵に基づいて確率的な状態遷移マトリクスを生成します。
-    このマトリクスは非決定論的な実行パスを提供します。
+    鍵に基づいて、状態遷移マトリクスを生成するジェネレータです。
+    同じ鍵からは同じマトリクスが生成され、異なる鍵からは異なるマトリクスが生成されます。
     """
 
-    def __init__(self, key: bytes, salt: Optional[bytes] = None):
+    def __init__(self, key: bytes, size: int = None, min_prob: float = None, max_prob: float = None, steps: int = None):
         """
-        生成器の初期化
+        ジェネレータの初期化
 
         Args:
             key: マスター鍵
-            salt: ソルト値（省略時はランダム生成）
+            size: 状態数（None: configから読み込み）
+            min_prob: 最小遷移確率（None: configから読み込み）
+            max_prob: 最大遷移確率（None: configから読み込み）
+            steps: 確率刻み数（None: configから読み込み）
         """
-        self.key = key
-        self.salt = salt or os.urandom(16)
-        self.states = {}  # {state_id: State}
-        self.true_initial_state = None
-        self.false_initial_state = None
+        # 入力検証
+        if not isinstance(key, bytes) or len(key) == 0:
+            raise ValueError("鍵はバイト列で、空であってはなりません")
+
+        # キーのハッシュ化（長さを正規化）
+        self.key = hashlib.sha256(key).digest()
+
+        # 設定値の読み込み
+        self.size = size if size is not None else STATE_MATRIX_SIZE
+        self.min_probability = min_prob if min_prob is not None else MIN_PROBABILITY
+        self.max_probability = max_prob if max_prob is not None else MAX_PROBABILITY
+        self.probability_steps = steps if steps is not None else PROBABILITY_STEPS
+
+        if self.size <= 0:
+            raise ValueError("状態数は正の整数である必要があります")
+
+        if not 0.0 <= self.min_probability <= self.max_probability <= 1.0:
+            raise ValueError("確率範囲が無効です。0.0 <= min <= max <= 1.0 である必要があります")
+
+        if self.probability_steps <= 0:
+            raise ValueError("確率刻み数は正の整数である必要があります")
+
+        # キャッシュの初期化
+        self._state_matrix_cache = None
+        self._initial_states_cache = None
+        self._hmac_cache = {}
+
+    def _get_hmac(self, purpose: bytes) -> bytes:
+        """
+        特定目的のためのHMACを取得（キャッシュ付き）
+
+        Args:
+            purpose: HMAC生成の目的を示すバイト列
+
+        Returns:
+            HMACダイジェスト
+        """
+        # メモリ使用量を制限するためにキャッシュサイズを制限
+        if len(self._hmac_cache) > 100:
+            # キャッシュをクリア（簡易的なLRU）
+            self._hmac_cache.clear()
+
+        cache_key = purpose.hex()
+        if cache_key in self._hmac_cache:
+            return self._hmac_cache[cache_key]
+
+        # HMAC-SHA256を使用
+        h = hmac.new(self.key, purpose, hashlib.sha256)
+        digest = h.digest()
+        self._hmac_cache[cache_key] = digest
+        return digest
 
     def _generate_random_from_key(self, purpose: bytes, min_val: float, max_val: float) -> float:
         """
         鍵から特定の目的のための乱数を生成
 
         Args:
-            purpose: 乱数生成の目的を表す識別子
-            min_val: 生成する乱数の最小値
-            max_val: 生成する乱数の最大値
+            purpose: 乱数の目的を示すバイト列
+            min_val: 最小値
+            max_val: 最大値
 
         Returns:
-            min_valからmax_valの間の乱数
+            min_val〜max_valの乱数
         """
-        # 鍵とソルトから目的別のシード値を生成
-        hmac_result = hmac.new(self.key, purpose + self.salt, hashlib.sha256).digest()
+        # 目的に応じたHMACを生成
+        digest = self._get_hmac(purpose)
 
-        # 生成した値を0-1の間の浮動小数点数に変換
-        random_bytes = int.from_bytes(hmac_result[:8], byteorder='big')
-        normalized = random_bytes / (2**64 - 1)  # 0-1の間に正規化
+        # 0〜0xFFFFFFFFの整数に変換
+        value = int.from_bytes(digest[:4], byteorder='big')
 
-        # 指定範囲にスケーリング
+        # 0.0〜1.0の範囲に正規化
+        normalized = value / 0xFFFFFFFF
+
+        # 指定範囲に変換
         return min_val + normalized * (max_val - min_val)
-
-    def _derive_state_params(self, state_id: int) -> Dict[str, Any]:
-        """
-        状態IDから状態パラメータを導出
-
-        Args:
-            state_id: 状態ID
-
-        Returns:
-            状態パラメータ辞書
-        """
-        purpose = f"state_params_{state_id}".encode('utf-8')
-        hmac_result = hmac.new(self.key, purpose + self.salt, hashlib.sha256).digest()
-
-        # 状態パラメータの生成（各状態の特性を決定）
-        params = {
-            "complexity": int.from_bytes(hmac_result[0:4], byteorder='big') % 100,
-            "volatility": int.from_bytes(hmac_result[4:8], byteorder='big') % 100,
-            "memory_impact": int.from_bytes(hmac_result[8:12], byteorder='big') % 100,
-            "hash_seed": hmac_result[12:20],
-            "transform_key": hmac_result[20:28]
-        }
-
-        return params
 
     def generate_state_matrix(self) -> Dict[int, State]:
         """
         状態遷移マトリクスを生成
 
         Returns:
-            生成された状態辞書 {state_id: State}
+            状態辞書 {state_id: State}
         """
-        # 状態の作成
-        for i in range(STATE_MATRIX_SIZE):
-            params = self._derive_state_params(i)
-            self.states[i] = State(i, params)
+        # キャッシュを利用
+        if self._state_matrix_cache is not None:
+            return self._state_matrix_cache
 
-        # 状態間の遷移確率の設定
-        for i in range(STATE_MATRIX_SIZE):
-            # 各状態から遷移先をいくつか選択
-            num_transitions = 1 + int(self._generate_random_from_key(
-                f"num_transitions_{i}".encode('utf-8'),
-                1,
-                min(5, STATE_MATRIX_SIZE - 1)
-            ))
+        states = {}
 
-            # 遷移先の選択と確率の設定
-            available_states = list(range(STATE_MATRIX_SIZE))
-            available_states.remove(i)  # 自己遷移を避ける（オプション）
+        # 各状態を生成
+        for state_id in range(self.size):
+            states[state_id] = State(state_id)
 
-            selected_states = []
-            remaining = num_transitions
+            # 量子化された確率値のリスト（重複を防ぐため）
+            available_probs = []
+            for i in range(self.probability_steps):
+                # 量子化された確率値
+                prob = self.min_probability + i * (self.max_probability - self.min_probability) / (self.probability_steps - 1)
+                available_probs.append(round(prob, 6))  # 丸めて重複を防止
 
-            while remaining > 0 and available_states:
-                # 次の遷移先をランダムに選択
-                selection_seed = f"state_selection_{i}_{len(selected_states)}".encode('utf-8')
-                selection_val = self._generate_random_from_key(selection_seed, 0, 1)
-                index = int(selection_val * len(available_states))
-                index = min(index, len(available_states) - 1)  # 境界チェック
+            # 遷移先候補
+            transition_targets = list(range(self.size))
 
-                selected_states.append(available_states.pop(index))
-                remaining -= 1
+            # この状態から各状態への遷移確率を設定
+            remaining_prob = 1.0
 
-            # 選択された各状態に遷移確率を設定
-            for j, next_state in enumerate(selected_states):
-                prob_seed = f"transition_prob_{i}_{next_state}".encode('utf-8')
-                probability = self._generate_random_from_key(
-                    prob_seed,
-                    MIN_PROBABILITY,
-                    MAX_PROBABILITY / num_transitions
-                )
-                self.states[i].add_transition(next_state, probability)
+            # 最後の状態は残りの確率を割り当てるため、size-1の状態まで処理
+            for target in range(self.size - 1):
+                # すでに全確率を割り当て終わった場合は終了
+                if remaining_prob <= 0.0:
+                    break
+
+                # 遷移確率を決定
+                # 目的コード生成: "state_{state_id}_to_{target}"
+                purpose = f"state_{state_id}_to_{target}".encode()
+
+                # 確率値を量子化
+                index = int(self._generate_random_from_key(purpose, 0, len(available_probs) - 0.001))
+                prob = min(available_probs[index], remaining_prob)
+
+                # 確率0より大きい場合のみ遷移を追加
+                if prob > 0.0:
+                    states[state_id].add_transition(target, prob)
+                    remaining_prob -= prob
+
+            # 残りの確率を最後の状態に割り当て
+            if remaining_prob > 0.0:
+                states[state_id].add_transition(self.size - 1, remaining_prob)
 
             # 確率の正規化
-            self.states[i].normalize_transitions()
+            states[state_id].normalize_transitions()
 
-        return self.states
+        # キャッシュに保存
+        self._state_matrix_cache = states
+        return states
 
     def derive_initial_states(self) -> Tuple[int, int]:
         """
-        正規/非正規パスの初期状態を導出
+        初期状態IDを導出
+
+        真/偽情報に対応する初期状態IDを返します。
+        この実装では、真/偽で異なる状態から始めることで、
+        真/偽情報を含む異なる実行パスを構築します。
 
         Returns:
-            (true_initial_state, false_initial_state): 正規/非正規パスの初期状態ID
+            (真情報の初期状態ID, 偽情報の初期状態ID)
         """
-        # 正規パスの初期状態
-        true_purpose = b"true_path_initial_state"
-        true_random = self._generate_random_from_key(true_purpose, 0, 1)
-        self.true_initial_state = int(true_random * STATE_MATRIX_SIZE) % STATE_MATRIX_SIZE
+        # キャッシュを利用
+        if self._initial_states_cache is not None:
+            return self._initial_states_cache
 
-        # 非正規パスの初期状態（正規と異なるようにする）
-        false_purpose = b"false_path_initial_state"
-        false_random = self._generate_random_from_key(false_purpose, 0, 1)
+        # 真情報の初期状態
+        true_purpose = b"initial_state_true"
+        true_initial = int(self._generate_random_from_key(true_purpose, 0, self.size - 0.001))
 
-        # 少なくとも1つは状態があるため、正規と異なる状態を選択
-        remaining_states = list(range(STATE_MATRIX_SIZE))
-        remaining_states.remove(self.true_initial_state)
+        # 偽情報の初期状態（真と異なるようにする）
+        false_purpose = b"initial_state_false"
+        false_initial = -1
 
-        if remaining_states:
-            index = int(false_random * len(remaining_states)) % len(remaining_states)
-            self.false_initial_state = remaining_states[index]
-        else:
-            # エッジケース: 状態が1つしかない場合は同じ状態を使用
-            self.false_initial_state = self.true_initial_state
+        # 真と偽で異なる状態になるまで試行
+        retry_count = 0
+        while false_initial == -1 or false_initial == true_initial:
+            # 再試行回数制限をチェック
+            retry_count += 1
+            if retry_count > 100:
+                # どうしても異なる値にならない場合は強制的に別の値にする
+                false_initial = (true_initial + 1) % self.size
+                break
 
-        return self.true_initial_state, self.false_initial_state
+            # 偽の初期状態を再生成
+            false_purpose_retry = false_purpose + str(retry_count).encode()
+            false_initial = int(self._generate_random_from_key(false_purpose_retry, 0, self.size - 0.001))
+
+        result = (true_initial, false_initial)
+        self._initial_states_cache = result
+        return result
 
     def get_state_visualization(self) -> str:
         """
@@ -256,24 +377,20 @@ class StateMatrixGenerator:
         Returns:
             マトリクスの文字列表現
         """
-        if not self.states:
+        if not self._state_matrix_cache:
             return "状態マトリクスがまだ生成されていません"
 
         result = "状態遷移マトリクス:\n"
         result += "-" * 50 + "\n"
 
-        for state_id, state in sorted(self.states.items()):
+        for state_id, state in sorted(self._state_matrix_cache.items()):
             result += f"状態 {state_id}:\n"
-            result += f"  属性: {state.attributes}\n"
-            result += "  遷移:\n"
+            result += f"  遷移:\n"
 
             for next_id, prob in sorted(state.transitions.items()):
                 result += f"    → 状態 {next_id}: {prob:.4f}\n"
 
             result += "-" * 30 + "\n"
-
-        result += f"正規パスの初期状態: {self.true_initial_state}\n"
-        result += f"非正規パスの初期状態: {self.false_initial_state}\n"
 
         return result
 
@@ -293,9 +410,30 @@ class StateExecutor:
             states: 状態辞書 {state_id: State}
             initial_state: 初期状態ID
         """
+        if not states:
+            raise ValueError("状態辞書が空です")
+
+        if initial_state not in states:
+            raise ValueError(f"初期状態ID {initial_state} が状態辞書に存在しません")
+
         self.states = states
         self.current_state_id = initial_state
         self.path_history = [initial_state]
+        self._transition_count = 0
+        self._last_random_value = None
+        self._secure_mode = True
+
+    def set_secure_mode(self, enabled: bool) -> None:
+        """
+        セキュアモードの設定
+
+        セキュアモードでは追加のセキュリティチェックが行われ、
+        状態遷移の整合性を保証します。
+
+        Args:
+            enabled: セキュアモードを有効にするかどうか
+        """
+        self._secure_mode = enabled
 
     def step(self, random_value: Optional[float] = None) -> int:
         """
@@ -307,16 +445,40 @@ class StateExecutor:
         Returns:
             次の状態ID
         """
+        # 状態を検証
+        if self._secure_mode and self.current_state_id not in self.states:
+            raise ValueError(f"現在の状態ID {self.current_state_id} が状態辞書に存在しません")
+
+        # 乱数を生成または検証
         if random_value is None:
             random_value = secrets.randbelow(10000) / 10000.0
+        elif not (0.0 <= random_value <= 1.0):
+            raise ValueError("乱数は0.0から1.0の間である必要があります")
 
+        # 現在の状態を取得
         current_state = self.states.get(self.current_state_id)
         if not current_state:
             raise ValueError(f"状態ID {self.current_state_id} が見つかりません")
 
+        # 遷移が存在しない場合のエラー処理
+        if not current_state.transitions:
+            if self._secure_mode:
+                # セキュアモードでは例外をスロー
+                raise ValueError(f"状態 {self.current_state_id} に遷移先が定義されていません")
+            else:
+                # セキュアモードでなければ現在の状態を維持
+                self._last_random_value = random_value
+                self._transition_count += 1
+                return self.current_state_id
+
+        # 次状態の決定
         next_state_id = current_state.next_state(random_value)
+
+        # 状態の更新
         self.current_state_id = next_state_id
         self.path_history.append(next_state_id)
+        self._last_random_value = random_value
+        self._transition_count += 1
 
         return next_state_id
 
@@ -330,19 +492,102 @@ class StateExecutor:
         Returns:
             状態遷移の履歴（状態IDのリスト）
         """
+        if steps < 0:
+            raise ValueError("ステップ数は0以上である必要があります")
+
         for _ in range(steps):
-            self.step()
+            try:
+                self.step()
+            except Exception as e:
+                if self._secure_mode:
+                    raise RuntimeError(f"状態遷移中にエラーが発生しました: {e}") from e
+                # セキュアモードでない場合は例外を無視して続行
 
         return self.path_history
 
-    def get_current_state(self) -> State:
+    def get_current_state(self) -> Optional[State]:
         """
         現在の状態オブジェクトを取得
 
         Returns:
-            現在の状態
+            現在の状態（存在しない場合はNone）
         """
         return self.states.get(self.current_state_id)
+
+    def get_transition_count(self) -> int:
+        """
+        実行された遷移の回数を取得
+
+        Returns:
+            遷移カウント
+        """
+        return self._transition_count
+
+    def get_path_statistics(self) -> Dict[str, Any]:
+        """
+        パス履歴の統計情報を取得
+
+        Returns:
+            統計情報を含む辞書
+        """
+        if not self.path_history:
+            return {"error": "パス履歴が空です"}
+
+        # 状態の出現回数を集計
+        state_counts = {}
+        for state_id in self.path_history:
+            state_counts[state_id] = state_counts.get(state_id, 0) + 1
+
+        # 最も頻出した状態
+        most_common_state = max(state_counts.items(), key=lambda x: x[1], default=(None, 0))
+
+        # 遷移の繰り返しパターンを検出
+        repeated_patterns = self._detect_patterns()
+
+        return {
+            "length": len(self.path_history),
+            "transitions": self._transition_count,
+            "initial_state": self.path_history[0] if self.path_history else None,
+            "current_state": self.current_state_id,
+            "unique_states": len(state_counts),
+            "state_counts": state_counts,
+            "most_common_state": most_common_state[0],
+            "most_common_count": most_common_state[1],
+            "repeated_patterns": repeated_patterns
+        }
+
+    def _detect_patterns(self) -> List[Tuple[List[int], int]]:
+        """
+        繰り返しパターンを検出
+
+        Returns:
+            (パターン, 出現回数)のリスト
+        """
+        # 簡易的なパターン検出（実際の実装ではより高度なアルゴリズムを使用）
+        patterns = []
+        history = self.path_history
+
+        # パターンの最大長（履歴の半分まで）
+        max_pattern_len = min(10, len(history) // 2)
+
+        for pattern_len in range(2, max_pattern_len + 1):
+            # 最新の状態からパターンを抽出
+            if len(history) >= pattern_len * 2:
+                latest_pattern = history[-pattern_len:]
+                # 直前のパターンと一致するか確認
+                if history[-pattern_len*2:-pattern_len] == latest_pattern:
+                    # パターンの出現回数をカウント
+                    count = 0
+                    for i in range(len(history) - pattern_len, -1, -pattern_len):
+                        if i >= pattern_len and history[i-pattern_len:i] == latest_pattern:
+                            count += 1
+                        else:
+                            break
+
+                    if count > 1:  # 複数回出現するパターンのみ記録
+                        patterns.append((latest_pattern, count))
+
+        return patterns
 
 
 # 元のStateMatrixクラスの一部機能を残して、新しい実装と連携できるようにします
@@ -592,19 +837,27 @@ class StateMatrix:
         return clone
 
 
-def create_state_matrix_from_key(key: bytes, salt: Optional[bytes] = None) -> Tuple[Dict[int, State], int, int]:
+def create_state_matrix_from_key(key: bytes) -> Tuple[Dict[int, State], int, int]:
     """
-    鍵から状態遷移マトリクスと初期状態を生成
+    鍵から状態マトリクスと初期状態を生成
 
     Args:
         key: マスター鍵
-        salt: ソルト値（省略時はランダム生成）
 
     Returns:
-        (状態辞書, 正規パスの初期状態, 非正規パスの初期状態)
+        (状態辞書, 真情報の初期状態ID, 偽情報の初期状態ID)
     """
-    generator = StateMatrixGenerator(key, salt)
+    # 入力検証
+    if not isinstance(key, bytes) or len(key) == 0:
+        raise ValueError("鍵はバイト列で、空であってはなりません")
+
+    # 生成器の作成
+    generator = StateMatrixGenerator(key)
+
+    # 状態マトリクスの生成
     states = generator.generate_state_matrix()
+
+    # 初期状態の導出
     true_initial, false_initial = generator.derive_initial_states()
 
     return states, true_initial, false_initial
@@ -626,11 +879,25 @@ def get_biased_random_generator(key: bytes, bias_factor: float) -> Callable[[], 
     Returns:
         バイアスのかかった乱数を生成する関数
     """
+    # 入力値の検証
+    if not isinstance(key, bytes) or len(key) == 0:
+        raise ValueError("鍵はバイト列で、空であってはなりません")
+
+    if not 0.0 <= bias_factor <= 1.0:
+        raise ValueError("バイアス係数は0.0から1.0の間である必要があります")
+
     # 鍵からバイアスパターンを生成
     # これにより、同じ鍵では同じバイアスパターンとなる
     hash_val = hashlib.sha256(key).digest()
+
     # numpy配列ではなく標準のPythonリストとして保持（numpy型の問題を回避）
     pattern = [b / 255.0 for b in hash_val]
+
+    # 使用状況を追跡するカウンタ（予測性を低減）
+    counter = [0]
+
+    # 一度のハッシュ計算で複数の乱数値を生成し、キャッシュする
+    cached_values = []
 
     def biased_random() -> float:
         """
@@ -639,12 +906,34 @@ def get_biased_random_generator(key: bytes, bias_factor: float) -> Callable[[], 
         Returns:
             バイアスされた乱数
         """
-        # 標準の乱数
-        base_random = secrets.randbelow(10000) / 10000.0
+        nonlocal cached_values
 
-        # 現在のインデックスの決定（時間依存でパターンを変化させる）
-        time_factor = int.from_bytes(os.urandom(4), byteorder='big')
-        index = time_factor % len(pattern)
+        # キャッシュが空の場合、新しい乱数セットを生成
+        if not cached_values:
+            # カウンタを使用してユニークなシードを生成
+            counter[0] += 1
+            seed_material = key + counter[0].to_bytes(4, byteorder='big')
+
+            # 追加のエントロピーを混合
+            seed_material += os.urandom(8)
+
+            # 新しいハッシュセットを生成
+            new_hash = hashlib.sha512(seed_material).digest()
+
+            # 8バイトごとに区切って乱数値を生成（64個の値）
+            for i in range(0, len(new_hash), 8):
+                if i + 8 <= len(new_hash):
+                    # 8バイトを倍精度浮動小数点数の範囲に変換
+                    val = int.from_bytes(new_hash[i:i+8], byteorder='big')
+                    normalized = (val % 10000) / 10000.0
+                    cached_values.append(normalized)
+
+        # キャッシュから値を取得
+        base_random = cached_values.pop(0)
+
+        # バイアスパターンのインデックスを決定
+        # カウンターとランダム要素を組み合わせて予測を困難に
+        index = (counter[0] + int.from_bytes(os.urandom(2), byteorder='big')) % len(pattern)
 
         # バイアス値の適用
         bias_value = pattern[index]

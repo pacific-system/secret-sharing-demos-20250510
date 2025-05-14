@@ -1,0 +1,18 @@
+{
+  "statistical_masking": {
+    "success": 1,
+    "p_value": 1.615146798085253e-08
+  },
+  "chunk_distribution": {
+    "success": 1,
+    "difference": 0.0
+  },
+  "key_analysis": {
+    "success": 1,
+    "error_rate": 0.48
+  },
+  "timing_attacks": {
+    "success": 1,
+    "timing_variance": 0.8601610366363355
+  }
+}

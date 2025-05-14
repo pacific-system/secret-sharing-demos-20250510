@@ -1,0 +1,32 @@
+[
+  {
+    "original_size": 100,
+    "encrypted_size": 3482,
+    "size_ratio": 34.82,
+    "encrypt_time": 0.09245538711547852,
+    "decrypt_time": 0.18206000328063965,
+    "encryption_speed": 1081.602739655377,
+    "decryption_speed": 549.2694617051786,
+    "success": true
+  },
+  {
+    "original_size": 1000,
+    "encrypted_size": 12860,
+    "size_ratio": 12.86,
+    "encrypt_time": 0.4576749801635742,
+    "decrypt_time": 0.9921090602874756,
+    "encryption_speed": 2184.9566686878916,
+    "decryption_speed": 1007.9537018946667,
+    "success": true
+  },
+  {
+    "original_size": 10000,
+    "encrypted_size": 110804,
+    "size_ratio": 11.0804,
+    "encrypt_time": 3.55149507522583,
+    "decrypt_time": 9.497282028198242,
+    "encryption_speed": 2815.7155756056136,
+    "decryption_speed": 1052.9328254451268,
+    "success": true
+  }
+]

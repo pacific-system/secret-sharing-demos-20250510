@@ -713,8 +713,25 @@ def extract_by_key_type(
 
 def mod_inverse(a: int, m: int) -> int:
     """モジュラ逆元を計算"""
-    from sympy import mod_inverse
-    return mod_inverse(a, m)
+    # まずSymPyのmod_inverseを試す
+    try:
+        from sympy import mod_inverse as sympy_mod_inverse
+        return sympy_mod_inverse(a, m)
+    except ImportError:
+        # SymPyが利用できない場合は拡張ユークリッド互除法で実装
+        def egcd(a, b):
+            if a == 0:
+                return (b, 0, 1)
+            else:
+                g, x, y = egcd(b % a, a)
+                return (g, y - (b // a) * x, x)
+
+        # aとmが互いに素であることを確認
+        g, x, y = egcd(a, m)
+        if g != 1:
+            raise ValueError(f"モジュラ逆元が存在しません: {a} (mod {m})")
+        else:
+            return x % m
 
 
 # テスト関数

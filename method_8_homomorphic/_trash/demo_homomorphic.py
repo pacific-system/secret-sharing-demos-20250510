@@ -373,10 +373,19 @@ def generate_performance_graphs():
 
     plt.tight_layout()
 
+    # タイムスタンプを生成
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+
     # グラフの保存
-    output_path = "test_output/cryptography_performance.png"
+    output_path = f"test_output/cryptography_performance_{timestamp}.png"
     plt.savefig(output_path)
+
+    # 最新版としても保存（互換性のため）
+    latest_path = "test_output/cryptography_performance.png"
+    plt.savefig(latest_path)
+
     print(f"グラフを保存しました: {output_path}")
+    print(f"最新版として保存しました: {latest_path}")
 
 
 def main():

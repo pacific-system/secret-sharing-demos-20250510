@@ -26,7 +26,7 @@ from method_7_honeypot.trapdoor import (
     create_master_key, create_trapdoor_parameters,
     derive_keys_from_trapdoor, KEY_TYPE_TRUE, KEY_TYPE_FALSE
 )
-from method_7_honeypot.encrypt import encrypt_files, save_keys
+from method_7_honeypot.encrypt import encrypt_files
 from method_7_honeypot.decrypt import decrypt_file, read_key_from_file
 from method_7_honeypot.key_verification import verify_key_and_select_path
 from method_7_honeypot.deception import verify_with_tamper_resistance

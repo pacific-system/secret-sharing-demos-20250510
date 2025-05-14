@@ -21,6 +21,9 @@ from typing import Dict, Tuple, Any, Optional, List, Union, BinaryIO
 from pathlib import Path
 from datetime import datetime
 import io
+import hmac
+import tempfile
+import logging
 
 # 内部モジュールからのインポート
 from .trapdoor import (
@@ -28,16 +31,27 @@ from .trapdoor import (
     derive_keys_from_trapdoor, evaluate_key_type,
     derive_user_key_material, KEY_TYPE_TRUE, KEY_TYPE_FALSE
 )
-from .key_verification import verify_key_and_select_path
+from .key_verification import verify_key_and_select_path, verify_key_type, get_signature_key
 from .honeypot_capsule import (
     HoneypotCapsule, extract_data_from_capsule,
-    read_data_from_honeypot_file
+    read_data_from_honeypot_file, extract_data_from_honeypot, validate_honeypot_signature
 )
 from .config import (
     OUTPUT_EXTENSION, SYMMETRIC_KEY_SIZE, SALT_SIZE,
     KDF_ITERATIONS, DECISION_THRESHOLD, RANDOMIZATION_FACTOR,
-    TOKEN_SIZE
+    TOKEN_SIZE, OUTPUT_FORMAT, DEFAULT_OUTPUT_DIR, DEFAULT_PREFIX, DEFAULT_CHUNK_SIZE,
+    USE_DYNAMIC_THRESHOLD
 )
+from .deception import (
+    verify_with_tamper_resistance,
+    create_redundant_verification_pattern,
+    DynamicPathSelector
+)
+
+# 暗号化モジュールからのインポート
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives import padding
+from cryptography.hazmat.backends import default_backend
 
 
 def symmetric_decrypt(encrypted_data: bytes, key: bytes, iv: bytes, is_chunk: bool = False) -> bytes:

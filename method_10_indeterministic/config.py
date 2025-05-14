@@ -1,5 +1,9 @@
+#!/usr/bin/env python3
 """
-不確定性転写暗号化方式の設定ファイル
+不確定性転写暗号化方式の設定
+
+状態遷移マトリクスのサイズや確率パラメータなど、
+暗号化処理の動作を制御するための設定を定義します。
 """
 
 # ファイルパス設定
@@ -11,15 +15,14 @@ KEY_SIZE_BYTES = 32  # 256ビット鍵
 SALT_SIZE = 16       # ソルトサイズ
 NONCE_SIZE = 12      # ノンスサイズ
 
-# 状態遷移パラメータ
-STATE_MATRIX_SIZE = 16     # 状態マトリクスサイズ
-STATE_TRANSITIONS = 10     # 状態遷移回数
-ENTROPY_POOL_SIZE = 4096   # エントロピープールサイズ
+# 状態マトリクスの設定
+STATE_MATRIX_SIZE = 16  # 状態マトリクスのサイズ（状態の数）
+STATE_TRANSITIONS = 10  # 状態遷移回数
 
-# 確率的パラメータ
-MIN_PROBABILITY = 0.05     # 最小確率閾値
-MAX_PROBABILITY = 0.95     # 最大確率閾値
-PROBABILITY_STEPS = 100    # 確率ステップ数
+# 確率設定
+MIN_PROBABILITY = 0.05  # 最小遷移確率
+MAX_PROBABILITY = 0.95  # 最大遷移確率
+PROBABILITY_STEPS = 100  # 確率の量子化ステップ数
 
 # 出力ファイル形式
 OUTPUT_FORMAT = "indeterministic"
@@ -32,14 +35,14 @@ DEFAULT_CHUNK_COUNT = 5  # デフォルトのチャンク数（大きなファ�
 
 # セキュリティ設定
 SECURE_MEMORY_WIPE = True  # メモリからの鍵情報を安全に消去
-ANTI_TAMPERING = True      # コード改変検知機能の有効化
+ANTI_TAMPERING = True  # 改ざん検知を有効にするかどうか
 USE_DYNAMIC_THRESHOLD = True  # 動的判定閾値の使用
 RUNTIME_VERIFICATION = True  # 実行時検証の有効化
 INTEGRITY_CHECK_INTERVAL = 500  # 整合性チェックの間隔（ミリ秒）
 MAX_RETRY_COUNT = 3  # 処理失敗時の最大再試行回数
 
 # バックドア・バイパス防止設定
-ERROR_ON_SUSPICIOUS_BEHAVIOR = True  # 不審な動作を検出した場合にエラーを発生
+ERROR_ON_SUSPICIOUS_BEHAVIOR = True  # 不審な挙動を検出した場合にエラーを発生させるかどうか
 ENFORCE_PATH_ISOLATION = True  # 正規/非正規パス間の分離を強制
 PREVENT_OUTPUT_BYPASS = True  # 出力バイパスを防止
 

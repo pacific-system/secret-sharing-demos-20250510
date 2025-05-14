@@ -1,0 +1,22 @@
+{
+  "encrypt_time": 0.0011532306671142578,
+  "decrypt_time": {
+    "true": 0.00038909912109375,
+    "false": 0.0004379749298095703
+  },
+  "file_sizes": {
+    "true_original": 300,
+    "false_original": 300,
+    "encrypted": 43877,
+    "true_decrypted": 300,
+    "false_decrypted": 300
+  },
+  "timestamps": {
+    "encrypt_start": 1747200626.355084,
+    "encrypt_end": 1747200626.3562372,
+    "true_decrypt_start": 1747200626.359274,
+    "true_decrypt_end": 1747200626.359663,
+    "false_decrypt_start": 1747200626.360105,
+    "false_decrypt_end": 1747200626.360543
+  }
+}

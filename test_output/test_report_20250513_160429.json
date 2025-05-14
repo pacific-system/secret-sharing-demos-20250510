@@ -1,0 +1,203 @@
+{
+  "start_time": 1747119869.1316411,
+  "end_time": 1747120024.6606872,
+  "total_elapsed": 155.52904605865479,
+  "test_modules": {
+    "method_8_homomorphic.tests.test_crypto_mask": {
+      "tests": 6,
+      "passed": 5,
+      "failed": 0,
+      "errors": 1,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": [
+        {
+          "test": "test_apply_mask_and_remove_mask (method_8_homomorphic.tests.test_crypto_mask.TestCryptoMask.test_apply_mask_and_remove_mask)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_crypto_mask.py\", line 90, in test_apply_mask_and_remove_mask\n    unmasked_false = self.crypto_mask.remove_mask_from_data(masked_data, mask_params, 'false')\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/crypto_mask.py\", line 226, in remove_mask_from_data\n    exp = mod_inverse(transform % 50 + 1, self.elgamal_private_key['p'] - 1)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/crypto_mask.py\", line 719, in mod_inverse\n    return sympy_mod_inverse(a, m)\n           ^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/dev/Library/Python/3.12/lib/python/site-packages/sympy/core/intfunc.py\", line 450, in mod_inverse\n    raise ValueError(\"inverse of %s (mod %s) does not exist\" % (a, m))\nValueError: inverse of 45 (mod 19306261749069097269807298604383665506066894847488231225299558305085363471048059176278498761602031969022246141853518240375897544875259595534706361352593032562944056508223920861300075923260946003326733403615040669257277494170763665849162129941426177790104013572706828530254142189686832030794988853069024308633045058528765376844276464322727722649611359217285180696004895879922414437892335759143747963141114022925767797623306355471850079876042492045660618717152253621770739082936562367399385204497785011765400288852806122898536536027109114358499323154401681901723791610897437814355770988855835064736620545824685334618780) does not exist\n"
+        }
+      ]
+    },
+    "method_8_homomorphic.tests.test_decrypt": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_encrypt": {
+      "tests": 6,
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_encrypt_decrypt": {
+      "tests": 1,
+      "passed": 1,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_encrypt_decrypt_integration": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_enhanced_security": {
+      "tests": 3,
+      "passed": 3,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_homomorphic": {
+      "tests": 25,
+      "passed": 25,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_homomorphic_crypto": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_homomorphic_modules": {
+      "tests": 16,
+      "passed": 15,
+      "failed": 1,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [
+        {
+          "test": "test_encrypt_decrypt_float (method_8_homomorphic.tests.test_homomorphic_modules.TestPaillierCrypto.test_encrypt_decrypt_float)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_homomorphic_modules.py\", line 54, in test_encrypt_decrypt_float\n    self.assertAlmostEqual(plaintext, decrypted, places=3)\nAssertionError: 3.14159 != 3.140625 within 3 places (0.0009649999999998826 difference)\n"
+        }
+      ],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_indistinguishability": {
+      "tests": 6,
+      "passed": 6,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_indistinguishability_analysis": {
+      "tests": 7,
+      "passed": 5,
+      "failed": 1,
+      "errors": 1,
+      "skipped": 0,
+      "failures": [
+        {
+          "test": "test_statistical_analysis (method_8_homomorphic.tests.test_indistinguishability_analysis.CryptanalyticTests.test_statistical_analysis)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_indistinguishability_analysis.py\", line 235, in test_statistical_analysis\n    self.assertGreaterEqual(p_value, 0.05,\nAssertionError: np.float64(4.3612784947240795e-06) not greater than or equal to 0.05 : \u7d71\u8a08\u7684\u306b\u533a\u5225\u53ef\u80fd\uff08p\u5024: 4.3612784947240795e-06\uff09\u3002\u6697\u53f7\u6587\u8b58\u5225\u4e0d\u80fd\u6027\u304c\u4e0d\u5341\u5206\u3067\u3059\u3002\n"
+        }
+      ],
+      "errors_list": [
+        {
+          "test": "test_comprehensive_indistinguishability (method_8_homomorphic.tests.test_indistinguishability_analysis.CryptanalyticTests.test_comprehensive_indistinguishability)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_indistinguishability_analysis.py\", line 565, in test_comprehensive_indistinguishability\n    json.dump(test_results, f, indent=2)\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/__init__.py\", line 179, in dump\n    for chunk in iterable:\n                 ^^^^^^^^\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py\", line 432, in _iterencode\n    yield from _iterencode_dict(o, _current_indent_level)\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py\", line 406, in _iterencode_dict\n    yield from chunks\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py\", line 406, in _iterencode_dict\n    yield from chunks\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py\", line 439, in _iterencode\n    o = _default(o)\n        ^^^^^^^^^^^\n  File \"/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py\", line 180, in default\n    raise TypeError(f'Object of type {o.__class__.__name__} '\nTypeError: Object of type bool is not JSON serializable\n"
+        }
+      ]
+    },
+    "method_8_homomorphic.tests.test_indistinguishable": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_key_analysis": {
+      "tests": 12,
+      "passed": 10,
+      "failed": 2,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [
+        {
+          "test": "test_cryptic_vs_integrated_analysis (method_8_homomorphic.tests.test_key_analysis.KeyStatisticalTest.test_cryptic_vs_integrated_analysis)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_key_analysis.py\", line 269, in test_cryptic_vs_integrated_analysis\n    self.assertGreaterEqual(match_ratio, 0.8)\nAssertionError: 0.525 not greater than or equal to 0.8\n"
+        },
+        {
+          "test": "test_key_distribution (method_8_homomorphic.tests.test_key_analysis.KeyStatisticalTest.test_key_distribution)",
+          "message": "Traceback (most recent call last):\n  File \"/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_key_analysis.py\", line 212, in test_key_distribution\n    self.assertGreaterEqual(true_ratio, 0.4)\nAssertionError: 0.376 not greater than or equal to 0.4\n"
+        }
+      ],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_key_analyzer": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_key_identification": {
+      "tests": 8,
+      "passed": 8,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_report": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    },
+    "method_8_homomorphic.tests.test_simple_debug": {
+      "tests": 0,
+      "passed": 0,
+      "failed": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failures": [],
+      "errors_list": []
+    }
+  },
+  "performance": {},
+  "summary": {
+    "total_tests": 90,
+    "passed": 84,
+    "failed": 4,
+    "errors": 2,
+    "skipped": 0,
+    "success_rate": 93.33333333333333
+  },
+  "timestamp": "2025-05-13 16:07:04",
+  "environment": {
+    "python_version": "3.12.8 (v3.12.8:2dc476bcb91, Dec  3 2024, 14:43:20) [Clang 13.0.0 (clang-1300.0.29.30)]",
+    "platform": "darwin"
+  }
+}

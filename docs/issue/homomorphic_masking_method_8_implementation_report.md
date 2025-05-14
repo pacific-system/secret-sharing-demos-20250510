@@ -168,25 +168,25 @@ def run_key_analysis_tests()  # 鍵解析テストの実行
 
 準同型演算の特性を視覚化することで、加法準同型と乗法準同型の機能を明確に検証できます。
 
-![準同型演算の可視化](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/homomorphic_operations_1715318423.png?raw=true)
+![準同型演算の可視化](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/homomorphic_operations.png?raw=true)
 
 ### マスク効果の可視化
 
 マスク関数の効果を視覚化し、オリジナル値とマスク適用後の値の関係を確認できます。
 
-![マスク効果の可視化](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/mask_effect_visualization_1715318425.png?raw=true)
+![マスク効果の可視化](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/randomize_ciphertext_distribution_20250513_133358.png?raw=true)
 
 ### 暗号文の統計的分析
 
 暗号文の統計的特性を分析し、真と偽の暗号文が統計的に区別できないことを確認できます。
 
-![統計的マスキングの可視化](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/statistical_masking_1715318430.png?raw=true)
+![統計的マスキングの可視化](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/statistical_masking_20250513_133404.png?raw=true)
 
 ### 鍵分布の可視化
 
 ランダムに生成された鍵の分布を視覚化し、true/false の判定が適切に分散していることを確認できます。
 
-![鍵分布の可視化](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/key_distribution_1715318435.png?raw=true)
+![鍵分布の可視化](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/test_output/key_distribution_1747115733.png?raw=true)
 
 ## 🛠️ 実装上の工夫
 

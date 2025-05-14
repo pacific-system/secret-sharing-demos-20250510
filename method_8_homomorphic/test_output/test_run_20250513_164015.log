@@ -1,0 +1,42 @@
+2025-05-13 16:40:15,473 - homomorphic_test_runner - INFO - Discovered 17 test modules
+2025-05-13 16:40:15,473 - homomorphic_test_runner - INFO - Starting test run with 17 modules
+2025-05-13 16:40:15,473 - homomorphic_test_runner - INFO - Debug mode: False
+2025-05-13 16:40:15,473 - homomorphic_test_runner - INFO - Performance mode: False
+2025-05-13 16:40:15,473 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_crypto_mask
+2025-05-13 16:40:15,725 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_crypto_mask (6 tests)
+2025-05-13 16:40:38,560 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_decrypt
+2025-05-13 16:40:38,561 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_decrypt (0 tests)
+2025-05-13 16:40:38,561 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_encrypt
+2025-05-13 16:40:38,585 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_encrypt (6 tests)
+2025-05-13 16:40:39,193 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_encrypt_decrypt
+2025-05-13 16:40:39,194 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_encrypt_decrypt (1 tests)
+2025-05-13 16:40:41,196 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_encrypt_decrypt_integration
+2025-05-13 16:40:41,204 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_encrypt_decrypt_integration (6 tests)
+2025-05-13 16:40:48,635 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_enhanced_security
+2025-05-13 16:40:48,636 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_enhanced_security (3 tests)
+2025-05-13 16:40:50,128 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_homomorphic
+2025-05-13 16:40:50,129 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_homomorphic (25 tests)
+2025-05-13 16:41:09,242 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_homomorphic_crypto
+2025-05-13 16:41:09,243 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_homomorphic_crypto (0 tests)
+2025-05-13 16:41:09,243 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_homomorphic_modules
+2025-05-13 16:41:09,247 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_homomorphic_modules (16 tests)
+2025-05-13 16:41:10,123 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_indistinguishability
+2025-05-13 16:41:10,124 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_indistinguishability (6 tests)
+2025-05-13 16:41:17,084 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_indistinguishability_analysis
+2025-05-13 16:41:17,696 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_indistinguishability_analysis (7 tests)
+2025-05-13 16:41:32,002 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_indistinguishable
+2025-05-13 16:41:32,003 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_indistinguishable (0 tests)
+2025-05-13 16:41:32,003 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_key_analysis
+2025-05-13 16:41:32,003 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_key_analysis (12 tests)
+2025-05-13 16:42:56,696 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_key_analyzer
+2025-05-13 16:42:56,697 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_key_analyzer (0 tests)
+2025-05-13 16:42:56,697 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_key_identification
+2025-05-13 16:42:56,702 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_key_identification (8 tests)
+2025-05-13 16:43:08,522 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_report
+2025-05-13 16:43:08,523 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_report (0 tests)
+2025-05-13 16:43:08,523 - homomorphic_test_runner - INFO - Running tests from module: method_8_homomorphic.tests.test_simple_debug
+2025-05-13 16:43:08,524 - homomorphic_test_runner - INFO - Imported test module: method_8_homomorphic.tests.test_simple_debug (0 tests)
+2025-05-13 16:43:08,524 - homomorphic_test_runner - INFO - Test run completed in 173.05 seconds
+2025-05-13 16:43:08,524 - homomorphic_test_runner - INFO - Summary: 87/96 tests passed (90.62%)
+2025-05-13 16:43:08,524 - homomorphic_test_runner - INFO - Test results saved to test_output/test_report_20250513_164015.json
+2025-05-13 16:43:09,027 - homomorphic_test_runner - INFO - Test results visualization saved to test_output/test_report_20250513_164015.png

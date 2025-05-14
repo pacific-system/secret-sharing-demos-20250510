@@ -863,17 +863,18 @@ def visualize_homomorphic_encryption():
     print(f"最新版として保存しました: {latest_path}")
 
     # 性能測定の可視化
-    visualize_performance()
+    visualize_performance(timestamp)
 
 
-def visualize_performance():
+def visualize_performance(timestamp=None):
     """準同型暗号の性能可視化"""
     # 結果を格納するディレクトリを確認・作成
     output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'test_output')
     os.makedirs(output_dir, exist_ok=True)
 
-    # タイムスタンプを生成（ファイル名に使用）
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    # タイムスタンプが指定されていない場合は新しく生成（同一実行での一貫性のため）
+    if timestamp is None:
+        timestamp = time.strftime("%Y%m%d-%H%M%S")
 
     # Paillier暗号の初期化
     paillier = PaillierCrypto(1024)

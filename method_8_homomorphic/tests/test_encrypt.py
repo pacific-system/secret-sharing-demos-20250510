@@ -70,7 +70,8 @@ class TestEncrypt(unittest.TestCase):
             'key_bits': 1024,  # テスト用に小さめのビット数
             'save_keys': False,
             'keys_dir': self.keys_dir,
-            'verbose': False
+            'verbose': False,
+            'force_data_type': 'auto'  # データ型の自動検出
         })()
 
         # 暗号化実行
@@ -110,7 +111,8 @@ class TestEncrypt(unittest.TestCase):
             'key_bits': 1024,  # テスト用に小さめのビット数
             'save_keys': False,
             'keys_dir': self.keys_dir,
-            'verbose': False
+            'verbose': False,
+            'force_data_type': 'auto'  # データ型の自動検出
         })()
 
         # 暗号化実行
@@ -145,7 +147,8 @@ class TestEncrypt(unittest.TestCase):
             'key_bits': 1024,  # テスト用に小さめのビット数
             'save_keys': False,
             'keys_dir': self.keys_dir,
-            'verbose': False
+            'verbose': False,
+            'force_data_type': 'auto'  # データ型の自動検出
         })()
 
         # 暗号化実行
@@ -179,7 +182,8 @@ class TestEncrypt(unittest.TestCase):
             'key_bits': 1024,  # テスト用に小さめのビット数
             'save_keys': True,  # 鍵を保存
             'keys_dir': self.keys_dir,
-            'verbose': False
+            'verbose': False,
+            'force_data_type': 'auto'  # データ型の自動検出
         })()
 
         # 暗号化実行
@@ -238,7 +242,8 @@ class TestEncrypt(unittest.TestCase):
             'key_bits': 1024,  # テスト用に小さめのビット数
             'save_keys': True,  # 鍵ファイルを使用するため保存
             'keys_dir': self.keys_dir,
-            'verbose': False
+            'verbose': False,
+            'force_data_type': 'auto'  # データ型の自動検出
         })()
 
         key, metadata = encrypt_files(args)

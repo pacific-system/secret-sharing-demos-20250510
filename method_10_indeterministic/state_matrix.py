@@ -837,12 +837,13 @@ class StateMatrix:
         return clone
 
 
-def create_state_matrix_from_key(key: bytes) -> Tuple[Dict[int, State], int, int]:
+def create_state_matrix_from_key(key: bytes, salt: Optional[bytes] = None) -> Tuple[Dict[int, State], int, int]:
     """
     鍵から状態マトリクスと初期状態を生成
 
     Args:
         key: マスター鍵
+        salt: ソルト値（オプション）
 
     Returns:
         (状態辞書, 真情報の初期状態ID, 偽情報の初期状態ID)

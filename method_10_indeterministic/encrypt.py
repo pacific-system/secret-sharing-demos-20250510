@@ -1,492 +1,398 @@
 #!/usr/bin/env python3
 """
-不確定性転写暗号化方式 - 暗号化プログラム
+不確定性転写暗号化方式の暗号化スクリプト
 
-true.textとfalse.textを入力として受け取り、
-不確定性転写暗号化方式で暗号化された単一の暗号文ファイルを生成します。
+鍵に基づいた確率的実行パスに従って暗号化を行います。
+TRUE/FALSE 2種類の鍵を使用し、どちらが「正規」かは使用者の意図によって決まります。
 """
 
 import os
 import sys
 import time
 import json
-import base64
-import argparse
 import hashlib
+import argparse
 import secrets
-import datetime
-import binascii
-from typing import Dict, List, Tuple, Optional, Any
-
-# 内部モジュールのインポート
-from .config import (
-    TRUE_TEXT_PATH, FALSE_TEXT_PATH, KEY_SIZE_BYTES,
-    STATE_MATRIX_SIZE, STATE_TRANSITIONS, OUTPUT_EXTENSION,
-    MAX_CHUNK_SIZE, FILE_THRESHOLD_SIZE, DEFAULT_CHUNK_COUNT,
-    SECURE_MEMORY_WIPE, ANTI_TAMPERING, ERROR_ON_SUSPICIOUS_BEHAVIOR
-)
-
-try:
-    # 暗号化ライブラリ（オプション）
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-    from cryptography.hazmat.primitives import padding
-    from cryptography.hazmat.backends import default_backend
-    HAS_CRYPTOGRAPHY = True
-except ImportError:
-    # 依存ライブラリがない場合はXOR暗号を使用
-    HAS_CRYPTOGRAPHY = False
-
-# 必要なシステムチェック
-def check_system_integrity():
-    """システムの整合性をチェック"""
-    if ANTI_TAMPERING:
-        # モジュールのハッシュを計算して改変がないか確認
-        expected_hashes = {}  # 実際の実装では既知の正規ハッシュ値を設定
-
-        # この関数自体のソースコードハッシュを計算
-        current_file = os.path.abspath(__file__)
-        if os.path.exists(current_file):
-            with open(current_file, 'rb') as f:
-                content = f.read()
-                current_hash = hashlib.sha256(content).hexdigest()
-
-                # 実際の実装では期待値との比較を行う
-                # if current_hash != expected_hashes.get(__file__):
-                #     if ERROR_ON_SUSPICIOUS_BEHAVIOR:
-                #         raise SecurityError("ファイルの整合性が損なわれています")
-
-    return True
-
-# セキュリティ例外
-class SecurityError(Exception):
-    """セキュリティ関連の例外"""
-    pass
-
-def read_file(file_path: str) -> bytes:
-    """
-    ファイルを読み込む
-
-    Args:
-        file_path: 読み込むファイルのパス
-
-    Returns:
-        ファイルの内容（バイト列）
-    """
-    try:
-        with open(file_path, 'rb') as f:
-            return f.read()
-    except Exception as e:
-        print(f"ファイル '{file_path}' の読み込みエラー: {e}", file=sys.stderr)
-        raise
-
-def generate_master_key() -> bytes:
-    """
-    マスター鍵を生成
-
-    Returns:
-        ランダムなマスター鍵
-    """
-    return os.urandom(KEY_SIZE_BYTES)
-
-def secure_wipe(data):
-    """
-    メモリ上のデータを安全に消去
-
-    Args:
-        data: 消去するデータ（バイト列またはbytearray）
-    """
-    if SECURE_MEMORY_WIPE:
-        if isinstance(data, bytearray):
-            for i in range(len(data)):
-                data[i] = 0
-        elif isinstance(data, bytes):
-            # bytesは不変なので、参照を削除するのみ
-            pass
-
-def is_large_file(file_path: str) -> bool:
-    """
-    ファイルが分割処理が必要な大きさかどうかを判定
-
-    Args:
-        file_path: 判定するファイルのパス
-
-    Returns:
-        分割が必要な場合はTrue
-    """
-    file_size = os.path.getsize(file_path)
-    return file_size > FILE_THRESHOLD_SIZE
-
-def process_large_file(true_file_path: str, false_file_path: str, output_path: str,
-                     max_chunk_size: int = MAX_CHUNK_SIZE, verbose: bool = False) -> Tuple[Dict[str, bytes], Dict[str, Any]]:
-    """
-    大きなファイルを分割して処理
-
-    Args:
-        true_file_path: 正規ファイルのパス
-        false_file_path: 非正規ファイルのパス
-        output_path: 出力ファイルのパス
-        max_chunk_size: 最大チャンクサイズ（バイト）
-        verbose: 詳細表示モード
-
-    Returns:
-        (keys, metadata): 鍵ペアとメタデータ
-    """
-    # ファイルサイズを取得
-    true_file_size = os.path.getsize(true_file_path)
-    false_file_size = os.path.getsize(false_file_path)
-
-    # どちらのファイルも小さい場合は通常処理
-    if true_file_size <= max_chunk_size and false_file_size <= max_chunk_size:
-        return encrypt_files(true_file_path, false_file_path, output_path, verbose)
-
-    if verbose:
-        print(f"大きなファイル（{true_file_size/1024/1024:.2f}MB, {false_file_size/1024/1024:.2f}MB）を分割処理します")
-
-    # チャンク数を決定（大きい方のファイルサイズに基づく）
-    max_size = max(true_file_size, false_file_size)
-    chunk_count = min(max(2, max_size // max_chunk_size + 1), DEFAULT_CHUNK_COUNT)
-    chunk_size = max_size // chunk_count + 1
-
-    if verbose:
-        print(f"チャンク数: {chunk_count}, チャンクサイズ: {chunk_size/1024/1024:.2f}MB")
-
-    # チャンク処理のためのファイルを開く
-    with open(true_file_path, 'rb') as true_file, open(false_file_path, 'rb') as false_file:
-        # 出力ディレクトリを準備
-        output_dir = os.path.dirname(output_path)
-        if output_dir and not os.path.exists(output_dir):
-            os.makedirs(output_dir)
-
-        # メタデータ準備
-        base_name = os.path.splitext(os.path.basename(output_path))[0]
-        timestamp = int(time.time())
-        chunks_info = []
-        master_key = generate_master_key()
-
-        # 各チャンクを処理
-        for i in range(chunk_count):
-            # チャンクを読み込み
-            true_chunk = true_file.read(chunk_size)
-            false_chunk = false_file.read(chunk_size)
-
-            if not true_chunk and not false_chunk:
-                break
-
-            # チャンクファイルの一時パス
-            temp_true_path = f"{output_dir}/temp_true_{i}.bin"
-            temp_false_path = f"{output_dir}/temp_false_{i}.bin"
-            chunk_output_path = f"{output_path}.{i:03d}"
-
-            # 一時ファイルに書き込み
-            with open(temp_true_path, 'wb') as f:
-                f.write(true_chunk)
-            with open(temp_false_path, 'wb') as f:
-                f.write(false_chunk)
-
-            # チャンクを暗号化
-            try:
-                keys, metadata = encrypt_chunk(temp_true_path, temp_false_path, chunk_output_path, master_key, verbose)
-
-                # チャンク情報を記録
-                chunks_info.append({
-                    "index": i,
-                    "path": os.path.basename(chunk_output_path),
-                    "size": os.path.getsize(chunk_output_path),
-                    "true_size": len(true_chunk),
-                    "false_size": len(false_chunk),
-                    "checksum": hashlib.sha256(true_chunk + false_chunk).hexdigest()
-                })
-
-            finally:
-                # 一時ファイルを削除
-                if os.path.exists(temp_true_path):
-                    os.unlink(temp_true_path)
-                if os.path.exists(temp_false_path):
-                    os.unlink(temp_false_path)
-
-        # 分割情報ファイルを作成
-        manifest = {
-            "format": "indeterministic_chunks",
-            "version": "1.0",
-            "original_file": os.path.basename(output_path),
-            "timestamp": timestamp,
-            "chunks": chunks_info,
-            "total_chunks": len(chunks_info),
-            "true_file_size": true_file_size,
-            "false_file_size": false_file_size
-        }
-
-        # マニフェストファイルを書き込み
-        manifest_path = f"{output_path}.manifest"
-        with open(manifest_path, 'w') as f:
-            json.dump(manifest, f, indent=2)
-
-        if verbose:
-            print(f"分割マニフェスト: {manifest_path}")
-            print(f"合計 {len(chunks_info)} チャンクを生成しました")
-
-        # 鍵データとメタデータ
-        keys = {"master_key": master_key}
-        metadata = {
-            "format": "indeterministic_chunks",
-            "timestamp": timestamp,
-            "chunks": len(chunks_info),
-            "manifest": os.path.basename(manifest_path)
-        }
-
-        return keys, metadata
-
-def encrypt_chunk(true_file_path: str, false_file_path: str, output_path: str,
-                master_key: Optional[bytes] = None, verbose: bool = False) -> Tuple[Dict[str, bytes], Dict[str, Any]]:
-    """
-    ファイルチャンクを暗号化
-
-    Args:
-        true_file_path: 正規ファイルのパス
-        false_file_path: 非正規ファイルのパス
-        output_path: 出力ファイルのパス
-        master_key: マスター鍵（指定しない場合は生成）
-        verbose: 詳細表示モード
-
-    Returns:
-        (keys, metadata): 鍵ペアとメタデータ
-    """
-    # この関数の詳細な実装は、後続の子Issueで実装予定
-    # ここでは基本的な骨組みのみ
-
-    if not master_key:
-        master_key = generate_master_key()
-
-    # ファイル内容を読み込み
-    with open(true_file_path, 'rb') as f:
-        true_data = f.read()
-    with open(false_file_path, 'rb') as f:
-        false_data = f.read()
-
-    # テスト用の出力ファイル作成
-    with open(output_path, 'wb') as f:
-        # ヘッダー
-        f.write(b"INDET01")
-
-        # 基本メタデータ
-        timestamp = int(time.time())
-        meta_bytes = json.dumps({
-            "format": "indeterministic",
-            "version": "1.0",
-            "timestamp": timestamp,
-            "true_size": len(true_data),
-            "false_size": len(false_data)
-        }).encode('utf-8')
-
-        # メタデータサイズと本体
-        meta_size = len(meta_bytes).to_bytes(4, byteorder='big')
-        f.write(meta_size + meta_bytes)
-
-        # ソルトとノンス
-        salt = os.urandom(16)
-        nonce = os.urandom(12)
-        f.write(salt + nonce)
-
-        # 暗号化されたデータの代わりにダミーデータ
-        # この部分は後続のIssueで適切な暗号化を実装
-        combined_data = true_data + false_data
-        f.write(combined_data)
-
-    # 鍵データとメタデータ
-    keys = {"master_key": master_key}
-    metadata = {
-        "format": "indeterministic",
-        "timestamp": timestamp,
-    }
-
-    return keys, metadata
-
-def encrypt_files(true_file_path: str, false_file_path: str, output_path: str,
-                verbose: bool = False) -> Tuple[Dict[str, bytes], Dict[str, Any]]:
-    """
-    ファイルを暗号化
-
-    Args:
-        true_file_path: 正規ファイルのパス
-        false_file_path: 非正規ファイルのパス
-        output_path: 出力ファイルのパス
-        verbose: 詳細表示モード
-
-    Returns:
-        (keys, metadata): 鍵ペアとメタデータ
-    """
-    # 実際の暗号化処理は後続のIssueで実装
-    # ここではダミーの実装
-
-    master_key = generate_master_key()
-
-    # ファイル内容を読み込み
-    with open(true_file_path, 'rb') as f:
-        true_data = f.read()
-    with open(false_file_path, 'rb') as f:
-        false_data = f.read()
-
-    # テスト用の出力ファイル作成
-    with open(output_path, 'wb') as f:
-        # ヘッダー
-        f.write(b"INDET01")
-
-        # 基本メタデータ
-        timestamp = int(time.time())
-        meta_bytes = json.dumps({
-            "format": "indeterministic",
-            "version": "1.0",
-            "timestamp": timestamp,
-            "true_size": len(true_data),
-            "false_size": len(false_data)
-        }).encode('utf-8')
-
-        # メタデータサイズと本体
-        meta_size = len(meta_bytes).to_bytes(4, byteorder='big')
-        f.write(meta_size + meta_bytes)
-
-        # ソルトとノンス
-        salt = os.urandom(16)
-        nonce = os.urandom(12)
-        f.write(salt + nonce)
-
-        # 暗号化されたデータの代わりにダミーデータ
-        # この部分は後続のIssueで適切な暗号化を実装
-        combined_data = true_data + false_data
-        f.write(combined_data)
-
-    # 鍵データとメタデータ
-    keys = {"master_key": master_key}
-    metadata = {
-        "format": "indeterministic",
-        "timestamp": timestamp,
-    }
-
-    if verbose:
-        print(f"暗号化完了: {output_path}")
-        print(f"鍵: {binascii.hexlify(master_key).decode('ascii')}")
-
-    return keys, metadata
-
-def parse_arguments():
-    """
-    コマンドライン引数を解析
-
-    Returns:
-        解析された引数
-    """
-    parser = argparse.ArgumentParser(description="不確定性転写暗号化方式の暗号化プログラム")
-
-    parser.add_argument(
-        "--true-file",
-        type=str,
-        default=TRUE_TEXT_PATH,
-        help=f"正規ファイルのパス（デフォルト: {TRUE_TEXT_PATH}）"
+from typing import Dict, List, Tuple, Optional, Union, Any
+
+# パッケージとして利用する場合と直接実行する場合でインポートを切り替え
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.append(current_dir)
+    from state_matrix import create_state_matrix_from_key, State
+    from probability_engine import (
+        ProbabilisticExecutionEngine, create_engine_from_key,
+        TRUE_PATH, FALSE_PATH, obfuscate_execution_path, generate_anti_analysis_noise
+    )
+else:
+    from .state_matrix import create_state_matrix_from_key, State
+    from .probability_engine import (
+        ProbabilisticExecutionEngine, create_engine_from_key,
+        TRUE_PATH, FALSE_PATH, obfuscate_execution_path, generate_anti_analysis_noise
     )
 
-    parser.add_argument(
-        "--false-file",
-        type=str,
-        default=FALSE_TEXT_PATH,
-        help=f"非正規ファイルのパス（デフォルト: {FALSE_TEXT_PATH}）"
-    )
+# 定数定義
+VERSION = "1.0.0"
+CIPHER_HEADER = b"INDTCRYP"
+FILE_FORMAT_VERSION = 1
+MAX_HEADER_SIZE = 1024  # ヘッダサイズの最大値（バイト）
+DEFAULT_CHUNK_SIZE = 64 * 1024  # チャンク処理サイズ（64KB）
+DEFAULT_TRANSITIONS = 20  # デフォルトの状態遷移回数
 
-    parser.add_argument(
-        "--output", "-o",
-        type=str,
-        default=f"output{OUTPUT_EXTENSION}",
-        help=f"出力ファイルのパス（デフォルト: output{OUTPUT_EXTENSION}）"
-    )
 
-    parser.add_argument(
-        "--save-keys",
-        action="store_true",
-        help="生成された鍵をファイルに保存する"
-    )
-
-    parser.add_argument(
-        "--verbose", "-v",
-        action="store_true",
-        help="詳細な出力を表示する"
-    )
-
-    return parser.parse_args()
-
-def main():
+class IndeterministicEncryptor:
     """
-    メイン関数
+    不確定性転写暗号化を行うクラス
+
+    鍵に基づいた確率的実行パスに従って暗号化を行います。
     """
-    # システム整合性チェック
-    check_system_integrity()
 
-    args = parse_arguments()
+    def __init__(
+        self,
+        true_key: bytes,
+        false_key: bytes,
+        operation_key: str = TRUE_PATH,
+        salt: Optional[bytes] = None,
+        transitions: int = DEFAULT_TRANSITIONS
+    ):
+        """
+        暗号化機能の初期化
 
-    # 入力ファイルの存在確認
-    if not os.path.exists(args.true_file):
-        print(f"エラー: 正規ファイル '{args.true_file}' が見つかりません。", file=sys.stderr)
-        return 1
+        Args:
+            true_key: TRUE パス用の鍵
+            false_key: FALSE パス用の鍵
+            operation_key: 使用する鍵のタイプ（"true" または "false"）
+            salt: ソルト値（省略時はランダム生成）
+            transitions: 状態遷移回数
+        """
+        if not isinstance(true_key, bytes) or len(true_key) == 0:
+            raise ValueError("TRUE鍵はバイト列で、空であってはなりません")
 
-    if not os.path.exists(args.false_file):
-        print(f"エラー: 非正規ファイル '{args.false_file}' が見つかりません。", file=sys.stderr)
-        return 1
+        if not isinstance(false_key, bytes) or len(false_key) == 0:
+            raise ValueError("FALSE鍵はバイト列で、空であってはなりません")
 
-    # 出力ディレクトリの確認・作成
-    output_dir = os.path.dirname(args.output)
-    if output_dir and not os.path.exists(output_dir):
+        if operation_key not in [TRUE_PATH, FALSE_PATH]:
+            raise ValueError(f"操作鍵は '{TRUE_PATH}' または '{FALSE_PATH}' である必要があります")
+
+        self.true_key = true_key
+        self.false_key = false_key
+        self.operation_key = operation_key
+        self.salt = salt or os.urandom(16)
+        self.transitions = transitions
+
+        # 鍵の使用に応じたエンジンを初期化
+        key_to_use = true_key if operation_key == TRUE_PATH else false_key
+        self.engine = create_engine_from_key(key_to_use, operation_key, self.salt)
+
+        # 内部状態
+        self._initialized = True
+        self._execution_count = 0
+        self._cipher_params = self._initialize_cipher_params()
+
+    def _initialize_cipher_params(self) -> Dict[str, Any]:
+        """
+        暗号化パラメータの初期化
+
+        Returns:
+            初期化されたパラメータ辞書
+        """
+        # エンジンを実行して初期状態を設定
+        self.engine.run_execution(self.transitions)
+
+        # エンジンの実行署名を取得
+        signature = self.engine.get_execution_signature()
+
+        # 鍵導出関数を使用して暗号パラメータを生成
+        key_params = self._derive_cipher_parameters(signature)
+
+        return key_params
+
+    def _derive_cipher_parameters(self, seed: bytes) -> Dict[str, Any]:
+        """
+        暗号パラメータの導出
+
+        Args:
+            seed: パラメータ導出のシード
+
+        Returns:
+            暗号パラメータの辞書
+        """
+        if not isinstance(seed, bytes) or len(seed) < 16:
+            raise ValueError("シードは少なくとも16バイトのバイト列である必要があります")
+
+        params = {}
+
+        # HMAC-SHA256を使用してパラメータを派生
+        hmac_key = self.true_key if self.operation_key == TRUE_PATH else self.false_key
+
+        # 暗号化鍵の派生（32バイト）
+        params["cipher_key"] = hashlib.pbkdf2_hmac(
+            "sha256",
+            hmac_key,
+            seed + b"cipher_key",
+            iterations=10000,
+            dklen=32
+        )
+
+        # 初期化ベクトルの派生（16バイト）
+        params["iv"] = hashlib.pbkdf2_hmac(
+            "sha256",
+            hmac_key,
+            seed + b"iv",
+            iterations=10000,
+            dklen=16
+        )
+
+        # データ認証コード用の鍵の派生（32バイト）
+        params["mac_key"] = hashlib.pbkdf2_hmac(
+            "sha256",
+            hmac_key,
+            seed + b"mac_key",
+            iterations=10000,
+            dklen=32
+        )
+
+        # ノンスの派生（12バイト）
+        params["nonce"] = hashlib.pbkdf2_hmac(
+            "sha256",
+            hmac_key,
+            seed + b"nonce",
+            iterations=10000,
+            dklen=12
+        )
+
+        return params
+
+    def encrypt(self, data: bytes) -> bytes:
+        """
+        データの暗号化
+
+        Args:
+            data: 暗号化するデータ
+
+        Returns:
+            暗号化されたデータ
+        """
+        if not self._initialized:
+            raise RuntimeError("暗号化機能が初期化されていません")
+
+        if not isinstance(data, bytes):
+            raise TypeError("暗号化するデータはバイト列である必要があります")
+
+        # エンジンの実行カウンタを更新
+        self._execution_count += 1
+
         try:
-            os.makedirs(output_dir)
-            if args.verbose:
-                print(f"ディレクトリを作成しました: {output_dir}")
-        except OSError as e:
-            print(f"エラー: 出力ディレクトリを作成できません: {e}", file=sys.stderr)
-            return 1
+            # AES-GCM暗号化用にモジュールをインポート
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
+            # 暗号化エンジンの作成
+            cipher = AESGCM(self._cipher_params["cipher_key"])
+
+            # タイムスタンプ（追加の認証データとして使用）
+            timestamp = int(time.time()).to_bytes(8, byteorder="big")
+
+            # ノンスを取得
+            nonce = self._cipher_params["nonce"]
+
+            # 追加の認証データの構築（暗号文の一部ではない情報）
+            aad = timestamp + self.salt
+
+            # 暗号化を実行
+            encrypted_data = cipher.encrypt(nonce, data, aad)
+
+            # 実行パスを難読化（解析対策）
+            obfuscate_execution_path(self.engine)
+
+            # メタデータの作成
+            metadata = {
+                "version": FILE_FORMAT_VERSION,
+                "timestamp": int.from_bytes(timestamp, byteorder="big"),
+                "salt": self.salt.hex(),
+                "mode": self.operation_key,
+                "transitions": self.transitions,
+                "signature": self.engine.get_execution_signature().hex()
+            }
+
+            # メタデータをJSON形式にエンコード
+            metadata_json = json.dumps(metadata).encode("utf-8")
+            metadata_len = len(metadata_json).to_bytes(4, byteorder="big")
+
+            # ヘッダーにメタデータを追加
+            header = CIPHER_HEADER + metadata_len + metadata_json
+
+            # ヘッダーと暗号化データの結合
+            return header + encrypted_data
+
+        except ImportError:
+            # cryptographyモジュールがない場合は例外を発生
+            raise RuntimeError("暗号化に必要なcryptographyモジュールがインストールされていません")
+        except Exception as e:
+            # 暗号化中の例外を処理
+            raise RuntimeError(f"暗号化中にエラーが発生しました: {e}")
+
+    def encrypt_file(self, input_file: str, output_file: str, chunk_size: int = DEFAULT_CHUNK_SIZE) -> bool:
+        """
+        ファイルの暗号化
+
+        Args:
+            input_file: 入力ファイルのパス
+            output_file: 出力ファイルのパス
+            chunk_size: チャンク処理サイズ（バイト）
+
+        Returns:
+            成功した場合はTrue、失敗した場合はFalse
+        """
+        try:
+            # 入力ファイルと出力ファイルが同じ場合はエラー
+            if os.path.abspath(input_file) == os.path.abspath(output_file):
+                raise ValueError("入力ファイルと出力ファイルは同じであってはなりません")
+
+            # 入力ファイルの存在確認
+            if not os.path.exists(input_file):
+                raise FileNotFoundError(f"入力ファイル '{input_file}' が見つかりません")
+
+            # 入力ファイルの読み取り
+            with open(input_file, "rb") as f_in:
+                data = f_in.read()
+
+            # データの暗号化
+            encrypted_data = self.encrypt(data)
+
+            # 出力ファイルに書き込み
+            with open(output_file, "wb") as f_out:
+                f_out.write(encrypted_data)
+
+            # タイムスタンプを付与（証拠保全）
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            base, ext = os.path.splitext(output_file)
+            output_file_with_timestamp = f"{base}_{timestamp}{ext}"
+
+            # タイムスタンプ付きのファイル名にリネーム
+            os.rename(output_file, output_file_with_timestamp)
+
+            print(f"ファイルを暗号化しました: {input_file} -> {output_file_with_timestamp}")
+            return True
+
+        except Exception as e:
+            print(f"暗号化中にエラーが発生しました: {e}", file=sys.stderr)
+            return False
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        暗号化エンジンの統計情報を取得
+
+        Returns:
+            統計情報の辞書
+        """
+        stats = {
+            "version": VERSION,
+            "operation_mode": self.operation_key,
+            "salt": self.salt.hex(),
+            "transitions": self.transitions,
+            "execution_count": self._execution_count,
+        }
+
+        # エンジンの状態を追加
+        if hasattr(self.engine, 'get_engine_state'):
+            engine_state = self.engine.get_engine_state()
+            stats.update({"engine_" + k: v for k, v in engine_state.items()})
+
+        return stats
+
+
+def derive_key_from_password(password: str, salt: Optional[bytes] = None) -> bytes:
+    """
+    パスワードから鍵を導出
+
+    Args:
+        password: 鍵生成に使用するパスワード
+        salt: ソルト値（省略時はランダム生成）
+
+    Returns:
+        導出された鍵
+    """
+    if not password:
+        raise ValueError("パスワードが空です")
+
+    salt = salt or os.urandom(16)
+
+    # PBKDF2を使用して鍵を導出
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        iterations=100000,
+        dklen=32
+    )
+
+
+def encrypt_file_cli(
+    input_file: str,
+    output_file: str,
+    true_password: str,
+    false_password: str,
+    mode: str = TRUE_PATH
+) -> bool:
+    """
+    CLI用のファイル暗号化関数
+
+    Args:
+        input_file: 入力ファイルのパス
+        output_file: 出力ファイルのパス
+        true_password: TRUE鍵用のパスワード
+        false_password: FALSE鍵用のパスワード
+        mode: 操作モード（"true" または "false"）
+
+    Returns:
+        成功した場合はTrue、失敗した場合はFalse
+    """
     try:
-        # タイムスタンプ生成（エビデンスが上書きされないようにするため）
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_with_timestamp = args.output
+        # パスワードから鍵を導出
+        salt = os.urandom(16)
+        true_key = derive_key_from_password(true_password, salt)
+        false_key = derive_key_from_password(false_password, salt)
 
-        # ファイルサイズに応じた処理
-        if is_large_file(args.true_file) or is_large_file(args.false_file):
-            if args.verbose:
-                print("大きなファイルを検出しました。分割処理を実行します。")
-            keys, metadata = process_large_file(
-                args.true_file, args.false_file, output_with_timestamp,
-                verbose=args.verbose
-            )
-        else:
-            # 通常のファイル処理
-            start_time = time.time()
-            keys, metadata = encrypt_files(
-                args.true_file, args.false_file, output_with_timestamp,
-                verbose=args.verbose
-            )
-            end_time = time.time()
+        # 暗号化器の初期化
+        encryptor = IndeterministicEncryptor(true_key, false_key, mode, salt)
 
-            if args.verbose:
-                print(f"暗号化時間: {end_time - start_time:.2f}秒")
+        # ファイルの暗号化
+        result = encryptor.encrypt_file(input_file, output_file)
 
-        # 鍵の保存（オプション）
-        if args.save_keys:
-            key_file = f"{os.path.splitext(output_with_timestamp)[0]}.key"
-            with open(key_file, 'wb') as f:
-                f.write(keys["master_key"])
-            if args.verbose:
-                print(f"鍵を保存しました: {key_file}")
-
-        return 0
+        return result
 
     except Exception as e:
-        print(f"エラー: 暗号化中に問題が発生しました: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return 1
+        print(f"暗号化処理中にエラーが発生しました: {e}", file=sys.stderr)
+        return False
 
-    finally:
-        # 重要なメモリデータの安全な消去
-        if "keys" in locals():
-            for key_name, key_data in keys.items():
-                secure_wipe(key_data)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    parser = argparse.ArgumentParser(description="不確定性転写暗号化")
+    parser.add_argument("input_file", help="暗号化する入力ファイル")
+    parser.add_argument("output_file", help="暗号化されたデータを出力するファイル")
+    parser.add_argument("--true-password", help="TRUE鍵のパスワード")
+    parser.add_argument("--false-password", help="FALSE鍵のパスワード")
+    parser.add_argument("--mode", choices=[TRUE_PATH, FALSE_PATH], default=TRUE_PATH, help="操作モード")
+
+    args = parser.parse_args()
+
+    # パスワードが指定されていない場合は対話式で入力
+    if not args.true_password:
+        import getpass
+        args.true_password = getpass.getpass("TRUE鍵のパスワード: ")
+
+    if not args.false_password:
+        import getpass
+        args.false_password = getpass.getpass("FALSE鍵のパスワード: ")
+
+    # ファイルの暗号化
+    success = encrypt_file_cli(
+        args.input_file,
+        args.output_file,
+        args.true_password,
+        args.false_password,
+        args.mode
+    )
+
+    sys.exit(0 if success else 1)

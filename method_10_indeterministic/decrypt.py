@@ -1,469 +1,503 @@
 #!/usr/bin/env python3
 """
-不確定性転写暗号化方式 - 復号プログラム
+不確定性転写暗号化方式の復号スクリプト
 
-暗号文ファイルと鍵を入力として受け取り、
-鍵の種類に応じて異なる平文（true.text/false.text）を復元します。
+鍵に基づいた確率的実行パスに従って復号を行います。
+TRUE/FALSE 2種類の鍵を使用し、どちらの鍵を使っても復号は可能ですが、
+結果として得られる情報は鍵に応じて確率的に異なります。
 """
 
 import os
 import sys
 import time
 import json
-import base64
-import argparse
 import hashlib
+import argparse
 import secrets
-import datetime
-import binascii
-from typing import Dict, List, Tuple, Optional, Any, BinaryIO, Union
+from typing import Dict, List, Tuple, Optional, Union, Any
 
-# 内部モジュールのインポート
-from .config import (
-    TRUE_TEXT_PATH, FALSE_TEXT_PATH, KEY_SIZE_BYTES,
-    STATE_MATRIX_SIZE, STATE_TRANSITIONS, OUTPUT_EXTENSION,
-    MAX_CHUNK_SIZE, FILE_THRESHOLD_SIZE, DEFAULT_CHUNK_COUNT,
-    SECURE_MEMORY_WIPE, ANTI_TAMPERING, ERROR_ON_SUSPICIOUS_BEHAVIOR,
-    USE_DYNAMIC_THRESHOLD, MAX_RETRY_COUNT, ENFORCE_PATH_ISOLATION,
-    PREVENT_OUTPUT_BYPASS
-)
+# パッケージとして利用する場合と直接実行する場合でインポートを切り替え
+if __name__ == "__main__":
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    if current_dir not in sys.path:
+        sys.path.append(current_dir)
+    from state_matrix import create_state_matrix_from_key, State
+    from probability_engine import (
+        ProbabilisticExecutionEngine, create_engine_from_key,
+        TRUE_PATH, FALSE_PATH, obfuscate_execution_path, generate_anti_analysis_noise
+    )
+else:
+    from .state_matrix import create_state_matrix_from_key, State
+    from .probability_engine import (
+        ProbabilisticExecutionEngine, create_engine_from_key,
+        TRUE_PATH, FALSE_PATH, obfuscate_execution_path, generate_anti_analysis_noise
+    )
 
-try:
-    # 暗号化ライブラリ（オプション）
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-    from cryptography.hazmat.primitives import padding
-    from cryptography.hazmat.backends import default_backend
-    HAS_CRYPTOGRAPHY = True
-except ImportError:
-    # 依存ライブラリがない場合はXOR暗号を使用
-    HAS_CRYPTOGRAPHY = False
+# 定数定義
+VERSION = "1.0.0"
+CIPHER_HEADER = b"INDTCRYP"
+FILE_FORMAT_VERSION = 1
+MAX_HEADER_SIZE = 1024  # ヘッダサイズの最大値（バイト）
+DEFAULT_CHUNK_SIZE = 64 * 1024  # チャンク処理サイズ（64KB）
+DEFAULT_TRANSITIONS = 20  # デフォルトの状態遷移回数
 
-# パスタイプ定数
-TRUE_PATH = "true"
-FALSE_PATH = "false"
 
-# 必要なシステムチェック
-def check_system_integrity():
-    """システムの整合性をチェック"""
-    if ANTI_TAMPERING:
-        # モジュールのハッシュを計算して改変がないか確認
-        expected_hashes = {}  # 実際の実装では既知の正規ハッシュ値を設定
-
-        # この関数自体のソースコードハッシュを計算
-        current_file = os.path.abspath(__file__)
-        if os.path.exists(current_file):
-            with open(current_file, 'rb') as f:
-                content = f.read()
-                current_hash = hashlib.sha256(content).hexdigest()
-
-                # 実際の実装では期待値との比較を行う
-                # if current_hash != expected_hashes.get(__file__):
-                #     if ERROR_ON_SUSPICIOUS_BEHAVIOR:
-                #         raise SecurityError("ファイルの整合性が損なわれています")
-
-    return True
-
-# セキュリティ例外
-class SecurityError(Exception):
-    """セキュリティ関連の例外"""
-    pass
-
-def secure_wipe(data):
+class IndeterministicDecryptor:
     """
-    メモリ上のデータを安全に消去
+    不確定性転写暗号化の復号を行うクラス
 
-    Args:
-        data: 消去するデータ（バイト列またはbytearray）
+    鍵に基づいた確率的実行パスに従って復号を行います。
     """
-    if SECURE_MEMORY_WIPE:
-        if isinstance(data, bytearray):
-            for i in range(len(data)):
-                data[i] = 0
-        elif isinstance(data, bytes):
-            # bytesは不変なので、参照を削除するのみ
-            pass
 
-def read_encrypted_file(file_path: str) -> Tuple[Dict[str, Any], bytes]:
-    """
-    暗号化ファイルを読み込む
+    def __init__(
+        self,
+        key: bytes,
+        mode: str,
+    ):
+        """
+        復号機能の初期化
 
-    Args:
-        file_path: 読み込む暗号化ファイルのパス
+        Args:
+            key: 使用する鍵
+            mode: 使用する鍵のタイプ（"true" または "false"）
+        """
+        if not isinstance(key, bytes) or len(key) == 0:
+            raise ValueError("鍵はバイト列で、空であってはなりません")
 
-    Returns:
-        (メタデータ, 暗号化データ)
-    """
-    try:
-        with open(file_path, 'rb') as f:
-            # ヘッダー読み込み
-            header = f.read(7)  # "INDET01"の7バイト
-            if header != b"INDET01":
-                # チャンクマニフェストファイルの可能性をチェック
-                if file_path.endswith(".manifest"):
-                    with open(file_path, 'r') as manifest_file:
-                        manifest = json.load(manifest_file)
-                        return manifest, None
+        if mode not in [TRUE_PATH, FALSE_PATH]:
+            raise ValueError(f"モードは '{TRUE_PATH}' または '{FALSE_PATH}' である必要があります")
 
-                raise ValueError("不正なファイル形式です")
+        self.key = key
+        self.mode = mode
 
-            # ヘッダー後のパディングバイト（0バイト）があれば読み飛ばす
-            padding = f.read(1)
-            if padding != b'\x00':
-                f.seek(-1, 1)  # 1バイト戻る
+        # 内部状態
+        self._initialized = False
+        self._execution_count = 0
+        self._cipher_params = None
+        self._metadata = None
+        self.engine = None
 
-            # メタデータサイズを読み込み
-            meta_size_bytes = f.read(4)
-            meta_size = int.from_bytes(meta_size_bytes, byteorder='big')
+    def _initialize_from_encrypted_data(self, encrypted_data: bytes) -> bool:
+        """
+        暗号化データから復号パラメータを初期化
 
-            # メタデータを読み込み
-            meta_bytes = f.read(meta_size)
-            metadata = json.loads(meta_bytes.decode('utf-8'))
+        Args:
+            encrypted_data: 暗号化されたデータ
 
-            # ソルトとノンスを読み込み
-            salt = f.read(16)
-            nonce = f.read(12)
-
-            # 残りのデータを読み込み
-            data = f.read()
-
-            # メタデータにソルトとノンスを追加
-            metadata["salt"] = base64.b64encode(salt).decode('ascii')
-            metadata["nonce"] = base64.b64encode(nonce).decode('ascii')
-
-            return metadata, data
-
-    except Exception as e:
-        print(f"暗号化ファイル '{file_path}' の読み込みエラー: {e}", file=sys.stderr)
-        raise
-
-def determine_path_type(key: bytes, salt: Optional[bytes] = None) -> str:
-    """
-    鍵からパスタイプを決定
-
-    この関数は、鍵が正規パスと非正規パスのどちらに対応するかを決定します。
-    鍵自体が「正規」か「非正規」かを判別し、対応するパスタイプを返します。
-
-    Args:
-        key: 復号鍵
-        salt: ソルト値（省略時はランダム生成）
-
-    Returns:
-        パスタイプ（"true" または "false"）
-    """
-    # この関数の詳細な実装は、後続の子Issueで実装予定
-    # ここでは基本的な骨組みのみ
-
-    # 鍵からハッシュ値を生成（ソルトありの場合はソルトも含める）
-    if salt:
-        key_hash = hashlib.sha256(key + salt).digest()
-    else:
-        key_hash = hashlib.sha256(key).digest()
-
-    # 動的判定閾値の基本実装
-    if USE_DYNAMIC_THRESHOLD:
-        # 動的閾値を生成（実際の実装ではより複雑な判定を行う）
-        threshold = 0.5  # デフォルト閾値
-
-        # 鍵の特性を解析して動的閾値を調整
-        key_chars = [b for b in key_hash]
-        key_sum = sum(key_chars)
-
-        # 最初のバイト値に基づいて判定（実際の実装ではより複雑な判定）
-        return TRUE_PATH if key_hash[0] < 128 else FALSE_PATH
-    else:
-        # 固定閾値での判定
-        return TRUE_PATH if key_hash[0] < 128 else FALSE_PATH
-
-def is_chunk_manifest(file_path: str) -> bool:
-    """
-    ファイルがチャンクマニフェストかどうかを判定
-
-    Args:
-        file_path: 判定するファイルのパス
-
-    Returns:
-        チャンクマニフェストの場合はTrue
-    """
-    return file_path.endswith(".manifest")
-
-def process_chunk_manifest(manifest_path: str, key: bytes, output_path: str,
-                        verbose: bool = False) -> str:
-    """
-    チャンクマニフェストを処理して大きなファイルを復号
-
-    Args:
-        manifest_path: マニフェストファイルのパス
-        key: 復号鍵
-        output_path: 出力ファイルのパス
-        verbose: 詳細表示モード
-
-    Returns:
-        復号されたファイルのパス
-    """
-    try:
-        # マニフェストファイルを読み込み
-        with open(manifest_path, 'r') as f:
-            manifest = json.load(f)
-
-        if verbose:
-            print(f"マニフェスト読み込み: {manifest_path}")
-            print(f"チャンク数: {manifest.get('total_chunks', 0)}")
-
-        # パスタイプを決定
-        path_type = determine_path_type(key)
-
-        if verbose:
-            print(f"パスタイプ: {path_type}")
-
-        # チャンクを処理
-        chunks = manifest.get("chunks", [])
-        base_dir = os.path.dirname(manifest_path)
-
-        # 出力ファイルを開く
-        with open(output_path, 'wb') as output_file:
-            # 各チャンクを処理
-            for chunk_info in sorted(chunks, key=lambda x: x["index"]):
-                chunk_path = os.path.join(base_dir, chunk_info["path"])
-
-                if not os.path.exists(chunk_path):
-                    raise FileNotFoundError(f"チャンクファイル {chunk_path} が見つかりません")
-
-                if verbose:
-                    print(f"チャンク処理: {chunk_path}")
-
-                # チャンクを復号
-                temp_output = f"{output_path}.chunk_{chunk_info['index']}"
-                decrypt_file_internal(chunk_path, key, temp_output, path_type, verbose)
-
-                # 復号されたチャンクを出力ファイルに追加
-                with open(temp_output, 'rb') as chunk_file:
-                    output_file.write(chunk_file.read())
-
-                # 一時ファイルを削除
-                os.unlink(temp_output)
-
-        if verbose:
-            print(f"全チャンクの処理が完了しました")
-
-        return output_path
-
-    except Exception as e:
-        print(f"チャンクマニフェスト処理エラー: {e}", file=sys.stderr)
-        raise
-
-def decrypt_file_internal(encrypted_file_path: str, key: bytes, output_path: str,
-                       path_type: str, verbose: bool = False) -> str:
-    """
-    暗号化ファイルを内部的に復号
-
-    Args:
-        encrypted_file_path: 暗号化ファイルのパス
-        key: 復号鍵
-        output_path: 出力ファイルのパス
-        path_type: パスタイプ（"true" または "false"）
-        verbose: 詳細表示モード
-
-    Returns:
-        復号されたファイルのパス
-    """
-    # メタデータと暗号化データの読み込み
-    metadata, encrypted_data = read_encrypted_file(encrypted_file_path)
-
-    if encrypted_data is None:
-        # チャンクマニフェストの場合は別途処理
-        if is_chunk_manifest(encrypted_file_path):
-            return process_chunk_manifest(encrypted_file_path, key, output_path, verbose)
-        raise ValueError("暗号化データがありません")
-
-    # 実際の復号処理は後続のIssueで実装
-    # ここではダミーの実装
-    if path_type == TRUE_PATH:
-        # 正規パスの場合
-        with open(TRUE_TEXT_PATH, 'rb') as f:
-            decrypted_data = f.read()
-    else:
-        # 非正規パスの場合
-        with open(FALSE_TEXT_PATH, 'rb') as f:
-            decrypted_data = f.read()
-
-    # 復号結果を書き込み
-    with open(output_path, 'wb') as f:
-        f.write(decrypted_data)
-
-    if verbose:
-        print(f"復号完了: {output_path} ({path_type}パス)")
-
-    return output_path
-
-def decrypt_file(encrypted_file_path: str, key: Union[bytes, str], output_path: Optional[str] = None,
-               verbose: bool = False) -> str:
-    """
-    不確定性転写暗号化方式で復号
-
-    Args:
-        encrypted_file_path: 暗号化ファイルのパス
-        key: 復号鍵（バイト列または16進数文字列）
-        output_path: 出力ファイルのパス（省略時は自動生成）
-        verbose: 詳細表示モード
-
-    Returns:
-        復号されたファイルのパス
-    """
-    # 整合性チェック
-    check_system_integrity()
-
-    # 鍵の変換
-    if isinstance(key, str):
+        Returns:
+            初期化に成功した場合はTrue、失敗した場合はFalse
+        """
         try:
-            key = binascii.unhexlify(key)
-        except binascii.Error:
-            # 16進数でない場合はUTF-8エンコードと仮定
-            key = key.encode('utf-8')
+            # ヘッダーの検証
+            if not encrypted_data.startswith(CIPHER_HEADER):
+                raise ValueError("無効なファイル形式です。暗号化ヘッダーが見つかりません。")
 
-    # 出力パスの生成（省略時）
-    if output_path is None:
-        base_name = os.path.splitext(encrypted_file_path)[0]
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_path = f"{base_name}_decrypted_{timestamp}.txt"
+            # メタデータ長の取得
+            metadata_len_bytes = encrypted_data[len(CIPHER_HEADER):len(CIPHER_HEADER) + 4]
+            metadata_len = int.from_bytes(metadata_len_bytes, byteorder="big")
 
-    # 出力ディレクトリの確認・作成
-    output_dir = os.path.dirname(output_path)
-    if output_dir and not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+            # メタデータ長の検証
+            if metadata_len <= 0 or metadata_len > MAX_HEADER_SIZE:
+                raise ValueError(f"無効なメタデータサイズです: {metadata_len}")
 
-    # パスタイプを決定
-    path_type = determine_path_type(key)
+            # メタデータの取得
+            metadata_start = len(CIPHER_HEADER) + 4
+            metadata_end = metadata_start + metadata_len
+            metadata_json = encrypted_data[metadata_start:metadata_end]
 
-    if verbose:
-        print(f"復号開始: {encrypted_file_path}")
-        print(f"パスタイプ: {path_type}")
+            # メタデータのデコード
+            try:
+                metadata = json.loads(metadata_json.decode("utf-8"))
+            except json.JSONDecodeError:
+                raise ValueError("メタデータの解析に失敗しました")
 
-    # 復号実行（再試行あり）
-    retry_count = 0
-    while retry_count <= MAX_RETRY_COUNT:
-        try:
-            if is_chunk_manifest(encrypted_file_path):
-                # チャンクマニフェストの場合は特殊処理
-                return process_chunk_manifest(encrypted_file_path, key, output_path, verbose)
-            else:
-                # 通常の復号処理
-                return decrypt_file_internal(encrypted_file_path, key, output_path, path_type, verbose)
+            # バージョンの検証
+            if metadata.get("version") != FILE_FORMAT_VERSION:
+                raise ValueError(f"サポートされていないファイルバージョンです: {metadata.get('version')}")
+
+            # メタデータの保存
+            self._metadata = metadata
+
+            # ソルトの取得
+            salt_hex = metadata.get("salt")
+            if not salt_hex:
+                raise ValueError("メタデータにソルトが含まれていません")
+
+            salt = bytes.fromhex(salt_hex)
+
+            # 遷移回数の取得
+            transitions = metadata.get("transitions", DEFAULT_TRANSITIONS)
+
+            # 実行エンジンの初期化
+            self.engine = create_engine_from_key(self.key, self.mode, salt)
+
+            # エンジンの実行
+            self.engine.run_execution(transitions)
+
+            # 実行署名の取得
+            signature = self.engine.get_execution_signature()
+
+            # 暗号パラメータの導出
+            self._cipher_params = self._derive_cipher_parameters(signature)
+
+            # 初期化完了
+            self._initialized = True
+            return True
 
         except Exception as e:
-            retry_count += 1
-            if retry_count > MAX_RETRY_COUNT:
-                print(f"エラー: 復号に失敗しました（再試行回数超過）: {e}", file=sys.stderr)
-                raise
+            print(f"初期化中にエラーが発生しました: {e}", file=sys.stderr)
+            return False
 
-            if verbose:
-                print(f"警告: 復号中にエラーが発生しました。再試行 {retry_count}/{MAX_RETRY_COUNT}: {e}")
+    def _derive_cipher_parameters(self, seed: bytes) -> Dict[str, Any]:
+        """
+        暗号パラメータの導出
 
-            # 短い待機後に再試行
-            time.sleep(1)
+        Args:
+            seed: パラメータ導出のシード
 
-    # 通常ここには到達しない
-    raise RuntimeError("予期しないエラー: 復号処理が完了せず")
+        Returns:
+            暗号パラメータの辞書
+        """
+        if not isinstance(seed, bytes) or len(seed) < 16:
+            raise ValueError("シードは少なくとも16バイトのバイト列である必要があります")
 
-def parse_arguments():
-    """
-    コマンドライン引数を解析
+        params = {}
 
-    Returns:
-        解析された引数
-    """
-    parser = argparse.ArgumentParser(description="不確定性転写暗号化方式の復号プログラム")
+        # HMAC-SHA256を使用してパラメータを派生
+        hmac_key = self.key
 
-    parser.add_argument(
-        "input_file",
-        type=str,
-        help="復号する暗号化ファイルのパス"
-    )
+        # 暗号化鍵の派生（32バイト）
+        params["cipher_key"] = hashlib.pbkdf2_hmac(
+            "sha256",
+            hmac_key,
+            seed + b"cipher_key",
+            iterations=10000,
+            dklen=32
+        )
 
-    parser.add_argument(
-        "--key",
-        "-k",
-        type=str,
-        help="復号鍵（16進数形式）"
-    )
+        # 初期化ベクトルの派生（16バイト）
+        params["iv"] = hashlib.pbkdf2_hmac(
+            "sha256",
+            hmac_key,
+            seed + b"iv",
+            iterations=10000,
+            dklen=16
+        )
 
-    parser.add_argument(
-        "--key-file",
-        type=str,
-        help="復号鍵ファイルのパス"
-    )
+        # データ認証コード用の鍵の派生（32バイト）
+        params["mac_key"] = hashlib.pbkdf2_hmac(
+            "sha256",
+            hmac_key,
+            seed + b"mac_key",
+            iterations=10000,
+            dklen=32
+        )
 
-    parser.add_argument(
-        "--output",
-        "-o",
-        type=str,
-        help="出力ファイルのパス（省略時は自動生成）"
-    )
+        # ノンスの派生（12バイト）
+        params["nonce"] = hashlib.pbkdf2_hmac(
+            "sha256",
+            hmac_key,
+            seed + b"nonce",
+            iterations=10000,
+            dklen=12
+        )
 
-    parser.add_argument(
-        "--verbose",
-        "-v",
-        action="store_true",
-        help="詳細な出力を表示する"
-    )
+        return params
 
-    return parser.parse_args()
+    def decrypt(self, encrypted_data: bytes) -> bytes:
+        """
+        暗号化データの復号
 
-def main():
-    """
-    メイン関数
-    """
-    args = parse_arguments()
+        Args:
+            encrypted_data: 復号するデータ
 
-    # 入力ファイルの存在確認
-    if not os.path.exists(args.input_file):
-        print(f"エラー: 暗号化ファイル '{args.input_file}' が見つかりません。", file=sys.stderr)
-        return 1
+        Returns:
+            復号されたデータ
+        """
+        if not isinstance(encrypted_data, bytes):
+            raise TypeError("暗号化データはバイト列である必要があります")
 
-    # 鍵の取得
-    key = None
+        # メタデータから初期化
+        if not self._initialized and not self._initialize_from_encrypted_data(encrypted_data):
+            raise RuntimeError("暗号化データからの初期化に失敗しました")
 
-    if args.key:
-        # コマンドラインから鍵を取得
-        key = args.key
-    elif args.key_file:
-        # 鍵ファイルから鍵を取得
-        if not os.path.exists(args.key_file):
-            print(f"エラー: 鍵ファイル '{args.key_file}' が見つかりません。", file=sys.stderr)
-            return 1
+        # エンジンの実行カウンタを更新
+        self._execution_count += 1
 
         try:
-            with open(args.key_file, 'rb') as f:
-                key = f.read()
+            # AES-GCM復号用にモジュールをインポート
+            from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+            # メタデータの取得
+            metadata = self._metadata
+
+            # タイムスタンプの取得
+            timestamp = metadata.get("timestamp")
+            timestamp_bytes = timestamp.to_bytes(8, byteorder="big") if isinstance(timestamp, int) else b"\x00" * 8
+
+            # ソルトの取得
+            salt_hex = metadata.get("salt")
+            salt = bytes.fromhex(salt_hex) if salt_hex else b""
+
+            # 暗号化データの取得（ヘッダーとメタデータを除く）
+            metadata_json = json.dumps(metadata).encode("utf-8")
+            data_start = len(CIPHER_HEADER) + 4 + len(metadata_json)
+            cipher_data = encrypted_data[data_start:]
+
+            # 復号エンジンの作成
+            cipher = AESGCM(self._cipher_params["cipher_key"])
+
+            # ノンスを取得
+            nonce = self._cipher_params["nonce"]
+
+            # 追加の認証データの構築
+            aad = timestamp_bytes + salt
+
+            # 復号を実行
+            try:
+                decrypted_data = cipher.decrypt(nonce, cipher_data, aad)
+            except Exception as e:
+                if "MAC check failed" in str(e):
+                    # MACの検証失敗（鍵が違う、またはデータが改ざんされている）
+                    raise ValueError("認証に失敗しました。鍵が間違っているか、データが改ざんされています。")
+                else:
+                    # その他の復号エラー
+                    raise ValueError(f"復号中にエラーが発生しました: {e}")
+
+            # 実行パスを難読化（解析対策）
+            obfuscate_execution_path(self.engine)
+
+            return decrypted_data
+
+        except ImportError:
+            # cryptographyモジュールがない場合は例外を発生
+            raise RuntimeError("復号に必要なcryptographyモジュールがインストールされていません")
         except Exception as e:
-            print(f"エラー: 鍵ファイルの読み込みに失敗しました: {e}", file=sys.stderr)
-            return 1
-    else:
-        print("エラー: --key または --key-file オプションで鍵を指定してください。", file=sys.stderr)
-        return 1
+            # 復号中の例外を処理
+            raise RuntimeError(f"復号中にエラーが発生しました: {e}")
 
+    def decrypt_file(self, input_file: str, output_file: str) -> bool:
+        """
+        ファイルの復号
+
+        Args:
+            input_file: 入力ファイルのパス
+            output_file: 出力ファイルのパス
+
+        Returns:
+            成功した場合はTrue、失敗した場合はFalse
+        """
+        try:
+            # 入力ファイルと出力ファイルが同じ場合はエラー
+            if os.path.abspath(input_file) == os.path.abspath(output_file):
+                raise ValueError("入力ファイルと出力ファイルは同じであってはなりません")
+
+            # 入力ファイルの存在確認
+            if not os.path.exists(input_file):
+                raise FileNotFoundError(f"入力ファイル '{input_file}' が見つかりません")
+
+            # 入力ファイルの読み取り
+            with open(input_file, "rb") as f_in:
+                encrypted_data = f_in.read()
+
+            # データの復号
+            try:
+                decrypted_data = self.decrypt(encrypted_data)
+            except Exception as e:
+                print(f"復号処理中にエラーが発生しました: {e}", file=sys.stderr)
+                return False
+
+            # 出力ファイルに書き込み
+            with open(output_file, "wb") as f_out:
+                f_out.write(decrypted_data)
+
+            # タイムスタンプを付与（証拠保全）
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            base, ext = os.path.splitext(output_file)
+            output_file_with_timestamp = f"{base}_{timestamp}{ext}"
+
+            # タイムスタンプ付きのファイル名にリネーム
+            os.rename(output_file, output_file_with_timestamp)
+
+            print(f"ファイルを復号しました: {input_file} -> {output_file_with_timestamp}")
+            return True
+
+        except Exception as e:
+            print(f"復号処理中にエラーが発生しました: {e}", file=sys.stderr)
+            return False
+
+    def get_stats(self) -> Dict[str, Any]:
+        """
+        復号エンジンの統計情報を取得
+
+        Returns:
+            統計情報の辞書
+        """
+        stats = {
+            "version": VERSION,
+            "operation_mode": self.mode,
+            "execution_count": self._execution_count,
+            "initialized": self._initialized
+        }
+
+        # メタデータを追加
+        if self._metadata:
+            stats.update({"metadata_" + k: v for k, v in self._metadata.items()})
+
+        # エンジンの状態を追加
+        if self.engine and hasattr(self.engine, 'get_engine_state'):
+            engine_state = self.engine.get_engine_state()
+            stats.update({"engine_" + k: v for k, v in engine_state.items()})
+
+        return stats
+
+
+def derive_key_from_password(password: str, salt: bytes) -> bytes:
+    """
+    パスワードから鍵を導出
+
+    Args:
+        password: 鍵生成に使用するパスワード
+        salt: ソルト値
+
+    Returns:
+        導出された鍵
+    """
+    if not password:
+        raise ValueError("パスワードが空です")
+
+    if not salt or not isinstance(salt, bytes):
+        raise ValueError("ソルトは空でないバイト列である必要があります")
+
+    # PBKDF2を使用して鍵を導出
+    return hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt,
+        iterations=100000,
+        dklen=32
+    )
+
+
+def extract_salt_from_encrypted_file(input_file: str) -> Optional[bytes]:
+    """
+    暗号化ファイルからソルトを抽出
+
+    Args:
+        input_file: 暗号化ファイルのパス
+
+    Returns:
+        抽出されたソルト値（失敗した場合はNone）
+    """
     try:
-        # 復号実行
-        start_time = time.time()
-        output_file = decrypt_file(args.input_file, key, args.output, args.verbose)
-        end_time = time.time()
+        # ファイルの先頭部分だけを読み取る
+        with open(input_file, "rb") as f:
+            header_data = f.read(MAX_HEADER_SIZE)
 
-        # 完了メッセージ
-        print(f"復号が完了しました: {output_file}")
-        if args.verbose:
-            print(f"復号時間: {end_time - start_time:.2f}秒")
+        # ヘッダーの検証
+        if not header_data.startswith(CIPHER_HEADER):
+            print("無効なファイル形式です。暗号化ヘッダーが見つかりません。", file=sys.stderr)
+            return None
 
-        return 0
+        # メタデータ長の取得
+        metadata_len_bytes = header_data[len(CIPHER_HEADER):len(CIPHER_HEADER) + 4]
+        metadata_len = int.from_bytes(metadata_len_bytes, byteorder="big")
+
+        # メタデータ長の検証
+        if metadata_len <= 0 or metadata_len > MAX_HEADER_SIZE:
+            print(f"無効なメタデータサイズです: {metadata_len}", file=sys.stderr)
+            return None
+
+        # メタデータの取得
+        metadata_start = len(CIPHER_HEADER) + 4
+        metadata_end = metadata_start + metadata_len
+
+        if metadata_end > len(header_data):
+            print("ヘッダーデータが不完全です", file=sys.stderr)
+            return None
+
+        metadata_json = header_data[metadata_start:metadata_end]
+
+        # メタデータのデコード
+        try:
+            metadata = json.loads(metadata_json.decode("utf-8"))
+        except json.JSONDecodeError:
+            print("メタデータの解析に失敗しました", file=sys.stderr)
+            return None
+
+        # ソルトの取得
+        salt_hex = metadata.get("salt")
+        if not salt_hex:
+            print("メタデータにソルトが含まれていません", file=sys.stderr)
+            return None
+
+        return bytes.fromhex(salt_hex)
 
     except Exception as e:
-        print(f"エラー: 復号中に問題が発生しました: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        return 1
+        print(f"ソルトの抽出中にエラーが発生しました: {e}", file=sys.stderr)
+        return None
 
-    finally:
-        # 重要なメモリデータの安全な消去
-        if key:
-            secure_wipe(key)
+
+def decrypt_file_cli(
+    input_file: str,
+    output_file: str,
+    password: str,
+    mode: str = TRUE_PATH
+) -> bool:
+    """
+    CLI用のファイル復号関数
+
+    Args:
+        input_file: 入力ファイルのパス
+        output_file: 出力ファイルのパス
+        password: 復号用のパスワード
+        mode: 操作モード（"true" または "false"）
+
+    Returns:
+        成功した場合はTrue、失敗した場合はFalse
+    """
+    try:
+        # 暗号化ファイルからソルトを抽出
+        salt = extract_salt_from_encrypted_file(input_file)
+        if not salt:
+            return False
+
+        # パスワードから鍵を導出
+        key = derive_key_from_password(password, salt)
+
+        # 復号器の初期化
+        decryptor = IndeterministicDecryptor(key, mode)
+
+        # ファイルの復号
+        result = decryptor.decrypt_file(input_file, output_file)
+
+        return result
+
+    except Exception as e:
+        print(f"復号処理中にエラーが発生しました: {e}", file=sys.stderr)
+        return False
+
 
 if __name__ == "__main__":
-    sys.exit(main())
+    parser = argparse.ArgumentParser(description="不確定性転写暗号化の復号")
+    parser.add_argument("input_file", help="復号する暗号化ファイル")
+    parser.add_argument("output_file", help="復号されたデータを出力するファイル")
+    parser.add_argument("--password", help="復号用のパスワード")
+    parser.add_argument("--mode", choices=[TRUE_PATH, FALSE_PATH], default=TRUE_PATH, help="操作モード")
+
+    args = parser.parse_args()
+
+    # パスワードが指定されていない場合は対話式で入力
+    if not args.password:
+        import getpass
+        args.password = getpass.getpass("復号パスワード: ")
+
+    # ファイルの復号
+    success = decrypt_file_cli(
+        args.input_file,
+        args.output_file,
+        args.password,
+        args.mode
+    )
+
+    sys.exit(0 if success else 1)

@@ -12,22 +12,24 @@
 #              【準同型暗号マスキング方式テスト - HOMOMORPHIC MASKING TEST】     #
 #                                                                              #
 #     このファイルは準同型暗号マスキング方式の「テスト」機能のメインエントリーポイントです     #
-#     下記4つのテストファイルの機能を統合しています：                                #
+#     下記5つのテストファイルの機能を統合しています：                                #
 #     - enhanced_homomorphic_test.py                                           #
-#     - test_homomorphic_masking.py                                            #
-#     - test_secure_homomorphic.py                                             #
-#     - test_security_results.py                                               #
+#     - test_homomorphic_masking.py                                           #
+#     - test_secure_homomorphic.py                                            #
+#     - test_security_results.py                                              #
+#     - integrated_homomorphic_test.py                                        #
 #                                                                              #
 ################################################################################
 
 """
 準同型暗号マスキング方式 統合テストスクリプト
 
-このスクリプトは、以下の4つのテストスクリプトの機能を統合したものです：
+このスクリプトは、以下の5つのテストスクリプトの機能を統合したものです：
 - enhanced_homomorphic_test.py
 - test_homomorphic_masking.py
 - test_secure_homomorphic.py
 - test_security_results.py
+- integrated_homomorphic_test.py
 
 主な機能:
 1. 準同型暗号の基本機能テスト
@@ -37,6 +39,7 @@
 5. 鍵解析のテスト
 6. パフォーマンス計測機能
 7. セキュリティ検証機能
+8. タイムスタンプ付きログファイル生成機能
 
 使用方法:
   python3 homomorphic_test.py [オプション]
@@ -107,7 +110,7 @@ OUTPUT_DIR = "test_output"
 TIMESTAMP = time.strftime("%Y%m%d-%H%M%S")
 
 # タイムスタンプ付きログファイル
-LOG_FILE = os.path.join(OUTPUT_DIR, f"integrated_test_log_{TIMESTAMP}.md")
+LOG_FILE = os.path.join(OUTPUT_DIR, f"homomorphic_test_log_{TIMESTAMP}.txt")
 
 # グローバル設定
 VERBOSE = False
@@ -1799,7 +1802,7 @@ def generate_report(results: Dict[str, Any]) -> str:
 
 def main():
     """メイン関数"""
-    global VERBOSE, TEST_TYPE, OUTPUT_DIR, TRUE_TEXT_PATH, FALSE_TEXT_PATH
+    global VERBOSE, TEST_TYPE, OUTPUT_DIR, TRUE_TEXT_PATH, FALSE_TEXT_PATH, LOG_FILE
 
     # テスト開始時刻
     start_time = time.time()
@@ -1814,6 +1817,10 @@ def main():
     TRUE_TEXT_PATH = args.true_file
     FALSE_TEXT_PATH = args.false_file
     TEST_SETTINGS["key_bits"] = args.key_bits
+
+    # タイムスタンプ付きログファイル設定を更新
+    TIMESTAMP = time.strftime("%Y%m%d-%H%M%S")
+    LOG_FILE = os.path.join(OUTPUT_DIR, f"homomorphic_test_log_{TIMESTAMP}.txt")
 
     # 出力ディレクトリの確認
     ensure_directory(OUTPUT_DIR)
@@ -1851,6 +1858,8 @@ def main():
         # セキュリティテスト
         if TEST_TYPE in ['all', 'security']:
             TEST_RESULTS['security'] = test_security_features()
+            # 拡張セキュリティテスト (セキュリティ監査レポート機能)
+            TEST_RESULTS['security_extended'] = test_security_features_extended()
 
         # パフォーマンステスト
         if TEST_TYPE in ['all', 'performance']:
@@ -1866,6 +1875,7 @@ def main():
         log_message(f"## テスト完了", markdown=True)
         log_message(f"- 合計実行時間: {total_time:.2f}秒", markdown=True)
         log_message(f"- テスト結果レポート: {report_file}", markdown=True)
+        log_message(f"- ログファイル: {LOG_FILE}", markdown=True)
 
         # テスト結果の概要を表示
         success_count = sum(1 for test in TEST_RESULTS.values() if test.get('success', False))

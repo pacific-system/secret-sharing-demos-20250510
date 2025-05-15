@@ -1,0 +1,53 @@
+[2025-05-15 21:28:38] 準同型暗号マスキング方式 検証テスト開始
+[2025-05-15 21:28:38] テストファイルを生成しました:
+[2025-05-15 21:28:38] - UTF-8: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/utf8_test.txt
+[2025-05-15 21:28:38] - JSON: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/json_test.json
+[2025-05-15 21:28:38] - CSV: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/csv_test.csv
+[2025-05-15 21:28:38] 
+=== UTF8 ファイルテスト開始 ===
+[2025-05-15 21:28:38] 暗号化開始: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/utf8_test.txt
+[2025-05-15 21:28:38] 実行コマンド: python3 encrypt.py /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/utf8_test.txt /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/utf8_test.txt -o /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_utf8_test.txt.hmc --verbose
+[2025-05-15 21:28:38] 暗号化完了: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_utf8_test.txt.hmc
+[2025-05-15 21:28:38] 復号開始 (キータイプ: true): /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_utf8_test.txt.hmc
+[2025-05-15 21:28:38] 実行コマンド: python3 decrypt.py /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_utf8_test.txt.hmc --key-type true --key 0123456789abcdef0123456789abcdef -o /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_true_encrypted_utf8_test.txt --verbose
+[2025-05-15 21:28:39] 復号完了: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_true_encrypted_utf8_test.txt
+[2025-05-15 21:28:39] UTF-8テキスト検証: 失敗 - 内容の不一致
+[2025-05-15 21:28:39] 復号開始 (キータイプ: false): /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_utf8_test.txt.hmc
+[2025-05-15 21:28:39] 実行コマンド: python3 decrypt.py /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_utf8_test.txt.hmc --key-type false --key 0123456789abcdef0123456789abcdef -o /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_false_encrypted_utf8_test.txt --verbose
+[2025-05-15 21:28:40] 復号完了: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_false_encrypted_utf8_test.txt
+[2025-05-15 21:28:40] UTF-8テキスト検証: 失敗 - 内容の不一致
+[2025-05-15 21:28:40] === UTF8 ファイルテスト完了 ===
+
+[2025-05-15 21:28:40] 
+=== JSON ファイルテスト開始 ===
+[2025-05-15 21:28:40] 暗号化開始: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/json_test.json
+[2025-05-15 21:28:40] 実行コマンド: python3 encrypt.py /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/json_test.json /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/json_test.json -o /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_json_test.json.hmc --verbose
+[2025-05-15 21:28:41] 暗号化完了: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_json_test.json.hmc
+[2025-05-15 21:28:41] 復号開始 (キータイプ: true): /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_json_test.json.hmc
+[2025-05-15 21:28:41] 実行コマンド: python3 decrypt.py /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_json_test.json.hmc --key-type true --key 0123456789abcdef0123456789abcdef -o /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_true_encrypted_json_test.json --verbose
+[2025-05-15 21:28:42] 復号完了: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_true_encrypted_json_test.json
+[2025-05-15 21:28:42] JSON検証: 失敗 - 復号ファイルがJSON形式ではありません: Expecting value: line 1 column 1 (char 0)
+[2025-05-15 21:28:42] 復号開始 (キータイプ: false): /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_json_test.json.hmc
+[2025-05-15 21:28:42] 実行コマンド: python3 decrypt.py /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_json_test.json.hmc --key-type false --key 0123456789abcdef0123456789abcdef -o /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_false_encrypted_json_test.json --verbose
+[2025-05-15 21:28:42] 復号完了: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_false_encrypted_json_test.json
+[2025-05-15 21:28:42] JSON検証: 失敗 - 復号ファイルがJSON形式ではありません: Expecting value: line 1 column 1 (char 0)
+[2025-05-15 21:28:42] === JSON ファイルテスト完了 ===
+
+[2025-05-15 21:28:42] 
+=== CSV ファイルテスト開始 ===
+[2025-05-15 21:28:42] 暗号化開始: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/csv_test.csv
+[2025-05-15 21:28:42] 実行コマンド: python3 encrypt.py /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/csv_test.csv /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/samples/csv_test.csv -o /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_csv_test.csv.hmc --verbose
+[2025-05-15 21:28:43] 暗号化完了: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_csv_test.csv.hmc
+[2025-05-15 21:28:43] 復号開始 (キータイプ: true): /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_csv_test.csv.hmc
+[2025-05-15 21:28:43] 実行コマンド: python3 decrypt.py /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_csv_test.csv.hmc --key-type true --key 0123456789abcdef0123456789abcdef -o /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_true_encrypted_csv_test.csv --verbose
+[2025-05-15 21:28:44] 復号完了: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_true_encrypted_csv_test.csv
+[2025-05-15 21:28:44] CSV検証: 失敗 - 最終行欠損
+[2025-05-15 21:28:44] 復号開始 (キータイプ: false): /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_csv_test.csv.hmc
+[2025-05-15 21:28:44] 実行コマンド: python3 decrypt.py /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/encrypted_csv_test.csv.hmc --key-type false --key 0123456789abcdef0123456789abcdef -o /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_false_encrypted_csv_test.csv --verbose
+[2025-05-15 21:28:44] 復号完了: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/decrypted_false_encrypted_csv_test.csv
+[2025-05-15 21:28:44] CSV検証: 失敗 - 最終行欠損
+[2025-05-15 21:28:44] === CSV ファイルテスト完了 ===
+
+[2025-05-15 21:28:44] レポートを生成しました: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/verification_report_20250515-212838.md
+[2025-05-15 21:28:44] 準同型暗号マスキング方式 検証テスト完了
+[2025-05-15 21:28:44] 詳細レポート: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_output/verification_test/verification_report_20250515-212838.md

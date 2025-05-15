@@ -88,14 +88,31 @@ def main():
     """メイン関数"""
     print("=== 準同型暗号マスキング方式 最終テスト ===")
 
+    # 現在のディレクトリとスクリプトパスを取得
+    current_dir = os.path.abspath(os.path.dirname(__file__))
+    parent_dir = os.path.abspath(os.path.join(current_dir, '..'))
+
     # テストディレクトリの設定
-    test_dir = "test_output/homomorphic_test"
+    test_dir = os.path.join(parent_dir, "test_output/homomorphic_test")
     ensure_directory(test_dir)
-    ensure_directory("test_output")
+    ensure_directory(os.path.join(parent_dir, "test_output"))
 
     # 元ファイルのパス
-    true_file = "common/true-false-text/true.text"
-    false_file = "common/true-false-text/false.text"
+    true_file = os.path.join(parent_dir, "../common/true-false-text/true.text")
+    false_file = os.path.join(parent_dir, "../common/true-false-text/false.text")
+
+    # ファイルが存在しない場合は作成
+    if not os.path.exists(true_file):
+        ensure_directory(os.path.dirname(true_file))
+        with open(true_file, 'w') as f:
+            f.write("This is the TRUE content for testing purposes.\n")
+        print(f"テスト用TRUEファイルを作成しました: {true_file}")
+
+    if not os.path.exists(false_file):
+        ensure_directory(os.path.dirname(false_file))
+        with open(false_file, 'w') as f:
+            f.write("This is the FALSE content for testing purposes.\n")
+        print(f"テスト用FALSEファイルを作成しました: {false_file}")
 
     # テスト用ファイルのコピー
     test_true_file = os.path.join(test_dir, "true.text")
@@ -121,7 +138,7 @@ def main():
 
     encrypt_start_time = time.time()
     encrypt_result = run_command(
-        f"python3 -m method_8_homomorphic.encrypt --true-file {test_true_file} --false-file {test_false_file} --output {encrypted_file} --save-keys"
+        f"cd {parent_dir} && python3 encrypt.py {test_true_file} {test_false_file} -o {encrypted_file} --save-keys"
     )
     encrypt_time = time.time() - encrypt_start_time
 
@@ -141,7 +158,7 @@ def main():
         sys.exit(1)
 
     # 鍵ファイルの確認
-    key_dir = "keys"
+    key_dir = os.path.join(parent_dir, "keys")
     key_files = ["paillier_public.json", "paillier_private.json", "encryption_key.bin", "salt.bin"]
     key_exists = all(os.path.exists(os.path.join(key_dir, kf)) for kf in key_files)
 
@@ -176,7 +193,7 @@ def main():
 
     decrypt_true_auto_start_time = time.time()
     decrypt_true_auto_result = run_command(
-        f"python3 -m method_8_homomorphic.decrypt {encrypted_file} --key \"{random_true_key}\" --key-type true --output {decrypted_true_auto_file}"
+        f"cd {parent_dir} && python3 decrypt.py {encrypted_file} -k \"{random_true_key}\" --key-type true -o {decrypted_true_auto_file}"
     )
     decrypt_true_auto_time = time.time() - decrypt_true_auto_start_time
 
@@ -201,7 +218,7 @@ def main():
 
     decrypt_false_auto_start_time = time.time()
     decrypt_false_auto_result = run_command(
-        f"python3 -m method_8_homomorphic.decrypt {encrypted_file} --key \"{random_false_key}\" --key-type false --output {decrypted_false_auto_file}"
+        f"cd {parent_dir} && python3 decrypt.py {encrypted_file} -k \"{random_false_key}\" --key-type false -o {decrypted_false_auto_file}"
     )
     decrypt_false_auto_time = time.time() - decrypt_false_auto_start_time
 
@@ -227,7 +244,7 @@ def main():
 
     decrypt_force_text_start_time = time.time()
     decrypt_force_text_result = run_command(
-        f"python3 -m method_8_homomorphic.decrypt {encrypted_file} --key \"{random_true_key}\" --key-type true --output {decrypted_force_text_file} --force-text"
+        f"cd {parent_dir} && python3 decrypt.py {encrypted_file} -k \"{random_true_key}\" --key-type true -o {decrypted_force_text_file} --data-type text"
     )
     decrypt_force_text_time = time.time() - decrypt_force_text_start_time
 
@@ -252,7 +269,7 @@ def main():
 
     decrypt_force_binary_start_time = time.time()
     decrypt_force_binary_result = run_command(
-        f"python3 -m method_8_homomorphic.decrypt {encrypted_file} --key \"{random_false_key}\" --key-type false --output {decrypted_force_binary_file} --force-binary"
+        f"cd {parent_dir} && python3 decrypt.py {encrypted_file} -k \"{random_false_key}\" --key-type false -o {decrypted_force_binary_file} --data-type binary"
     )
     decrypt_force_binary_time = time.time() - decrypt_force_binary_start_time
 
@@ -274,7 +291,8 @@ def main():
     print(f"バイナリ強制指定テスト結果: {'成功' if decrypt_force_binary_success else '失敗'}, ファイルサイズ: {os.path.getsize(decrypted_force_binary_file) if decrypt_force_binary_success else 0} バイト, 処理時間: {decrypt_force_binary_time:.2f}秒")
 
     # テスト結果をグラフ化
-    plot_results(test_results, "test_output/homomorphic_operations.png")
+    results_graph = os.path.join(parent_dir, "test_output/homomorphic_operations.png")
+    plot_results(test_results, results_graph)
 
     # テスト結果の概要
     print("\n=== テスト結果概要 ===")

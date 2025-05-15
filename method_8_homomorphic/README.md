@@ -1,85 +1,116 @@
-# 準同型暗号マスキング方式 🎭
+# 準同型暗号マスキング方式（Method 8）
 
 ## 概要
 
-このモジュールは、準同型暗号を用いたファイルのマスキング方式を実装しています。主要な特徴は以下の通りです：
+本実装は、準同型暗号と高度な識別不能性を組み合わせた「準同型暗号マスキング方式」を提供します。この方式の最大の特徴は、暗号文から「真」のファイルと「偽」のファイルのどちらが復号されるかを計算論的に区別できないようにする点です。
 
-1. **準同型性**: Paillier 暗号方式を用いて加法準同型性を提供します
-2. **区別不能性**: 真・偽の 2 種類のファイルを暗号化し、暗号文からはどちらが真のファイルか区別できないようにします
-3. **マスク変換**: 複雑なマスク関数を適用して、さらに識別困難性を高めています
-4. **多様なデータ対応**: テキスト、JSON、CSV、バイナリなど様々なデータ形式に対応しています
+## 主要な特徴
 
-## 主要コンポーネント
+- **識別不能性（Indistinguishability）**: 暗号文から「真」と「偽」のどちらのファイルが復号されるかを区別できません
+- **準同型性（Homomorphism）**: Paillier 準同型暗号を採用し、暗号文に対する演算が平文に反映される特性を活用
+- **鍵による 2 通りの復号**: 同じ暗号文から「真」「偽」の 2 種類のファイルを復号可能
+- **ハニーポット戦略**: 意図的に「正規」鍵を漏洩させ、偽情報を信じ込ませる戦略が実装可能
+- **リバーストラップ**: 本当に重要な情報を「非正規」側に隠す戦略も可能
+- **複数の形式対応**: テキスト、JSON、CSV、バイナリなど様々なデータ形式に対応
 
-- **encrypt.py**: ファイル暗号化機能を提供します
-- **decrypt.py**: ファイル復号機能を提供します
-- **homomorphic.py**: 準同型暗号の実装（Paillier 暗号システム）
-- **indistinguishable.py**: 区別不能性機能の実装
-- **crypto_mask.py**: マスク関数の実装
-- **crypto_adapters.py**: 様々なデータ形式に対応するためのアダプター
-- **key_analyzer.py**: 鍵の種類分析機能
-- **test_verification.py**: 検証テスト用スクリプト
+## 実装改善点
+
+最新のアップデートでは、以下の点を改善しました：
+
+1. **循環インポート問題の解決**: モジュール間の循環参照を解消し、安定性を向上
+2. **データ形式処理の強化**: 各種データ形式の変換・処理処理を改善
+3. **バイト変換の正確化**: 整数 ↔ バイト変換の処理を強化し、データ欠損を防止
+4. **ヌルバイト処理の最適化**: 先頭のヌルバイトのみを削除し、末尾のヌルバイトを保持するよう修正
+5. **改行処理の修正**: 不要な改行の追加を防止し、元のデータ形式を維持
+6. **鍵判定の堅牢化**: 鍵解析アルゴリズムを改善し、より安全な判定を実現
 
 ## 使用方法
 
 ### 暗号化
 
 ```bash
-python encrypt.py <true_file> <false_file> -o <output_file> [options]
+python encrypt.py <真ファイル> <偽ファイル> --output <出力ファイル> [オプション]
 ```
 
-オプション:
+#### 主なオプション
 
-- `--verbose`: 詳細情報を表示
-- `--key <key>`: 暗号化に使用する鍵（指定しない場合は自動生成）
-- `--password <password>`: 鍵の代わりにパスワードを使用
-- `--force-data-type <type>`: データ形式を指定 (text, json, csv, binary, auto)
-- `--indistinguishable`: 識別不能性機能を有効化
-- `--advanced-mask`: 高度なマスク関数を使用
-- `--save-keys`: 生成された鍵を保存
+- `--verbose` または `-v`: 詳細なログを出力
+- `--save-keys`: 鍵ファイルを保存
+- `--indistinguishable`: 識別不能性を強化
 
 ### 復号
 
 ```bash
-python decrypt.py <input_file> -o <output_file> [options]
+python decrypt.py <暗号化ファイル> --key <鍵> --output <出力ファイル> [オプション]
 ```
 
-オプション:
+#### 主なオプション
 
-- `--verbose`: 詳細情報を表示
-- `--key <key>`: 復号に使用する鍵
-- `--key-type <type>`: 鍵の種類を指定 (true, false, auto)
-- `--data-type <type>`: データ形式を指定 (text, json, csv, binary, auto)
-- `--use-enhanced-security`: 拡張セキュリティ機能を使用
+- `--verbose` または `-v`: 詳細なログを出力
+- `--data-type`: 復号データの形式を指定（デフォルト: 自動検出）
+- `--use-enhanced-security`: セキュリティ強化版の機能を使用（デフォルト）
 
-## テスト
+## モジュール構成
+
+- `encrypt.py`: 暗号化用メインスクリプト
+- `decrypt.py`: 復号用メインスクリプト
+- `homomorphic.py`: 準同型暗号の実装
+- `crypto_mask.py`: マスク関数の実装
+- `crypto_adapters.py`: データ形式変換アダプター
+- `indistinguishable.py`: 識別不能性機能
+- `indistinguishable_ext.py`: 識別不能性の拡張機能
+- `config.py`: 設定パラメータ
+- `key_analyzer.py`: 鍵解析機能
+
+## セキュリティ強化版の特徴
+
+セキュリティ強化版では、以下の機能を提供しています：
+
+1. **高度な統計的攻撃への耐性**: 統計的な特徴分析による攻撃を防止する追加対策を実装
+2. **ロバストな鍵解析**: 環境や実装の違いに影響されにくい鍵判定アルゴリズム
+3. **エラー耐性の向上**: 様々なエラー状況でも堅牢に動作するよう改善
+4. **データ完全性の維持**: データの欠損や変形を最小限に抑える処理
+
+## 使用例
+
+### UTF-8 テキストファイルの暗号化・復号
 
 ```bash
-python test_verification.py
+# 暗号化
+python encrypt.py document.txt fake_document.txt --output encrypted.henc --verbose
+
+# 復号（真のファイルを取得）
+python decrypt.py encrypted.henc --key <真の鍵> --output decrypted_true.txt --verbose
+
+# 復号（偽のファイルを取得）
+python decrypt.py encrypted.henc --key <偽の鍵> --output decrypted_false.txt --verbose
 ```
 
-このスクリプトは、UTF-8、JSON、CSV の各形式でのテストを実行し、結果をレポートとして出力します。
+### JSON ファイルの暗号化・復号
 
-## 技術仕様
+```bash
+# 暗号化
+python encrypt.py data.json fake_data.json --output encrypted.henc --verbose
 
-### 暗号方式
+# 復号
+python decrypt.py encrypted.henc --key <鍵> --output decrypted.json --verbose
+```
 
-Paillier 準同型暗号システムを使用しています。これは加法準同型性を持つ暗号方式で、暗号化されたデータに対して特定の演算が可能です。
+### CSV ファイルの暗号化・復号
 
-### 区別不能性メカニズム
+```bash
+# 暗号化
+python encrypt.py data.csv fake_data.csv --output encrypted.henc --verbose
 
-1. 統計的ノイズの追加
-2. 冗長性の導入
-3. 暗号文のランダム化
-4. マスク関数による変換
-
-これらの技術を組み合わせることで、攻撃者がプログラムを全て入手しても、復号されるファイルの真偽を判別できないようにしています。
+# 復号
+python decrypt.py encrypted.henc --key <鍵> --output decrypted.csv --verbose
+```
 
 ## 注意事項
 
-- 現在の実装では、特に日本語を含むテキストデータの完全な復元に課題があります
-- 準同型暗号の性質上、処理データの肥大化が発生します
-- 復号処理において、最終行のデータが欠損する可能性があります
+- どちらのキーが「正規」か「非正規」かはシステム上の区別ではなく、使用者の意図によって決まります
+- 暗号化・復号には CPU やメモリリソースを消費するため、特に大きなファイルの処理には注意が必要です
+- まれに、特定のコンテンツ（特殊な形式のテキストなど）で完全一致の復号ができない場合があります
 
 ## ライセンス
 

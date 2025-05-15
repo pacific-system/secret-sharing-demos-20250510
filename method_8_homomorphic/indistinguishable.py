@@ -524,11 +524,19 @@ def analyze_key_type_enhanced(key: Union[bytes, str, int], metadata: Optional[Di
                 if key.startswith('0x'):
                     key = bytes.fromhex(key[2:])
                 else:
-                    key = bytes.fromhex(key) if all(c in '0123456789abcdefABCDEF' for c in key) else key.encode('utf-8')
+                    # 16進数文字列かどうかをチェック
+                    if all(c in '0123456789abcdefABCDEF' for c in key):
+                        key = bytes.fromhex(key)
+                    else:
+                        # 通常のテキストとしてUTF-8エンコード
+                        key = key.encode('utf-8')
             elif isinstance(key, int):
-                # 整数をバイト列に変換（最大32バイト）
-                byte_length = (key.bit_length() + 7) // 8
-                key = key.to_bytes(max(byte_length, 1), 'big')
+                # 整数のビット長を計算し、適切なバイト数に変換
+                bit_length = key.bit_length()
+                byte_length = (bit_length + 7) // 8
+                # 最小1バイト、最大は鍵の標準サイズ（または32バイト）に制限
+                byte_length = max(1, min(byte_length, KEY_SIZE_BYTES if 'KEY_SIZE_BYTES' in globals() else 32))
+                key = key.to_bytes(byte_length, 'big')
             else:
                 # その他の型は文字列に変換してからUTF-8でエンコード
                 key = str(key).encode('utf-8')
@@ -545,7 +553,7 @@ def analyze_key_type_enhanced(key: Union[bytes, str, int], metadata: Optional[Di
 
     # ハッシュ値のビットパターンを分析
     bit_count = bin(hash_int).count('1')
-    total_bits = hash_int.bit_length()  # bytes.bit_lengthではなくint.bit_lengthを使用
+    total_bits = hash_int.bit_length()
     bit_ratio = bit_count / total_bits if total_bits > 0 else 0.5
 
     # 複数の条件を組み合わせた判定
@@ -564,11 +572,16 @@ def analyze_key_type_enhanced(key: Union[bytes, str, int], metadata: Optional[Di
             # シャッフルシードが存在する場合、それをさらなる因子として使用
             shuffle_seed_hex = interleave.get("shuffle_seed", "")
             if shuffle_seed_hex:
-                shuffle_seed = bytes.fromhex(shuffle_seed_hex)
-                # シードと鍵を組み合わせた追加ハッシュ
-                combined_hash = hashlib.sha256(key + shuffle_seed).digest()
-                # 追加条件
-                condition5 = combined_hash[0] % 2 == 0
+                try:
+                    # 16進数文字列をバイト列に変換
+                    shuffle_seed = bytes.fromhex(shuffle_seed_hex)
+                    # シードと鍵を組み合わせた追加ハッシュ
+                    combined_hash = hashlib.sha256(key + shuffle_seed).digest()
+                    # 追加条件
+                    condition5 = combined_hash[0] % 2 == 0
+                except (ValueError, TypeError) as e:
+                    print(f"[WARN] シャッフルシードの処理中のエラー: {e}")
+                    condition5 = key_hash[16] % 2 == 0
             else:
                 condition5 = key_hash[16] % 2 == 0
         except Exception as e:

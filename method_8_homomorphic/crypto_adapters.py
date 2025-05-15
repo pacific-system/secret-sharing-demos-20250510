@@ -368,8 +368,9 @@ class TextAdapter(DataAdapter):
         if len(data) > 20:
             print(f"データ末尾: {data[-20:]}")
 
-        # 先頭と末尾のヌルバイトをトリム
-        data = data.strip(b'\x00')
+        # 先頭のヌルバイトをトリム（末尾のヌルバイトは残す）
+        # 修正: 先頭のみトリムし、末尾は保持
+        data = data.lstrip(b'\x00')
         if len(data) == 0:
             print("警告: データがすべてヌルバイトでした")
             return ""
@@ -410,10 +411,8 @@ class TextAdapter(DataAdapter):
                             print(f"エンコーディング変換エラー({encoding}): {e}")
                             result = text_content
 
-                    # 末尾に改行がない場合、追加
-                    if result and not result.endswith('\n'):
-                        result += '\n'
-
+                    # 末尾の改行がない場合でも追加しない（修正）
+                    # 末尾に余計な改行を追加しないようにする
                     return result
 
             # 旧マーカー形式のサポート（後方互換性）
@@ -442,21 +441,14 @@ class TextAdapter(DataAdapter):
                         bin_content = self.reverse_multi_stage_encoding_binary(text_content.encode('utf-8'))
                         text_content = bin_content.decode('utf-8', errors='replace')
 
-                    # 末尾に改行がない場合、追加
-                    if text_content and not text_content.endswith('\n'):
-                        text_content += '\n'
-
+                    # 末尾の改行がない場合でも追加しない（修正）
                     return text_content
 
             # マーカーが見つからなかった場合、そのままのテキストをチェック
             if text.strip():
                 # テキストらしき内容があれば、そのまま返す
                 print("マーカーなしテキストを検出")
-
-                # 末尾に改行がない場合、追加
-                if not text.endswith('\n'):
-                    text += '\n'
-
+                # 末尾の改行がない場合でも追加しない（修正）
                 return text
 
         except Exception as e:
@@ -467,11 +459,7 @@ class TextAdapter(DataAdapter):
         # すべての方法が失敗した場合、UTF-8でデコード（置換モード）
         try:
             result = data.decode('utf-8', errors='replace')
-
-            # 末尾に改行がない場合、追加
-            if result and not result.endswith('\n'):
-                result += '\n'
-
+            # 末尾の改行がない場合でも追加しない（修正）
             return result
         except Exception as e:
             print(f"最終エラー: {e}")
@@ -525,9 +513,12 @@ class JsonAdapter(DataAdapter):
         try:
             # バイト列を文字列に変換
             if isinstance(data, bytes):
-                data_str = data.decode('utf-8', errors='replace').strip('\x00')
+                # 先頭のヌルバイトのみを削除（末尾は保持）
+                data = data.lstrip(b'\x00')
+                data_str = data.decode('utf-8', errors='replace')
             else:
-                data_str = str(data).strip('\x00')
+                # 文字列の場合は先頭のヌルバイトのみを削除
+                data_str = str(data).lstrip('\x00')
 
             # マーカーのチェック
             json_marker = "JSON:"
@@ -551,8 +542,8 @@ class JsonAdapter(DataAdapter):
             else:
                 # マーカーがない場合は、JSONとして解析を試みる
                 try:
-                    # ヌルバイトやその他の制御文字を削除
-                    cleaned_str = re.sub(r'[\x00-\x1F\x7F]', '', data_str)
+                    # ヌルバイトやその他の制御文字を削除（正規表現は保持）
+                    cleaned_str = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', data_str)
                     json_obj = json.loads(cleaned_str)
                     return json.dumps(json_obj, ensure_ascii=False, indent=2)
                 except json.JSONDecodeError:
@@ -609,7 +600,9 @@ class CsvAdapter(DataAdapter):
         try:
             # バイト列を文字列に変換
             if isinstance(data, bytes):
-                data_str = data.decode('utf-8', errors='replace').strip('\x00')
+                # 先頭のヌルバイトをトリム（末尾は保持）
+                data = data.lstrip(b'\x00')
+                data_str = data.decode('utf-8', errors='replace')
             else:
                 data_str = str(data).strip('\x00')
 
@@ -621,25 +614,19 @@ class CsvAdapter(DataAdapter):
                 # マーカー以降のデータを取得
                 csv_data = data_str[marker_pos + len(csv_marker):]
 
-                # 改行の正規化
+                # 改行の正規化（改行コードを統一）
                 csv_data = csv_data.replace('\r\n', '\n').replace('\r', '\n')
 
-                # 末尾に改行がなければ追加
-                if not csv_data.endswith('\n'):
-                    csv_data += '\n'
-
+                # 末尾の改行は保持（改行を強制的に追加しない）
                 return csv_data
             else:
                 # マーカーがない場合でも、テキストデータとして返す
                 print(f"CSVマーカーが見つかりませんでした。テキストとして処理します")
 
-                # 改行の正規化
+                # 改行の正規化（改行コードを統一）
                 data_str = data_str.replace('\r\n', '\n').replace('\r', '\n')
 
-                # 末尾に改行がなければ追加
-                if not data_str.endswith('\n'):
-                    data_str += '\n'
-
+                # 末尾の改行は保持（改行を強制的に追加しない）
                 return data_str
         except Exception as e:
             print(f"CSVデータ処理中にエラーが発生: {e}")

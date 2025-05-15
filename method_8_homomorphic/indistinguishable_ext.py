@@ -19,11 +19,11 @@ import binascii
 import math
 from typing import Dict, List, Tuple, Any, Optional, Union
 
-from method_8_homomorphic.homomorphic import (
+from homomorphic import (
     PaillierCrypto,
     derive_key_from_password
 )
-from method_8_homomorphic.crypto_mask import (
+from crypto_mask import (
     MaskFunctionGenerator, AdvancedMaskFunctionGenerator
 )
 

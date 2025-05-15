@@ -477,15 +477,39 @@ def decrypt_file(input_file, output_file=None, key=None, key_bytes=None, key_typ
             # 識別不能性モジュールを動的にロード
             _lazy_import_indistinguishable()
 
+            # まず強化版APIが利用可能か確認し、可能なら使用
             if _analyze_key_type_enhanced:
-                key_type = _analyze_key_type_enhanced(decryption_key)
-                if verbose:
-                    print(f"自動判別されたキータイプ: {key_type}")
+                # 暗号文メタデータを使用して鍵タイプを判定
+                try:
+                    # メタデータの取得（新しいフォーマットに対応）
+                    with open(input_file, 'r') as f:
+                        encrypted_data = json.load(f)
+
+                    # メタデータを取得
+                    metadata = encrypted_data.get('metadata', {})
+
+                    # 鍵タイプを判定
+                    key_type = _analyze_key_type_enhanced(decryption_key, metadata)
+
+                    # 判定が不明確な場合は標準関数にフォールバック
+                    if key_type == "unknown":
+                        key_type = analyze_key_type_robust(decryption_key)
+
+                    if verbose:
+                        print(f"自動判別されたキータイプ: {key_type}")
+                except Exception as e:
+                    print(f"キータイプの判定中にエラーが発生: {e}")
+                    # エラーの場合は標準の鍵解析関数を使用
+                    key_type = analyze_key_type_robust(decryption_key)
+                    if verbose:
+                        print(f"標準関数で判別されたキータイプ: {key_type}")
             else:
                 # フォールバック：標準の鍵解析関数を使用
                 key_type = analyze_key_type_robust(decryption_key)
                 if verbose:
                     print(f"標準関数で判別されたキータイプ: {key_type}")
+        else:
+            key_type = key_type
 
         # 暗号化ファイルの読み込み
         with open(input_file, 'r') as f:
@@ -814,6 +838,175 @@ def decrypt_file(input_file, output_file=None, key=None, key_bytes=None, key_typ
             'error': str(e),
             'error_trace': error_trace
         }
+
+
+def decrypt_bytes(ciphertext_int: int, private_key: Dict[str, Any], byte_size: int = 0) -> bytes:
+    """
+    暗号文を復号し、バイト列に変換
+
+    Args:
+        ciphertext_int: 整数形式の暗号文
+        private_key: 秘密鍵
+        byte_size: 元のバイトサイズ（0の場合は自動推定）
+
+    Returns:
+        復号されたバイト列
+    """
+    # Paillierインスタンスを作成
+    paillier = PaillierCrypto()
+    paillier.private_key = private_key
+
+    # 暗号文を復号
+    try:
+        plaintext_int = paillier.decrypt(ciphertext_int, private_key)
+    except Exception as e:
+        print(f"復号エラー: {e}")
+        return b''
+
+    # 整数からバイト列に変換
+    try:
+        # バイトサイズが指定されていない場合は推定
+        if byte_size <= 0:
+            # ビット長から必要なバイト数を計算
+            byte_size = (plaintext_int.bit_length() + 7) // 8
+            # 最小サイズを確保
+            byte_size = max(byte_size, 1)
+
+        # 修正: 整数からバイトへの変換処理を改善
+        # 以前の方法: plaintext_bytes = plaintext_int.to_bytes(byte_size, byteorder='big')
+
+        # 安全にバイト列に変換（サイズが足りないケースを処理）
+        try:
+            plaintext_bytes = plaintext_int.to_bytes(byte_size, byteorder='big')
+        except OverflowError:
+            # 整数が大きすぎる場合はバイトサイズを調整
+            actual_byte_size = (plaintext_int.bit_length() + 7) // 8
+            print(f"[DEBUG] バイト変換: {byte_size}バイト→{actual_byte_size}バイト")
+            plaintext_bytes = plaintext_int.to_bytes(actual_byte_size, byteorder='big')
+
+        return plaintext_bytes
+    except Exception as e:
+        print(f"バイト変換エラー: {e}")
+        # エラー時は空のバイト列を返す
+        return b''
+
+
+def decrypt_chunks(encrypted_chunks, paillier_key, original_data_type, original_data_size=0, key_type='true', verbose=False):
+    """
+    暗号化されたチャンクを復号
+
+    Args:
+        encrypted_chunks: 暗号化されたチャンクのリスト
+        paillier_key: Paillier暗号の鍵
+        original_data_type: 元のデータタイプ
+        original_data_size: 元のデータサイズ
+        key_type: 鍵のタイプ (true/false)
+        verbose: 詳細なログを出力するか
+
+    Returns:
+        復号されたバイト列
+    """
+    if not encrypted_chunks:
+        return b''
+
+    print(f"使用する鍵タイプ: {key_type}")
+    print(f"元のデータタイプ: {original_data_type}")
+    print(f"元のデータサイズ: {original_data_size}")
+
+    # 暗号化チャンク数
+    num_chunks = len(encrypted_chunks)
+    print(f"復号するチャンク数: {num_chunks}")
+
+    # PaillierCryptoインスタンスを作成
+    paillier = PaillierCrypto()
+    paillier.private_key = paillier_key
+
+    # 各チャンクの大まかなサイズ（仮定）
+    chunk_size = 256
+    print(f"チャンクサイズ: {chunk_size}")
+
+    # 合計データサイズの予測
+    total_data_size = num_chunks * chunk_size
+    print(f"合計予測データサイズ: {total_data_size} バイト")
+
+    if original_data_size:
+        print(f"要求された元のデータサイズ: {original_data_size} バイト")
+
+    # 結果バイト列
+    result_bytes = bytearray()
+
+    for i, chunk in enumerate(encrypted_chunks):
+        if verbose:
+            print(f"チャンク {i}/{num_chunks-1} を処理中...")
+
+        try:
+            # チャンクを復号
+            plaintext_int = paillier.decrypt(chunk, paillier_key)
+
+            if verbose:
+                print(f"[DEBUG] 復号されたチャンク整数値: {plaintext_int}")
+
+            # 最後のチャンクの場合、サイズを調整
+            bytes_to_get = chunk_size
+            if i == num_chunks - 1 and original_data_size > 0:
+                # 最後のチャンクの予想サイズを計算
+                remaining_size = original_data_size - (num_chunks - 1) * chunk_size
+                if remaining_size > 0 and remaining_size < chunk_size:
+                    bytes_to_get = remaining_size
+                    if verbose:
+                        print(f"[DEBUG] 最後のチャンク調整: サイズ={bytes_to_get}バイト（通常={chunk_size}）")
+
+            # 新しいdecrypt_bytes関数を使用
+            chunk_bytes = decrypt_bytes(chunk, paillier_key, bytes_to_get)
+
+            if verbose and i == num_chunks - 1:
+                print(f"[DEBUG] バイト変換: {len(chunk_bytes)}バイト→{bytes_to_get}バイト")
+
+            # 結果に追加
+            result_bytes.extend(chunk_bytes)
+        except Exception as e:
+            print(f"チャンク {i} の復号中にエラーが発生: {e}")
+            if verbose:
+                import traceback
+                traceback.print_exc()
+
+    # 要求された元のサイズがある場合、そのサイズに切り詰める
+    if original_data_size > 0 and len(result_bytes) > original_data_size:
+        result_bytes = result_bytes[:original_data_size]
+
+    print(f"結合後データサイズ: {len(result_bytes)} バイト")
+
+    # 先頭と末尾の部分を表示
+    if len(result_bytes) > 20:
+        print(f"先頭バイト: {bytes(result_bytes[:20])}")
+        print(f"末尾バイト: {bytes(result_bytes[-20:])}")
+
+    # マーカーを探す
+    if len(result_bytes) > 10:
+        # マーカーを探して検証
+        try:
+            result_str = result_bytes.decode('utf-8', errors='replace')
+
+            # よく使われるマーカーをチェック
+            markers = {
+                'TEXT:UTF8:': 'text',
+                'JSON:': 'json',
+                'CSV:': 'csv',
+                'B64:': 'base64'
+            }
+
+            for marker, marker_type in markers.items():
+                if marker in result_str[:100]:  # 先頭100文字以内にマーカーがあるか
+                    print(f"マーカー '{marker}' を検出しました - タイプ: {marker_type}")
+                    # original_data_typeと一致する場合は問題なし
+                    if marker_type == original_data_type:
+                        print(f"マーカータイプが元のデータタイプと一致: {marker_type}")
+                    else:
+                        print(f"警告: マーカータイプ({marker_type})が元のデータタイプ({original_data_type})と一致しません")
+        except Exception as e:
+            print(f"マーカー検出中にエラー: {e}")
+
+    return bytes(result_bytes)
 
 
 def main():

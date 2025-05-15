@@ -895,38 +895,107 @@ def determine_execution_path(key: bytes, metadata: Dict[str, Any]) -> str:
             # ソルトが不正な場合はランダムなソルトを使用
             salt = os.urandom(16)
 
-        # 鍵検証用のハッシュ値を生成
-        verify_hash = hashlib.sha256(key + salt + b"path_verification").digest()
+        # バージョン情報を取得（バージョンごとに異なるロジックを適用可能）
+        version = metadata.get("version", "1.0.0")
 
-        # 鍵から決定論的に実行パスを導出（単純化）
-        path_hash = hashlib.sha256(key + salt + b"path_decision").digest()
-        decision_value = int.from_bytes(path_hash[:4], byteorder='big')
+        # 鍵検証用のハッシュ値を複数生成（多段階認証）
+        verify_hash1 = hashlib.sha256(key + salt + b"path_verification_1").digest()
+        verify_hash2 = hashlib.sha512(key + salt + b"path_verification_2").digest()
+        verify_hash3 = hmac.new(key, salt + b"path_verification_3", hashlib.sha256).digest()
 
-        # 基本的な決定ロジック
-        path_type = TRUE_PATH if (decision_value % 2 == 0) else FALSE_PATH
-
-        # セキュリティを向上させるための追加処理
+        # 暗号学的に安全な鍵導出関数を使用（可能であれば）
         try:
-            # タイミング攻撃を防ぐためのダミー計算
-            for _ in range(5):
-                dummy = hashlib.sha256(os.urandom(32)).digest()
+            from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.backends import default_backend
 
-            # 他のエントロピーソースを使用
-            file_marker = metadata.get("file_marker", b"")
-            if isinstance(file_marker, str):
-                file_marker = file_marker.encode('utf-8')
+            # PBKDF2を使用して決定的に導出
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=10000,
+                backend=default_backend()
+            )
+            derived_key = kdf.derive(key)
 
-            timestamp = metadata.get("timestamp", 0)
-            timestamp_bytes = str(timestamp).encode('utf-8')
+        except ImportError:
+            # フォールバック実装（cryptographyライブラリが利用できない場合）
+            derived_key = hashlib.pbkdf2_hmac('sha256', key, salt, 10000, 32)
 
-            # 複数の要素を組み合わせて最終判断
-            final_seed = hashlib.sha256(path_hash + file_marker + timestamp_bytes).digest()
+        # 複数のハッシュ値を組み合わせた高度な決定ロジック
+        # ハッシュチェーンを構築し、複数の要素が一貫性を持つ必要がある
+        hash_chain = []
 
-            obfuscate_execution_path(None)  # ダミー実行
+        # 基本チェーン（鍵と派生鍵の組み合わせ）
+        hash_chain.append(hashlib.sha256(key + derived_key).digest())
+        hash_chain.append(hashlib.sha256(derived_key + verify_hash1).digest())
+        hash_chain.append(hashlib.sha256(verify_hash1 + verify_hash2[:16]).digest())
+        hash_chain.append(hashlib.sha256(verify_hash2[16:32] + verify_hash3).digest())
 
-        except Exception:
-            # エラーが発生しても動作を続行
-            pass
+        # メタデータからの追加要素
+        timestamp = metadata.get("timestamp", 0)
+        timestamp_bytes = str(timestamp).encode('utf-8')
+
+        file_marker = metadata.get("file_marker", "")
+        if isinstance(file_marker, str):
+            file_marker = file_marker.encode('utf-8')
+
+        # メタデータからの要素をチェーンに追加
+        hash_chain.append(hashlib.sha256(derived_key + timestamp_bytes).digest())
+        hash_chain.append(hashlib.sha256(verify_hash3 + file_marker).digest())
+
+        # チェーン全体を結合してファイナルハッシュを生成
+        final_hash = hmac.new(derived_key, b''.join(hash_chain), hashlib.sha512).digest()
+
+        # 決定アルゴリズム（複数の特性を考慮）
+        # 1. 最終ハッシュの偶数/奇数バイト数の比率
+        even_bytes = sum(1 for b in final_hash if b % 2 == 0)
+        odd_bytes = len(final_hash) - even_bytes
+
+        # 2. ハミングウェイト（1ビットの数）の計算
+        def bit_count(n):
+            return bin(n).count('1')
+
+        total_bits = sum(bit_count(b) for b in final_hash)
+
+        # 3. バイト値の分布特性
+        high_values = sum(1 for b in final_hash if b > 127)
+        low_values = len(final_hash) - high_values
+
+        # 4. 決定性の確保（タイミング攻撃対策のためのダミー計算）
+        dummy_value = 0
+        for i, b in enumerate(final_hash):
+            dummy_value = (dummy_value + (b * i)) % 256
+
+        # 複数の特性を組み合わせた決定ロジック
+        # 単一の特性だけでは偏りが出る可能性があるため、複数の特性を考慮
+        score = (
+            (even_bytes * 10) +
+            (total_bits * 5) +
+            (high_values * 15) +
+            (dummy_value * 7)
+        ) % 1000
+
+        # 複雑な条件分岐（リバースエンジニアリングを困難にする）
+        if score < 470:
+            path_type = TRUE_PATH
+        elif score > 540:
+            path_type = FALSE_PATH
+        else:
+            # グレーゾーンは追加の特性で判断
+            additional_factor = hashlib.sha256(
+                final_hash + key[-8:] + salt[:4]
+            ).digest()[0]
+            path_type = TRUE_PATH if additional_factor < 128 else FALSE_PATH
+
+        # タイミング攻撃対策のためのダミー処理（常に実行）
+        for _ in range(5 + (dummy_value % 3)):
+            hash_dummy = hashlib.sha256(os.urandom(32)).digest()
+            dummy_value ^= hash_dummy[0]
+
+        # 実行パスの難読化
+        obfuscate_execution_path(None)
 
         return path_type
 
@@ -940,40 +1009,152 @@ def obfuscate_execution_path(engine: ProbabilisticExecutionEngine) -> None:
     """
     実行パスを難読化する（解析対策）
 
+    静的解析や動的解析からの保護を強化するため、実行パスの決定プロセスを
+    複雑化し、外部からの観察に基づく推測を困難にします。
+
     Args:
         engine: 確率的実行エンジン
     """
     # Noneが渡された場合は何もせずに終了
     if engine is None:
+        # ダミー処理を追加（タイミング攻撃対策）
+        dummy_count = secrets.randbelow(10) + 5
+        for _ in range(dummy_count):
+            _ = hashlib.sha512(os.urandom(64)).digest()
         return
 
     try:
         # エントロピー注入モジュールをインポート（追加のエントロピーソースとして使用）
         from .entropy_injector import EntropyPool
 
-        # エントロピープールを作成（追加の拡散性のため）
-        seed = secrets.token_bytes(32)
-        entropy_pool = EntropyPool(seed)
+        # 高エントロピーシード生成
+        system_entropy = os.urandom(16)
+        time_entropy = struct.pack('!d', time.time() * 1000)
+        process_entropy = struct.pack('!I', os.getpid())
 
-        # パスの難読化を開始
+        # 複数のソースからシードを生成
+        combined_seed = hashlib.sha512(
+            system_entropy +
+            time_entropy +
+            process_entropy +
+            engine.key if hasattr(engine, 'key') else b''
+        ).digest()
+
+        # エントロピープールを作成（高度な拡散性のため）
+        entropy_pool = EntropyPool(combined_seed)
+
+        # 実行パスの難読化処理
+        # 1. ダミーデータの注入
         dummy_key = entropy_pool.get_bytes(32)
         dummy_salt = entropy_pool.get_bytes(16)
 
-        # ダミーエンジンを2つ用意
-        dummy_engine1 = create_engine_from_key(dummy_key, TRUE_PATH, dummy_salt)
-        dummy_engine2 = create_engine_from_key(dummy_key, FALSE_PATH, dummy_salt)
+        # 2. ネスト化されたハッシュチェーン（計算量の増加）
+        hash_depth = 3 + entropy_pool.get_int(0, 5)  # 3-8の範囲
+        nested_hash = dummy_key
+        for i in range(hash_depth):
+            nested_hash = hashlib.sha256(
+                nested_hash +
+                dummy_salt +
+                i.to_bytes(4, 'big')
+            ).digest()
 
-        # それぞれ実行
-        dummy_engine1.run_execution()
-        dummy_engine2.run_execution()
+        # 3. 複数のダミーエンジンを用意（実際のエンジンに紛れさせる）
+        dummy_engines = []
+        engine_count = 2 + entropy_pool.get_int(0, 3)  # 2-5の範囲
 
-        # 本物のエンジンにランダムなノイズを追加
-        for state_id in engine.states:
-            if entropy_pool.get_float() > 0.7:  # 30%の確率でノイズを追加
+        for i in range(engine_count):
+            # ダミーエンジンごとに異なるキーとソルトを生成
+            dummy_engine_key = entropy_pool.get_bytes(32)
+            dummy_engine_salt = entropy_pool.get_bytes(16)
+
+            # パスタイプをランダムに選択
+            path_type = TRUE_PATH if entropy_pool.get_float() < 0.5 else FALSE_PATH
+
+            # ダミーエンジンを作成
+            try:
+                dummy_engine = create_engine_from_key(
+                    dummy_engine_key,
+                    path_type,
+                    dummy_engine_salt
+                )
+                dummy_engines.append((dummy_engine, path_type))
+            except Exception:
+                pass
+
+        # 4. ダミーエンジンを実行（順序をランダム化）
+        for _ in range(len(dummy_engines)):
+            # ランダムに選択
+            idx = entropy_pool.get_int(0, len(dummy_engines) - 1)
+            dummy_engine, path_type = dummy_engines[idx]
+
+            try:
+                # 実行パスを取得してダミー処理を実行
+                dummy_path = dummy_engine.run_execution()
+
+                # ダミーエンジンの結果でさらにダミー計算
+                dummy_result = sum(p for p in dummy_path) % 256
+                dummy_hash = hashlib.sha256(
+                    dummy_result.to_bytes(1, 'big') +
+                    dummy_engine_key
+                ).digest()
+
+                # 結果の利用（何も実際に使用しないが、最適化による削除を防ぐ）
+                if dummy_hash[0] == 0:
+                    _ = hashlib.sha512(dummy_hash).digest()
+
+            except Exception:
+                # 例外が発生しても処理を継続
+                pass
+
+        # 5. 本物のエンジンにノイズと偽装データを追加
+        if hasattr(engine, 'states') and engine.states:
+            # 状態IDのリスト
+            state_ids = list(engine.states.keys())
+
+            # 状態ごとの処理
+            for state_id in state_ids:
                 state = engine.states[state_id]
-                if hasattr(state, 'attributes'):
-                    noise_name = f"noise_{entropy_pool.get_bytes(4).hex()}"
-                    state.attributes[noise_name] = entropy_pool.get_bytes(8)
+
+                # ランダムな状態にのみノイズを追加（パターン化を防ぐ）
+                if entropy_pool.get_float() > 0.3:  # 70%の確率でノイズを追加
+                    if hasattr(state, 'attributes'):
+                        # ランダムなノイズ属性名と値
+                        noise_count = 1 + entropy_pool.get_int(0, 3)  # 1-4の属性
+
+                        for _ in range(noise_count):
+                            # ノイズ属性名（ランダムな16進数）
+                            noise_name = f"noise_{entropy_pool.get_bytes(4).hex()}"
+
+                            # ノイズタイプをランダムに選択（多様性のため）
+                            noise_type = entropy_pool.get_int(0, 3)
+
+                            if noise_type == 0:
+                                # バイナリノイズ
+                                noise_value = entropy_pool.get_bytes(
+                                    entropy_pool.get_int(4, 16)  # 4-16バイト
+                                )
+                            elif noise_type == 1:
+                                # 整数ノイズ
+                                noise_value = entropy_pool.get_int(0, 1000000)
+                            elif noise_type == 2:
+                                # 浮動小数点ノイズ
+                                noise_value = entropy_pool.get_float(0, 100)
+                            else:
+                                # 文字列ノイズ
+                                noise_value = entropy_pool.get_bytes(8).hex()
+
+                            # 属性に追加
+                            state.attributes[noise_name] = noise_value
+
+                    # 状態間の偽の依存関係を作成
+                    if len(state_ids) > 1 and hasattr(state, 'next_states'):
+                        # ランダムな次状態を追加
+                        fake_next_state = state_ids[
+                            entropy_pool.get_int(0, len(state_ids) - 1)
+                        ]
+                        if fake_next_state not in state.next_states:
+                            # 非常に低い遷移確率を設定（実際には使用されない）
+                            state.next_states[fake_next_state] = 0.01
 
     except ImportError:
         # エントロピー注入モジュールが利用できない場合は標準実装を使用
@@ -982,27 +1163,50 @@ def obfuscate_execution_path(engine: ProbabilisticExecutionEngine) -> None:
         dummy_salt = os.urandom(16)
 
         try:
-            # ダミーエンジンを2つ用意
-            dummy_engine1 = create_engine_from_key(dummy_key, TRUE_PATH, dummy_salt)
-            dummy_engine2 = create_engine_from_key(dummy_key, FALSE_PATH, dummy_salt)
+            # ダミーエンジンを複数用意
+            dummy_count = random.randint(2, 4)
+            dummy_engines = []
 
-            # それぞれ実行
-            dummy_engine1.run_execution()
-            dummy_engine2.run_execution()
+            for i in range(dummy_count):
+                path_type = TRUE_PATH if random.random() < 0.5 else FALSE_PATH
+                dummy_engine = create_engine_from_key(
+                    dummy_key,
+                    path_type,
+                    dummy_salt + i.to_bytes(1, 'big')
+                )
+                dummy_engines.append(dummy_engine)
+
+            # ダミーエンジンをシャッフル実行
+            random.shuffle(dummy_engines)
+            for dummy_engine in dummy_engines:
+                dummy_engine.run_execution()
 
             # 本物のエンジンにランダムなノイズを追加
-            for state_id in engine.states:
-                if random.random() > 0.7:  # 30%の確率でノイズを追加
-                    state = engine.states[state_id]
-                    if hasattr(state, 'attributes'):
-                        state.attributes[f"noise_{secrets.token_hex(4)}"] = secrets.token_bytes(8)
+            if hasattr(engine, 'states') and engine.states:
+                for state_id in engine.states:
+                    if random.random() > 0.3:  # 70%の確率でノイズを追加
+                        state = engine.states[state_id]
+                        if hasattr(state, 'attributes'):
+                            # 複数のノイズ属性を追加
+                            for _ in range(random.randint(1, 3)):
+                                noise_name = f"noise_{secrets.token_hex(4)}"
+                                noise_value = secrets.token_bytes(random.randint(4, 12))
+                                state.attributes[noise_name] = noise_value
         except Exception:
             # エラーが発生しても処理を継続
             pass
 
-    except Exception:
-        # 他のエラーが発生しても処理を継続
+    except Exception as e:
+        # 他のエラーが発生しても処理を継続（エラーメッセージを出力しない）
+        # 情報漏洩防止のため、エラー情報は意図的に抑制
         pass
+
+    finally:
+        # 最終的なタイミング均等化（全ての実行パスで同じ時間がかかるように）
+        end_time = time.time() + 0.01  # 10ミリ秒の遅延
+        while time.time() < end_time:
+            # CPUサイクルを消費
+            _ = hashlib.sha256(os.urandom(16)).digest()
 
 
 def extract_from_state_capsule(capsule_data: bytes, key: bytes, salt: bytes, path_type: str) -> bytes:

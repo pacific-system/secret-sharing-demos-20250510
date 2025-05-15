@@ -117,22 +117,49 @@ class EntropyPool:
         blake2_hash = hashlib.blake2b(self.pool).digest()
 
         # プールを複数のセクションに分割して個別に攪拌
-        for i in range(8):
+        for i in range(16):  # セクション数を増加
             # セクションのサイズと開始位置を計算
-            section_size = self.pool_size // 8
+            section_size = self.pool_size // 16
             section_start = i * section_size
             section_end = section_start + section_size
 
             # 異なるハッシュ値を組み合わせて新たなシード値を生成
-            section_seed = pool_hash + sha512_hash[i*8:(i+1)*8] + blake2_hash[i*4:(i+1)*4]
+            section_seed = pool_hash + sha512_hash[i*4:(i+1)*4] + blake2_hash[i*2:(i+1)*2]
             section_hash = hashlib.sha256(section_seed + bytes([i])).digest()
 
-            # セクションの各バイトにXOR操作を適用
+            # セクション内でのランダムな位置シャッフル
+            positions = list(range(section_start, min(section_end, self.pool_size)))
+            for j in range(len(positions)):
+                # シード値に基づいた決定論的シャッフル
+                hash_byte = section_hash[j % len(section_hash)]
+                idx = (j + hash_byte) % len(positions)
+                if j != idx:
+                    pos_j, pos_idx = positions[j], positions[idx]
+                    self.pool[pos_j], self.pool[pos_idx] = self.pool[pos_idx], self.pool[pos_j]
+
+            # セクションの各バイトにXOR操作と回転操作を適用
             for j in range(section_start, min(section_end, self.pool_size)):
                 hash_idx = (j - section_start) % len(section_hash)
+                # XOR操作
                 self.pool[j] ^= section_hash[hash_idx]
 
-        # 追加の非線形変換を適用
+                # バイト回転操作
+                if j + 1 < self.pool_size:
+                    rotate = section_hash[hash_idx] % 8
+                    self.pool[j] = ((self.pool[j] << rotate) | (self.pool[j] >> (8 - rotate))) & 0xFF
+
+        # 非線形な依存関係を作成するための追加処理
+        for i in range(self.pool_size):
+            # 各バイトをその前後の値に依存させる
+            prev_idx = (i - 1) % self.pool_size
+            next_idx = (i + 1) % self.pool_size
+
+            # 非線形な変換（XOR、加算、乗算を組み合わせる）
+            self.pool[i] = (self.pool[i] ^
+                           ((self.pool[prev_idx] + self.pool[next_idx]) % 256) ^
+                           ((self.pool[i] * pool_hash[i % len(pool_hash)]) % 256))
+
+        # 4バイト単位での非線形変換
         for i in range(0, self.pool_size - 4, 4):
             # 4バイトを32ビット整数として解釈
             val = int.from_bytes(self.pool[i:i+4], byteorder='big')
@@ -140,9 +167,17 @@ class EntropyPool:
             # ビット回転などの非線形変換を適用
             val = ((val << 13) | (val >> 19)) & 0xFFFFFFFF
             val ^= ((val << 9) | (val >> 23)) & 0xFFFFFFFF
+            val += (val ^ (val >> 16)) & 0xFFFFFFFF
+            val ^= (val * 0x9e3779b9) & 0xFFFFFFFF  # 黄金比に基づく値
 
             # 処理した値を書き戻す
             self.pool[i:i+4] = val.to_bytes(4, byteorder='big')
+
+        # ファイナライゼーション - エントロピー拡散を最終的に強化
+        final_hash = hashlib.sha512(bytes(self.pool) + self.seed).digest()
+        for i in range(64):
+            idx = (final_hash[i] * i) % self.pool_size
+            self.pool[idx] ^= final_hash[63-i]
 
     def get_bytes(self, count: int) -> bytes:
         """

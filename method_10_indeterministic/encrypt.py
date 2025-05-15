@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-不確定性転写暗号化方式 - 暗号化プログラム
+Indeterministic Transfer Encryption Method - Encryption Program
 
-true.textとfalse.textを入力として受け取り、
-不確定性転写暗号化方式で暗号化された単一の暗号文ファイルを生成します。
+Takes true.text and false.text as input and produces a single
+encrypted file using the indeterministic transfer encryption method.
 """
 
 import os
@@ -1170,43 +1170,42 @@ def _encrypt_block(block: bytes, engine: ProbabilisticExecutionEngine,
 
 def inject_entropy(true_data: bytes, false_data: bytes, key: bytes, salt: bytes) -> bytes:
     """
-    状態エントロピーを注入
-
-    暗号文にエントロピーを注入して解析攻撃に対する耐性を高めます。
-    複数のソースからエントロピーを収集し、暗号文の識別可能性を低減します。
+    複数のエントロピーソースから状態注入を行いセキュリティを向上させる
 
     Args:
-        true_data: 正規データの暗号文
-        false_data: 非正規データの暗号文
+        true_data: 暗号化された正規データ
+        false_data: 暗号化された非正規データ
         key: マスター鍵
         salt: ソルト値
 
     Returns:
-        エントロピー注入データ
+        エントロピー注入されたデータ
     """
-    # エントロピーシードの生成（セキュリティ強化版）
-    entropy_seed = hashlib.sha256(key + salt + b"entropy_injection").digest()
+    # キーとソルトから基本シードを生成
+    seed = hashlib.sha256(key + salt).digest()
 
-    # 時間情報（タイムスタンプ）
+    # カプセル構造用の追加シード生成
+    capsule_seed = hashlib.sha256(key + salt + b"state_capsule").digest()
+
+    # データサイズに基づくエントロピーサイズの決定
+    data_size = max(len(true_data), len(false_data))
+    entropy_size = min(
+        int(data_size * 0.3),  # データサイズの30%
+        10 * 1024 * 1024       # 最大10MB
+    )
+
+    # 最小サイズの保証
+    entropy_size = max(entropy_size, 1024)  # 最低1KB
+
+    # 時間情報
     timestamp = int(time.time()).to_bytes(8, 'big')
-    nanoseconds = int(time.time() * 1_000_000_000) % 1_000_000_000
-    nano_bytes = nanoseconds.to_bytes(4, 'big')
 
-    # プロセス情報
-    pid_bytes = os.getpid().to_bytes(4, 'big')
-
-    # エントロピー強化のためのハードウェア情報（可能な場合）
-    try:
-        import uuid
-        hw_id = uuid.getnode().to_bytes(6, 'big')  # MACアドレスベースの識別子
-    except (ImportError, AttributeError):
-        hw_id = os.urandom(6)  # フォールバック
-
-    # システムエントロピーソース
+    # システムエントロピー
     system_entropy = os.urandom(32)
 
     # ハッシュベースの擬似乱数生成器
     def generate_bytes(seed: bytes, count: int) -> bytes:
+        """指定されたシードから疑似乱数バイト列を生成"""
         result = bytearray()
         current = seed
 
@@ -1216,210 +1215,21 @@ def inject_entropy(true_data: bytes, false_data: bytes, key: bytes, salt: bytes)
 
         return bytes(result[:count])
 
-    # 擬似乱数生成器の初期化 - 複数のエントロピーソースを組み合わせる
-    combined_seed = entropy_seed + timestamp + nano_bytes + pid_bytes + hw_id + system_entropy
+    # 複数のエントロピーソースを組み合わせる
+    combined_seed = seed + timestamp + system_entropy
     expanded_seed = hashlib.sha512(combined_seed).digest()
 
-    # 擬似乱数データ生成（十分なサイズ）
-    random_data = generate_bytes(expanded_seed, 1024)
+    # エントロピーデータの生成
+    entropy_data = generate_bytes(expanded_seed, entropy_size)
 
-    # データハッシュの取得（整合性と識別子として使用）
-    true_hash = hashlib.sha256(true_data).digest()
-    false_hash = hashlib.sha256(false_data).digest()
+    # エントロピー品質の検証
+    entropy_value = calculate_entropy(entropy_data)
+    if entropy_value < MIN_ENTROPY:
+        # エントロピーが不足している場合は補強
+        additional_entropy = os.urandom(entropy_size // 2)
+        entropy_data = hashlib.sha512(entropy_data + additional_entropy).digest() + entropy_data
 
-    # 複合ハッシュ（両方のデータを組み合わせたハッシュ）
-    combined_hash = hashlib.sha256(true_hash + false_hash + key).digest()
-
-    # 追加の識別情報を生成（サイズが異なる場合に使用）
-    true_size_hash = hashlib.sha256(len(true_data).to_bytes(8, 'big') + true_hash).digest()[:8]
-    false_size_hash = hashlib.sha256(len(false_data).to_bytes(8, 'big') + false_hash).digest()[:8]
-
-    # ノイズデータの生成（解析防止のための偽情報）
-    true_noise = generate_anti_analysis_noise(key, TRUE_PATH)
-    false_noise = generate_anti_analysis_noise(key, FALSE_PATH)
-
-    # エントロピーデータの結合
-    entropy_parts = [
-        random_data[:512],                # 高エントロピーランダムデータ
-        true_hash,                       # 正規データのハッシュ
-        false_hash,                      # 非正規データのハッシュ
-        true_noise[:64],                 # 正規パス用ノイズデータ
-        false_noise[:64],                # 非正規パス用ノイズデータ
-        combined_hash,                   # 両方を含む複合ハッシュ
-        system_entropy,                  # システムエントロピー
-        true_size_hash + false_size_hash, # サイズ情報（解析対策に情報を分散）
-        hashlib.sha512(random_data).digest()[:32]  # メタエントロピー（エントロピーデータ自体の指紋）
-    ]
-
-    # マーカー生成関数
-    def generate_marker(index: int, pattern: bytes) -> bytes:
-        """
-        一意のマーカーを生成する内部関数
-        indexとパターンを使用して予測困難なマーカーを生成
-        """
-        marker_seed = hashlib.sha256(
-            key +
-            pattern +
-            index.to_bytes(4, 'big') +
-            salt
-        ).digest()
-
-        # セカンダリハッシュで更に強化
-        enhanced_marker = hashlib.sha512(
-            marker_seed +
-            timestamp +
-            nano_bytes
-        ).digest()
-
-        # 先頭8バイトをマーカーとして使用
-        return enhanced_marker[:8]
-
-    # 複雑なマーカーの生成（解析困難化のため）
-    markers = []
-    for i in range(len(entropy_parts)):
-        # 各エントロピー部分に対応する一意のマーカー
-        pattern = f"marker_type_{i}".encode()
-        marker = generate_marker(i, pattern)
-        markers.append(marker)
-
-    # マーカー配置時のノイズ生成
-    def get_noise_byte(index: int, seed: bytes) -> int:
-        """マーカーにノイズを加えるためのバイト値を生成"""
-        noise_seed = hashlib.sha256(
-            seed +
-            index.to_bytes(4, 'big')
-        ).digest()
-        return noise_seed[0]
-
-    # マーカーを分散配置
-    result = bytearray()
-    for i, (part, marker) in enumerate(zip(entropy_parts, markers)):
-        # 各マーカーにノイズを追加
-        noised_marker = bytearray(marker)
-        for j in range(len(noised_marker)):
-            noise_byte = get_noise_byte(i * 10 + j, entropy_seed)
-            noised_marker[j] ^= noise_byte
-
-        result.extend(noised_marker)
-        result.extend(part)
-
-    # 最終的なマーカー（エントロピーの終了を示す）
-    end_marker = generate_marker(len(entropy_parts), b"entropy_end")
-    result.extend(end_marker)
-
-    # エントロピーデータの品質検証
-    entropy_value = calculate_entropy(result)
-    enhanced_seed = hashlib.sha512(capsule_seed + timestamp).digest()
-
-    # データブロックサイズの決定
-    block_size = 64
-
-    # true_encryptedとfalse_encryptedをブロック単位で処理
-    true_blocks = [true_encrypted[i:i+block_size] for i in range(0, len(true_encrypted), block_size)]
-    false_blocks = [false_encrypted[i:i+block_size] for i in range(0, len(false_encrypted), block_size)]
-
-    # ブロック数を揃える（短い方にダミーブロックを追加）
-    max_blocks = max(len(true_blocks), len(false_blocks))
-
-    if len(true_blocks) < max_blocks:
-        for i in range(max_blocks - len(true_blocks)):
-            # より強力なダミーブロック生成
-            dummy_seed = hashlib.sha256(capsule_seed + b"true_dummy" + i.to_bytes(4, 'big')).digest()
-            # エントロピー強化
-            dummy = hashlib.sha512(dummy_seed + enhanced_seed[i % len(enhanced_seed):] + timestamp).digest()[:block_size]
-            true_blocks.append(dummy)
-
-    if len(false_blocks) < max_blocks:
-        for i in range(max_blocks - len(false_blocks)):
-            # より強力なダミーブロック生成
-            dummy_seed = hashlib.sha256(capsule_seed + b"false_dummy" + i.to_bytes(4, 'big')).digest()
-            # エントロピー強化
-            dummy = hashlib.sha512(dummy_seed + enhanced_seed[i % len(enhanced_seed):] + timestamp).digest()[:block_size]
-            false_blocks.append(dummy)
-
-    # カプセル化データの生成
-    capsule = bytearray()
-
-    # 署名データの埋め込み（隠蔽・強化）
-    true_sig_processed = hashlib.sha256(capsule_seed + true_signature).digest()
-    false_sig_processed = hashlib.sha256(capsule_seed + false_signature).digest()
-
-    # 署名に追加のノイズを加える
-    true_sig_noised = bytes([b ^ enhanced_seed[i % len(enhanced_seed)] for i, b in enumerate(true_sig_processed)])
-    false_sig_noised = bytes([b ^ enhanced_seed[i+16 % len(enhanced_seed)] for i, b in enumerate(false_sig_processed)])
-
-    capsule.extend(true_sig_noised)
-    capsule.extend(false_sig_noised)
-
-    # インターリーブ方式でブロックを交互に配置（パターン強化）
-    for i in range(max_blocks):
-        # より複雑なブロック選択パターンのシード
-        pattern_seed = hashlib.sha512(capsule_seed + i.to_bytes(4, 'big') + enhanced_seed[i % len(enhanced_seed):]).digest()
-        pattern_value = pattern_seed[0]
-        secondary_value = pattern_seed[1]  # 第二パターン値
-
-        # より複雑なパターンに基づいて配置順を決定
-        if pattern_value % 4 == 0:
-            # 正規→非正規
-            capsule.extend(true_blocks[i])
-            capsule.extend(false_blocks[i])
-        elif pattern_value % 4 == 1:
-            # 非正規→正規
-            capsule.extend(false_blocks[i])
-            capsule.extend(true_blocks[i])
-        elif pattern_value % 4 == 2:
-            # 交互にバイトを配置
-            t_block = true_blocks[i]
-            f_block = false_blocks[i]
-            mixed = bytearray()
-            for j in range(max(len(t_block), len(f_block))):
-                if j < len(t_block):
-                    mixed.append(t_block[j])
-                if j < len(f_block):
-                    mixed.append(f_block[j])
-            capsule.extend(mixed)
-        else:
-            # ビット単位の混合（最も複雑なパターン）
-            t_block = bytearray(true_blocks[i])
-            f_block = bytearray(false_blocks[i])
-            mixed = bytearray(len(t_block) + len(f_block))
-
-            mix_idx = 0
-            for j in range(max(len(t_block), len(f_block))):
-                if j < len(t_block):
-                    # ビット単位のインターリーブ
-                    byte_val = t_block[j]
-                    for bit in range(8):
-                        if secondary_value & (1 << bit):
-                            # ビットが1の場合、対応するビットを設定
-                            mixed[mix_idx // 8] |= ((byte_val >> bit) & 1) << (mix_idx % 8)
-                            mix_idx += 1
-
-                if j < len(f_block):
-                    # ビット単位のインターリーブ
-                    byte_val = f_block[j]
-                    for bit in range(8):
-                        if not (secondary_value & (1 << bit)):
-                            # ビットが0の場合、対応するビットを設定
-                            mixed[mix_idx // 8] |= ((byte_val >> bit) & 1) << (mix_idx % 8)
-                            mix_idx += 1
-
-            # ビット単位混合が複雑すぎる場合のフォールバック
-            if mix_idx < len(mixed) * 8 // 2:
-                # 通常のバイト単位混合にフォールバック
-                mixed = bytearray()
-                for j in range(max(len(t_block), len(f_block))):
-                    if j < len(t_block):
-                        mixed.append(t_block[j])
-                    if j < len(f_block):
-                        mixed.append(f_block[j])
-
-            capsule.extend(mixed)
-
-    # カプセルのシャッフル（さらなる攪拌）
-    final_capsule = _shuffle_capsule(capsule, capsule_seed, enhanced_seed)
-
-    return bytes(final_capsule)
+    return entropy_data
 
 
 def _create_large_capsule(
@@ -1998,206 +1808,190 @@ def _get_deterministic_int(seed: bytes, salt: str, min_val: int, max_val: int) -
     return min_val + (val % range_size)
 
 
+def encrypt(true_file_path: str, false_file_path: str, output_path: Optional[str] = None, save_key: bool = False) -> Tuple[bytes, str]:
+    """
+    不確定性転写暗号化方式で暗号化を実行する
+
+    Args:
+        true_file_path: 正規ファイルのパス
+        false_file_path: 非正規ファイルのパス
+        output_path: 出力ファイルのパス（省略時は自動生成）
+        save_key: 鍵をファイルに保存するかどうか
+
+    Returns:
+        (マスター鍵, 出力ファイルパス)
+    """
+    try:
+        # 入力ファイルの存在確認
+        if not os.path.exists(true_file_path):
+            raise FileNotFoundError(f"正規ファイル '{true_file_path}' が見つかりません")
+
+        if not os.path.exists(false_file_path):
+            raise FileNotFoundError(f"非正規ファイル '{false_file_path}' が見つかりません")
+
+        # 出力パスのデフォルト設定
+        if not output_path:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            output_path = f"output_{timestamp}{OUTPUT_EXTENSION}"
+
+        # マスター鍵の生成
+        master_key = generate_master_key()
+
+        # ソルト値の生成
+        salt = os.urandom(16)
+
+        # 一時的なデータとメタデータの初期化
+        true_data = bytearray()
+        false_data = bytearray()
+        true_is_text = False
+        false_is_text = False
+
+        # 正規ファイルの読み込み
+        try:
+            with open(true_file_path, 'rb') as f:
+                true_data = f.read()
+
+            print(f"ファイル '{true_file_path}' はUTF-8テキストとして認識されました（サイズ: {len(true_data)} バイト）")
+            true_is_text = True
+        except Exception as e:
+            print(f"ファイル '{true_file_path}' の読み込みエラー: {e}", file=sys.stderr)
+            raise
+
+        # 非正規ファイルの読み込み
+        try:
+            with open(false_file_path, 'rb') as f:
+                false_data = f.read()
+
+            print(f"ファイル '{false_file_path}' はUTF-8テキストとして認識されました（サイズ: {len(false_data)} バイト）")
+            false_is_text = True
+        except Exception as e:
+            print(f"ファイル '{false_file_path}' の読み込みエラー: {e}", file=sys.stderr)
+            raise
+
+        # 暗号化処理の実行
+        # 正規パスの初期化
+        true_engine = create_engine_from_key(master_key, TRUE_PATH, salt)
+
+        # 非正規パスの初期化
+        false_engine = create_engine_from_key(master_key, FALSE_PATH, salt)
+
+        # ファイルの暗号化
+        print("正規データを暗号化中...")
+        true_encrypted = state_based_encrypt(true_data, true_engine, TRUE_PATH)
+
+        print("非正規データを暗号化中...")
+        false_encrypted = state_based_encrypt(false_data, false_engine, FALSE_PATH)
+
+        # 実行パスの署名を取得
+        true_signature = true_engine.get_execution_signature()
+        false_signature = false_engine.get_execution_signature()
+
+        # 状態エントロピー注入
+        print("状態エントロピー注入中...")
+        entropy_data = inject_entropy(true_encrypted, false_encrypted, master_key, salt)
+
+        # 状態データのカプセル化
+        print("状態カプセル化中...")
+        capsule = _create_large_capsule(true_encrypted, false_encrypted, true_signature, false_signature, master_key, salt)
+
+        # メタデータの作成
+        metadata = {
+            "format": "indeterministic",
+            "version": "1.0",
+            "timestamp": int(time.time()),
+            "salt": base64.b64encode(salt).decode('ascii'),
+            "content_length": max(len(true_data), len(false_data)),
+            "states": STATE_MATRIX_SIZE,
+            "transitions": STATE_TRANSITIONS,
+            "checksum": hashlib.sha256(capsule).hexdigest()
+        }
+
+        # 出力ファイルの作成
+        with open(output_path, 'wb') as f:
+            # ファイルマーカーの書き込み (INDETERM + salt の最初の8バイト)
+            f.write(b"INDETERM" + salt[:8])
+
+            # バージョン情報 (2バイト)
+            f.write((1).to_bytes(2, 'big'))
+
+            # オプションフラグ (2バイト)
+            options = 0
+            if true_is_text: options |= 1
+            if false_is_text: options |= 2
+            f.write(options.to_bytes(2, 'big'))
+
+            # タイムスタンプ (8バイト)
+            f.write(int(time.time()).to_bytes(8, 'big'))
+
+            # メタデータの書き込み
+            metadata_json = json.dumps(metadata).encode('utf-8')
+            f.write(len(metadata_json).to_bytes(4, 'big'))
+            f.write(metadata_json)
+
+            # エントロピーデータの書き込み
+            f.write(entropy_data)
+
+            # カプセル化データの書き込み
+            f.write(capsule)
+
+        print(f"暗号化完了: '{output_path}' に暗号文を書き込みました。")
+
+        # 鍵の保存（オプション）
+        if save_key:
+            key_file = f"{os.path.splitext(output_path)[0]}.key"
+            with open(key_file, 'wb') as f:
+                f.write(master_key)
+            print(f"鍵を保存しました: {key_file}")
+
+        return master_key, output_path
+
+    except Exception as e:
+        print(f"暗号化エラー: {e}", file=sys.stderr)
+        raise
+
+
 def main():
     """
     メイン関数
     """
     # コマンドライン引数の解析
-    args = parse_arguments()
+    parser = argparse.ArgumentParser(description='不確定性転写暗号化方式による暗号化')
+    parser.add_argument('true_file', help='正規テキストファイルのパス')
+    parser.add_argument('false_file', help='非正規テキストファイルのパス')
+    parser.add_argument('output', help='出力ファイルのパス')
+    parser.add_argument('--key-file', '-k', help='鍵を保存するファイルのパス')
+    parser.add_argument('--save-key', '-s', action='store_true', help='鍵情報をファイルに保存する')
+    parser.add_argument('--verbose', '-v', action='store_true', help='詳細な出力を表示')
+    parser.add_argument('--skip-validation', action='store_true', help='入力ファイルの検証をスキップ')
+    parser.add_argument('--memory-limit', type=int, default=512, help='メモリ使用量制限（MB）')
+    parser.add_argument('--chunk-size', type=int, default=16, help='チャンク処理サイズ（MB）')
+    parser.add_argument('--entropy-factor', type=float, default=0.5, help='エントロピー注入強度（0.1〜1.0）')
 
-    # バッファサイズをMBからバイト単位に変換
-    buffer_size = args.chunk_size * 1024 * 1024
-
-    # ファイルの存在チェック
-    if not os.path.exists(args.true_file):
-        print(f"エラー: 正規ファイルが見つかりません: {args.true_file}", file=sys.stderr)
-        sys.exit(1)
-
-    if not os.path.exists(args.false_file):
-        print(f"エラー: 非正規ファイルが見つかりません: {args.false_file}", file=sys.stderr)
-        sys.exit(1)
-
-    # 出力ディレクトリの確認と作成
-    output_dir = os.path.dirname(args.output)
-    if output_dir and not os.path.exists(output_dir):
-        try:
-            os.makedirs(output_dir, exist_ok=True)
-        except Exception as e:
-            print(f"エラー: 出力ディレクトリを作成できません: {e}", file=sys.stderr)
-            sys.exit(1)
-
-    # タイムスタンプを取得して出力ファイル名に追加（上書き防止）
-    timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    output_file = args.output
-    if not output_file.endswith(OUTPUT_EXTENSION):
-        base_name, ext = os.path.splitext(output_file)
-        output_file = f"{base_name}_{timestamp}{ext}"
-    else:
-        base_name = output_file[:-len(OUTPUT_EXTENSION)]
-        output_file = f"{base_name}_{timestamp}{OUTPUT_EXTENSION}"
-
-    # 鍵ファイルのパス設定
-    key_file = args.key_file if args.key_file else f"{base_name}_{timestamp}_key.txt"
+    args = parser.parse_args()
 
     try:
-        # 詳細モードが有効な場合は情報表示
-        if args.verbose:
-            print(f"正規ファイル: {args.true_file}")
-            print(f"非正規ファイル: {args.false_file}")
-            print(f"出力ファイル: {output_file}")
-            print(f"メモリ制限: {args.memory_limit} MB")
-            print(f"チャンクサイズ: {args.chunk_size} MB")
+        # タイムスタンプを取得して出力ファイル名に追加（上書き防止）
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        output_file = args.output
+        if not output_file.endswith(OUTPUT_EXTENSION):
+            base_name, ext = os.path.splitext(output_file)
+            output_file = f"{base_name}_{timestamp}{ext}"
+        else:
+            base_name = output_file[:-len(OUTPUT_EXTENSION)]
+            output_file = f"{base_name}_{timestamp}{OUTPUT_EXTENSION}"
 
-        # メモリ使用量制限を適用
-        memory_limit_bytes = args.memory_limit * 1024 * 1024
-        if buffer_size > memory_limit_bytes // 4:
-            new_buffer_size = memory_limit_bytes // 4
-            if args.verbose:
-                print(f"メモリ制限のため、バッファサイズを {buffer_size/(1024*1024):.1f}MB から {new_buffer_size/(1024*1024):.1f}MB に調整しました")
-            buffer_size = new_buffer_size
+        # 暗号化を実行
+        key, output_path = encrypt(args.true_file, args.false_file, output_file, args.save_key)
 
-        # ファイル読み込みと処理
-        start_time = time.time()
+        # 鍵の16進数表示
+        key_hex = key.hex()
+        print(f"鍵: {key_hex}")
 
-        # ファイルを読み込む
-        if args.verbose:
-            print("ファイル読み込み中...")
-
-        with MemoryOptimizedReader(args.true_file, buffer_size=buffer_size) as true_reader, \
-             MemoryOptimizedReader(args.false_file, buffer_size=buffer_size) as false_reader:
-
-            # ファイルタイプを自動判定
-            true_is_binary = is_binary_file(args.true_file)
-            false_is_binary = is_binary_file(args.false_file)
-
-            if args.verbose:
-                print(f"正規ファイルタイプ: {'バイナリ' if true_is_binary else 'テキスト'}")
-                print(f"非正規ファイルタイプ: {'バイナリ' if false_is_binary else 'テキスト'}")
-
-            # ファイル全体を読み込む
-            true_data = true_reader.read_all()
-            false_data = false_reader.read_all()
-
-            # ファイルサイズの表示
-            if args.verbose:
-                true_size = len(true_data)
-                false_size = len(false_data)
-                print(f"正規ファイルサイズ: {true_size/1024:.1f} KB")
-                print(f"非正規ファイルサイズ: {false_size/1024:.1f} KB")
-
-            # 入力ファイルの検証（スキップオプションがある場合を除く）
-            if not args.skip_validation:
-                if args.verbose:
-                    print("入力ファイルを検証中...")
-
-                # ファイル内容の検証（例: 0バイトファイルではないか、など）
-                if len(true_data) == 0:
-                    raise ValueError("正規ファイルは空です")
-
-                if len(false_data) == 0:
-                    raise ValueError("非正規ファイルは空です")
-
-            # 暗号化処理
-            if args.verbose:
-                print("暗号化処理を開始します...")
-
-            # 確率的実行エンジンの初期化
-            salt = os.urandom(16)
-            prob_engine = initialize_probabilistic_engine(salt=salt)
-            key = prob_engine.key
-
-            # エントロピー注入強度の設定
-            entropy_factor = max(0.1, min(1.0, args.entropy_factor))
-
-            # パスの定義
-            if args.verbose:
-                print("状態遷移パスの生成...")
-            true_path = TRUE_PATH
-            false_path = FALSE_PATH
-
-            # データの暗号化
-            if args.verbose:
-                print("正規データを暗号化中...")
-            true_encrypted = encrypt_data(true_data, prob_engine, true_path, true_is_binary)
-
-            if args.verbose:
-                print("非正規データを暗号化中...")
-            false_encrypted = encrypt_data(false_data, prob_engine, false_path, false_is_binary)
-
-            # 署名の作成
-            if args.verbose:
-                print("暗号化データの署名を生成...")
-            true_signature = create_signature(true_encrypted, key, true_path)
-            false_signature = create_signature(false_encrypted, key, false_path)
-
-            # エントロピー注入
-            if args.verbose:
-                print("エントロピーを注入...")
-            entropy_data = inject_entropy(true_encrypted, false_encrypted, key, salt)
-
-            # 状態カプセルの作成
-            if args.verbose:
-                print("状態カプセルを作成...")
-            capsule = create_state_capsule(
-                true_encrypted, false_encrypted, true_signature, false_signature, key, salt
-            )
-
-            # 出力ファイルに書き込み
-            if args.verbose:
-                print(f"出力ファイルに書き込み中: {output_file}")
-
-            with MemoryOptimizedWriter(output_file, buffer_size=buffer_size) as writer:
-                writer.write(capsule)
-
-            # ファイル権限の設定（保護のため読み取り専用に）
-            os.chmod(output_file, 0o444)
-
-            # 鍵情報の生成・保存
-            key_data = {
-                'key': key.hex(),
-                'salt': salt.hex(),
-                'true_path': true_path,
-                'false_path': false_path,
-                'timestamp': timestamp,
-                'true_file': os.path.basename(args.true_file),
-                'false_file': os.path.basename(args.false_file),
-                'output_file': os.path.basename(output_file)
-            }
-
-            # 鍵情報を文字列に変換
-            key_text = '\n'.join([f"{k}={v}" for k, v in key_data.items()])
-
-            if args.save_key:
-                if args.verbose:
-                    print(f"鍵情報をファイルに保存: {key_file}")
-
-                with open(key_file, 'w') as f:
-                    f.write(key_text)
-
-                # 鍵ファイルのパーミッション設定（所有者のみ読み書き可能）
-                os.chmod(key_file, 0o600)
-
-            # 処理完了時間の表示
-            end_time = time.time()
-            elapsed = end_time - start_time
-
-            print(f"暗号化が完了しました。処理時間: {elapsed:.2f} 秒")
-            print(f"出力ファイル: {output_file}")
-
-            # 鍵情報を標準出力に表示
-            print("\n鍵情報:")
-            print(key_text)
-
-            if args.save_key:
-                print(f"\n鍵情報はファイルに保存されました: {key_file}")
-
-            return key_data
+        return 0
 
     except Exception as e:
         print(f"エラー: {e}", file=sys.stderr)
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        return 1
 
 
 # スクリプトが直接実行された場合のエントリポイント

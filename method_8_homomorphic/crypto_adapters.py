@@ -369,7 +369,6 @@ class TextAdapter(DataAdapter):
             print(f"データ末尾: {data[-20:]}")
 
         # 先頭のヌルバイトをトリム（末尾のヌルバイトは残す）
-        # 修正: 先頭のみトリムし、末尾は保持
         data = data.lstrip(b'\x00')
         if len(data) == 0:
             print("警告: データがすべてヌルバイトでした")
@@ -401,19 +400,16 @@ class TextAdapter(DataAdapter):
 
                     if encoding == 'utf8':
                         # UTF-8はそのまま
-                        result = text_content
+                        return text_content
                     else:
                         # 他のエンコーディングは適切に処理
                         try:
                             # 一度エンコードしてから指定のエンコーディングでデコード
                             result = text_content.encode('utf-8').decode(encoding, errors='replace')
+                            return result
                         except Exception as e:
                             print(f"エンコーディング変換エラー({encoding}): {e}")
-                            result = text_content
-
-                    # 末尾の改行がない場合でも追加しない（修正）
-                    # 末尾に余計な改行を追加しないようにする
-                    return result
+                            return text_content
 
             # 旧マーカー形式のサポート（後方互換性）
             old_markers = [
@@ -441,14 +437,12 @@ class TextAdapter(DataAdapter):
                         bin_content = self.reverse_multi_stage_encoding_binary(text_content.encode('utf-8'))
                         text_content = bin_content.decode('utf-8', errors='replace')
 
-                    # 末尾の改行がない場合でも追加しない（修正）
                     return text_content
 
             # マーカーが見つからなかった場合、そのままのテキストをチェック
             if text.strip():
                 # テキストらしき内容があれば、そのまま返す
                 print("マーカーなしテキストを検出")
-                # 末尾の改行がない場合でも追加しない（修正）
                 return text
 
         except Exception as e:
@@ -459,7 +453,6 @@ class TextAdapter(DataAdapter):
         # すべての方法が失敗した場合、UTF-8でデコード（置換モード）
         try:
             result = data.decode('utf-8', errors='replace')
-            # 末尾の改行がない場合でも追加しない（修正）
             return result
         except Exception as e:
             print(f"最終エラー: {e}")
@@ -542,7 +535,8 @@ class JsonAdapter(DataAdapter):
             else:
                 # マーカーがない場合は、JSONとして解析を試みる
                 try:
-                    # ヌルバイトやその他の制御文字を削除（正規表現は保持）
+                    # 制御文字などを含む場合がある可能性があるため、正規表現でクリーンアップ
+                    # ヌルバイトやその他の制御文字を削除（JSONで許容されない文字）
                     cleaned_str = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', data_str)
                     json_obj = json.loads(cleaned_str)
                     return json.dumps(json_obj, ensure_ascii=False, indent=2)
@@ -604,7 +598,7 @@ class CsvAdapter(DataAdapter):
                 data = data.lstrip(b'\x00')
                 data_str = data.decode('utf-8', errors='replace')
             else:
-                data_str = str(data).strip('\x00')
+                data_str = str(data).lstrip('\x00')
 
             # マーカーのチェック
             csv_marker = "CSV:"
@@ -617,8 +611,27 @@ class CsvAdapter(DataAdapter):
                 # 改行の正規化（改行コードを統一）
                 csv_data = csv_data.replace('\r\n', '\n').replace('\r', '\n')
 
-                # 末尾の改行は保持（改行を強制的に追加しない）
-                return csv_data
+                # CSVとして解析できるか確認
+                try:
+                    import csv
+                    import io
+                    # CSVとしての検証（読み込みテスト）
+                    csv_reader = csv.reader(io.StringIO(csv_data))
+                    # 先頭数行を読み込んで検証
+                    rows = []
+                    for i, row in enumerate(csv_reader):
+                        if i < 5:  # 最初の5行だけ確認
+                            rows.append(row)
+
+                    if rows:
+                        print(f"CSVデータを検証: {len(rows)}行のデータを確認")
+
+                    # 検証後の元のデータを返す（変更しない）
+                    return csv_data
+                except Exception as e:
+                    print(f"CSV検証エラー: {e}, テキストとして処理します")
+                    # CSVとして解析できなかったが、マーカーがあるのでCSVとして返す
+                    return csv_data
             else:
                 # マーカーがない場合でも、テキストデータとして返す
                 print(f"CSVマーカーが見つかりませんでした。テキストとして処理します")
@@ -626,7 +639,6 @@ class CsvAdapter(DataAdapter):
                 # 改行の正規化（改行コードを統一）
                 data_str = data_str.replace('\r\n', '\n').replace('\r', '\n')
 
-                # 末尾の改行は保持（改行を強制的に追加しない）
                 return data_str
         except Exception as e:
             print(f"CSVデータ処理中にエラーが発生: {e}")

@@ -71,6 +71,163 @@ class MaskFunctionGenerator:
         self.true_mask_info = {}
         self.false_mask_info = {}
 
+        # 初期化時にマスク関数ペアを生成
+        self._generate_mask_info()
+
+    def _generate_mask_info(self):
+        """マスク情報を初期化する補助メソッド"""
+        # マスク関数用の係数を導出
+        true_key = self.derive_key("true_mask")
+        false_key = self.derive_key("false_mask")
+
+        # 鍵を整数に変換
+        true_coefficient = int.from_bytes(true_key[:4], 'big') % self.modulus
+        false_coefficient = int.from_bytes(false_key[:4], 'big') % self.modulus
+
+        true_constant = int.from_bytes(true_key[4:8], 'big') % self.modulus
+        false_constant = int.from_bytes(false_key[4:8], 'big') % self.modulus
+
+        # モジュラス値の範囲チェック
+        if true_coefficient >= self.modulus:
+            true_coefficient = true_coefficient % (self.modulus - 1) + 1
+
+        if false_coefficient >= self.modulus:
+            false_coefficient = false_coefficient % (self.modulus - 1) + 1
+
+        # マスク情報を保存
+        self.true_mask_info = {
+            'type': 'linear',
+            'coefficient': true_coefficient,
+            'constant': true_constant
+        }
+
+        self.false_mask_info = {
+            'type': 'linear',
+            'coefficient': false_coefficient,
+            'constant': false_constant
+        }
+
+    def unmask_true(self, ciphertext: int) -> int:
+        """
+        「真」の鍵用のアンマスク関数
+
+        Args:
+            ciphertext: マスクされた暗号文
+
+        Returns:
+            アンマスクされた暗号文
+        """
+        # マスク情報が空の場合は生成
+        if not self.true_mask_info:
+            self._generate_mask_info()
+
+        # マスク情報から係数と定数を取得
+        coefficient = self.true_mask_info.get('coefficient', 1)
+        constant = self.true_mask_info.get('constant', 0)
+
+        # 係数の逆数を計算（モジュラ逆数）
+        try:
+            inverse_coefficient = pow(coefficient, -1, self.modulus)
+        except ValueError:
+            # 逆数が存在しない場合（互いに素でない）のフォールバック
+            print("警告: 係数の逆数が存在しないため、デフォルト値を使用します")
+            inverse_coefficient = 1
+
+        # 定数の負の値
+        negative_constant = -constant % self.modulus
+
+        # アンマスク処理
+        if self.paillier:  # Paillierオブジェクトがある場合は準同型演算
+            try:
+                # 定数を除去: c - E(constant)
+                without_constant = self.paillier.add_constant(ciphertext, negative_constant, self.paillier.public_key)
+
+                # 係数の逆数をかける: c * (1/coefficient)
+                without_mask = self.paillier.multiply(without_constant, inverse_coefficient, self.paillier.public_key)
+
+                return without_mask
+            except Exception as e:
+                print(f"準同型演算エラー: {e}")
+                # エラー時はモジュラス演算で代用
+                return ((ciphertext + negative_constant) * inverse_coefficient) % self.modulus
+        else:  # 鍵のみの場合は簡易的な線形変換の逆変換
+            return ((ciphertext + negative_constant) * inverse_coefficient) % self.modulus
+
+    def unmask_false(self, ciphertext: int) -> int:
+        """
+        「偽」の鍵用のアンマスク関数
+
+        Args:
+            ciphertext: マスクされた暗号文
+
+        Returns:
+            アンマスクされた暗号文
+        """
+        # マスク情報が空の場合は生成
+        if not self.false_mask_info:
+            self._generate_mask_info()
+
+        # マスク情報から係数と定数を取得
+        coefficient = self.false_mask_info.get('coefficient', 1)
+        constant = self.false_mask_info.get('constant', 0)
+
+        # 係数の逆数を計算（モジュラ逆数）
+        try:
+            inverse_coefficient = pow(coefficient, -1, self.modulus)
+        except ValueError:
+            # 逆数が存在しない場合（互いに素でない）のフォールバック
+            print("警告: 係数の逆数が存在しないため、デフォルト値を使用します")
+            inverse_coefficient = 1
+
+        # 定数の負の値
+        negative_constant = -constant % self.modulus
+
+        # アンマスク処理
+        if self.paillier:  # Paillierオブジェクトがある場合は準同型演算
+            try:
+                # 定数を除去: c - E(constant)
+                without_constant = self.paillier.add_constant(ciphertext, negative_constant, self.paillier.public_key)
+
+                # 係数の逆数をかける: c * (1/coefficient)
+                without_mask = self.paillier.multiply(without_constant, inverse_coefficient, self.paillier.public_key)
+
+                return without_mask
+            except Exception as e:
+                print(f"準同型演算エラー: {e}")
+                # エラー時はモジュラス演算で代用
+                return ((ciphertext + negative_constant) * inverse_coefficient) % self.modulus
+        else:  # 鍵のみの場合は簡易的な線形変換の逆変換
+            return ((ciphertext + negative_constant) * inverse_coefficient) % self.modulus
+
+    def derive_key(self, purpose: str) -> bytes:
+        """
+        特定の目的のための鍵を導出
+
+        Args:
+            purpose: 鍵の使用目的を示す文字列
+
+        Returns:
+            導出された鍵
+        """
+        # カウンタを増加（重複防止）
+        self.key_derivation_counter += 1
+
+        # 目的とカウンタを組み合わせてキー派生
+        purpose_bytes = purpose.encode('utf-8')
+        counter_bytes = self.key_derivation_counter.to_bytes(4, 'big')
+
+        # 使用する鍵（key_bytesまたはseed）
+        base_key = self.key_bytes if self.key_bytes else self.seed
+
+        # HMAC-SHA256でキー導出
+        key = hmac.new(
+            base_key,
+            purpose_bytes + counter_bytes,
+            hashlib.sha256
+        ).digest()
+
+        return key
+
     def create_mask_function_from_params(self, mask_info: Dict[str, Any]) -> Callable[[int], int]:
         """
         マスク情報からマスク関数を生成
@@ -161,35 +318,6 @@ class MaskFunctionGenerator:
                     return (ciphertext * coef + const) % self.modulus
 
             return mask_func
-
-    def derive_key(self, purpose: str) -> bytes:
-        """
-        特定の目的のための鍵を導出
-
-        Args:
-            purpose: 鍵の使用目的を示す文字列
-
-        Returns:
-            導出された鍵
-        """
-        # カウンタを増加（重複防止）
-        self.key_derivation_counter += 1
-
-        # 目的とカウンタを組み合わせてキー派生
-        purpose_bytes = purpose.encode('utf-8')
-        counter_bytes = self.key_derivation_counter.to_bytes(4, 'big')
-
-        # 使用する鍵（key_bytesまたはseed）
-        base_key = self.key_bytes if self.key_bytes else self.seed
-
-        # HMAC-SHA256でキー導出
-        key = hmac.new(
-            base_key,
-            purpose_bytes + counter_bytes,
-            hashlib.sha256
-        ).digest()
-
-        return key
 
     def generate_mask_pair(self) -> Tuple[Callable[[int], int], Callable[[int], int]]:
         """
@@ -310,15 +438,8 @@ class AdvancedMaskFunctionGenerator(MaskFunctionGenerator):
         super().__init__(paillier_or_key_bytes, seed)
         self.security_level = SECURITY_PARAMETER // 8
 
-    def generate_mask_pair(self) -> Tuple[Callable[[int], int], Callable[[int], int]]:
-        """
-        「真」と「偽」用の高度なマスク関数のペアを生成
-
-        より複雑な変換を使った「真」と「偽」のマスク関数を生成します。
-
-        Returns:
-            (true_mask, false_mask): 「真」と「偽」用のマスク関数
-        """
+    def _generate_mask_info(self):
+        """高度なマスク情報を初期化する補助メソッド"""
         # マスク関数用のパラメータを導出
         true_key = self.derive_key("true_advanced_mask")
         false_key = self.derive_key("false_advanced_mask")
@@ -357,6 +478,121 @@ class AdvancedMaskFunctionGenerator(MaskFunctionGenerator):
             'coefficient2': false_coef2,
             'constant': false_const
         }
+
+    def unmask_true(self, ciphertext: int) -> int:
+        """
+        「真」用の高度なアンマスク関数
+
+        Args:
+            ciphertext: マスクされた暗号文
+
+        Returns:
+            アンマスクされた暗号文
+        """
+        # マスク情報が空の場合は生成
+        if not self.true_mask_info:
+            self._generate_mask_info()
+
+        # マスク情報から係数と定数を取得
+        coefficient1 = self.true_mask_info.get('coefficient1', 1)
+        coefficient2 = self.true_mask_info.get('coefficient2', 0)
+        constant = self.true_mask_info.get('constant', 0)
+
+        # 係数の逆数を計算（モジュラ逆数）
+        try:
+            inverse_coefficient = pow(coefficient1, -1, self.modulus)
+        except ValueError:
+            # 逆数が存在しない場合（互いに素でない）のフォールバック
+            print("警告: 係数の逆数が存在しないため、デフォルト値を使用します")
+            inverse_coefficient = 1
+
+        # 定数の負の値
+        negative_constant = -constant % self.modulus
+
+        # アンマスク処理
+        if self.paillier:  # Paillierオブジェクトがある場合は準同型演算
+            try:
+                # 定数を除去: c - E(constant)
+                without_constant = self.paillier.add_constant(ciphertext, negative_constant, self.paillier.public_key)
+
+                # 係数の逆数をかける: c * (1/coefficient)
+                without_mask = self.paillier.multiply(without_constant, inverse_coefficient, self.paillier.public_key)
+
+                return without_mask
+            except Exception as e:
+                print(f"高度アンマスク処理エラー: {e}")
+                # エラー時はモジュラス演算で代用
+                return ((ciphertext + negative_constant) * inverse_coefficient) % self.modulus
+        else:  # 鍵のみの場合は簡易的な線形変換の逆変換
+            return ((ciphertext + negative_constant) * inverse_coefficient) % self.modulus
+
+    def unmask_false(self, ciphertext: int) -> int:
+        """
+        「偽」用の高度なアンマスク関数
+
+        Args:
+            ciphertext: マスクされた暗号文
+
+        Returns:
+            アンマスクされた暗号文
+        """
+        # マスク情報が空の場合は生成
+        if not self.false_mask_info:
+            self._generate_mask_info()
+
+        # マスク情報から係数と定数を取得
+        coefficient1 = self.false_mask_info.get('coefficient1', 1)
+        coefficient2 = self.false_mask_info.get('coefficient2', 0)
+        constant = self.false_mask_info.get('constant', 0)
+
+        # 係数の逆数を計算（モジュラ逆数）
+        try:
+            inverse_coefficient = pow(coefficient1, -1, self.modulus)
+        except ValueError:
+            # 逆数が存在しない場合（互いに素でない）のフォールバック
+            print("警告: 係数の逆数が存在しないため、デフォルト値を使用します")
+            inverse_coefficient = 1
+
+        # 定数の負の値
+        negative_constant = -constant % self.modulus
+
+        # アンマスク処理
+        if self.paillier:  # Paillierオブジェクトがある場合は準同型演算
+            try:
+                # 定数を除去: c - E(constant)
+                without_constant = self.paillier.add_constant(ciphertext, negative_constant, self.paillier.public_key)
+
+                # 係数の逆数をかける: c * (1/coefficient)
+                without_mask = self.paillier.multiply(without_constant, inverse_coefficient, self.paillier.public_key)
+
+                return without_mask
+            except Exception as e:
+                print(f"高度アンマスク処理エラー: {e}")
+                # エラー時はモジュラス演算で代用
+                return ((ciphertext + negative_constant) * inverse_coefficient) % self.modulus
+        else:  # 鍵のみの場合は簡易的な線形変換の逆変換
+            return ((ciphertext + negative_constant) * inverse_coefficient) % self.modulus
+
+    def generate_mask_pair(self) -> Tuple[Callable[[int], int], Callable[[int], int]]:
+        """
+        「真」と「偽」用の高度なマスク関数のペアを生成
+
+        より複雑な変換を使った「真」と「偽」のマスク関数を生成します。
+
+        Returns:
+            (true_mask, false_mask): 「真」と「偽」用のマスク関数
+        """
+        # マスク情報を生成
+        self._generate_mask_info()
+
+        # マスク情報を取得
+        true_coef1 = self.true_mask_info.get('coefficient1', 1)
+        true_coef2 = self.true_mask_info.get('coefficient2', 0)
+        true_const = self.true_mask_info.get('constant', 0)
+
+        false_coef1 = self.false_mask_info.get('coefficient1', 1)
+        false_coef2 = self.false_mask_info.get('coefficient2', 0)
+        false_const = self.false_mask_info.get('constant', 0)
 
         # マスク関数の定義
         def true_mask(ciphertext: int) -> int:

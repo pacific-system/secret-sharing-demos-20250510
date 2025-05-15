@@ -368,7 +368,7 @@ class TextAdapter(DataAdapter):
         if len(data) > 20:
             print(f"データ末尾: {data[-20:]}")
 
-        # 先頭のヌルバイトをトリム（末尾のヌルバイトは残す）
+        # 先頭のヌルバイトのみを削除（末尾のヌルバイトは保持）
         data = data.lstrip(b'\x00')
         if len(data) == 0:
             print("警告: データがすべてヌルバイトでした")
@@ -432,10 +432,16 @@ class TextAdapter(DataAdapter):
 
                     # マーカーに応じて処理
                     if marker == "TXT-MULTI:":
-                        text_content = self.reverse_multi_stage_encoding(text_content.encode('utf-8'))
+                        try:
+                            text_content = self.reverse_multi_stage_encoding(text_content.encode('utf-8'))
+                        except Exception as e:
+                            print(f"複数段階エンコード逆変換エラー: {e}")
                     elif marker == "TXT-BIN:":
-                        bin_content = self.reverse_multi_stage_encoding_binary(text_content.encode('utf-8'))
-                        text_content = bin_content.decode('utf-8', errors='replace')
+                        try:
+                            bin_content = self.reverse_multi_stage_encoding_binary(text_content.encode('utf-8'))
+                            text_content = bin_content.decode('utf-8', errors='replace')
+                        except Exception as e:
+                            print(f"バイナリ複数段階エンコード逆変換エラー: {e}")
 
                     return text_content
 
@@ -531,6 +537,7 @@ class JsonAdapter(DataAdapter):
                     return json.dumps(json_obj, ensure_ascii=False, indent=2)
                 except json.JSONDecodeError as e:
                     print(f"JSON解析エラー: {e}, 文字列をそのまま返します")
+                    # JSONとして解析できない場合でも、マーカー以降のデータをそのまま返す
                     return json_data
             else:
                 # マーカーがない場合は、JSONとして解析を試みる
@@ -538,15 +545,35 @@ class JsonAdapter(DataAdapter):
                     # 制御文字などを含む場合がある可能性があるため、正規表現でクリーンアップ
                     # ヌルバイトやその他の制御文字を削除（JSONで許容されない文字）
                     cleaned_str = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', data_str)
-                    json_obj = json.loads(cleaned_str)
-                    return json.dumps(json_obj, ensure_ascii=False, indent=2)
-                except json.JSONDecodeError:
-                    # JSON解析できない場合は、元の文字列を返す
-                    print(f"マーカーなしでJSONとして解析できませんでした。テキストとして処理します")
-                    # テキストアダプタに処理を委譲
+
+                    # JSON解析を試みる
+                    try:
+                        json_obj = json.loads(cleaned_str)
+                        return json.dumps(json_obj, ensure_ascii=False, indent=2)
+                    except json.JSONDecodeError:
+                        # まだ解析できない場合は、より積極的なクリーニングを試みる
+                        # JSON形式の文字列を探す試み (e.g., {" で始まるパターン)
+                        json_start = cleaned_str.find('{"')
+                        if json_start >= 0:
+                            # JSONの開始位置から解析を試みる
+                            potential_json = cleaned_str[json_start:]
+                            try:
+                                json_obj = json.loads(potential_json)
+                                return json.dumps(json_obj, ensure_ascii=False, indent=2)
+                            except json.JSONDecodeError:
+                                pass
+
+                        # 解析できない場合はテキストとして処理
+                        print(f"マーカーなしでJSONとして解析できませんでした。テキストとして処理します")
+                        # テキストアダプタに処理を委譲
+                        return TextAdapter().process_after_decryption(data, original_type)
+                except Exception as e:
+                    print(f"JSON解析前の文字列クリーニング中にエラー: {e}")
                     return TextAdapter().process_after_decryption(data, original_type)
         except Exception as e:
             print(f"JSONデータ処理中にエラーが発生しました: {e}")
+            import traceback
+            traceback.print_exc()
             # エラーが発生した場合もテキストとして処理
             return TextAdapter().process_after_decryption(data, original_type)
 
@@ -594,10 +621,11 @@ class CsvAdapter(DataAdapter):
         try:
             # バイト列を文字列に変換
             if isinstance(data, bytes):
-                # 先頭のヌルバイトをトリム（末尾は保持）
+                # 先頭のヌルバイトのみを削除（末尾は保持）
                 data = data.lstrip(b'\x00')
                 data_str = data.decode('utf-8', errors='replace')
             else:
+                # 文字列の場合は先頭のヌルバイトのみを削除
                 data_str = str(data).lstrip('\x00')
 
             # マーカーのチェック
@@ -625,23 +653,44 @@ class CsvAdapter(DataAdapter):
 
                     if rows:
                         print(f"CSVデータを検証: {len(rows)}行のデータを確認")
-
-                    # 検証後の元のデータを返す（変更しない）
-                    return csv_data
+                        # 検証が成功した場合は、元のCSVデータを返す
+                        return csv_data
+                    else:
+                        print("警告: CSVとして解析できましたが、データが空です")
+                        return csv_data
                 except Exception as e:
                     print(f"CSV検証エラー: {e}, テキストとして処理します")
-                    # CSVとして解析できなかったが、マーカーがあるのでCSVとして返す
+                    # CSVとして解析できなくてもマーカーが存在する場合は、マーカー以降のデータを返す
                     return csv_data
             else:
-                # マーカーがない場合でも、テキストデータとして返す
-                print(f"CSVマーカーが見つかりませんでした。テキストとして処理します")
+                # マーカーがない場合は、CSVとして解析を試みる
+                try:
+                    import csv
+                    import io
 
-                # 改行の正規化（改行コードを統一）
-                data_str = data_str.replace('\r\n', '\n').replace('\r', '\n')
+                    # 改行の正規化（改行コードを統一）
+                    normalized_str = data_str.replace('\r\n', '\n').replace('\r', '\n')
 
-                return data_str
+                    # CSVの検出を試みる
+                    csv_reader = csv.reader(io.StringIO(normalized_str))
+                    rows = list(csv_reader)
+
+                    if len(rows) > 0 and len(rows[0]) > 1:
+                        # 複数列があるCSVとして判定できた場合
+                        print(f"マーカーなしでCSVとして解析: {len(rows)}行、{len(rows[0])}列")
+                        return normalized_str
+                    else:
+                        # CSVとして解析できても1列以下しかない場合は、通常のテキストとして扱う
+                        print("マーカーなしデータを通常テキストとして処理")
+                        return normalized_str
+                except Exception as e:
+                    print(f"マーカーなしCSV解析エラー: {e}, テキストとして処理")
+                    # 解析エラーの場合は通常のテキストとして処理
+                    return normalized_str if 'normalized_str' in locals() else data_str
         except Exception as e:
             print(f"CSVデータ処理中にエラーが発生: {e}")
+            import traceback
+            traceback.print_exc()
             # エラーが発生した場合もテキストとして処理
             return TextAdapter().process_after_decryption(data, original_type)
 

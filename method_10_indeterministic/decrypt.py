@@ -903,12 +903,7 @@ def determine_execution_path(key: bytes, metadata: Dict[str, Any]) -> str:
         decision_value = int.from_bytes(path_hash[:4], byteorder='big')
 
         # 基本的な決定ロジック
-        if decision_value % 2 == 0:
-            # 鍵のハッシュ値が偶数なら正規パス
-            path_type = TRUE_PATH
-        else:
-            # 奇数なら非正規パス
-            path_type = FALSE_PATH
+        path_type = TRUE_PATH if (decision_value % 2 == 0) else FALSE_PATH
 
         # セキュリティを向上させるための追加処理
         try:

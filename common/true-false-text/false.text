@@ -1,1 +1,11 @@
 これは非正規のファイルです。不正な鍵で復号されたことを示します。
+
+This is the FALSE text content.
+Warning: The system detected an unauthorized decryption attempt.
+This content is presented as a security measure.
+Security level: COMPROMISED
+Verification status: FAILED
+Authentication path: INVALID
+Key validation: ERROR
+Data integrity: UNKNOWN
+This message confirms you are on the FALSE PATH.

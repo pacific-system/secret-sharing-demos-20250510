@@ -952,12 +952,18 @@ def obfuscate_execution_path(engine: ProbabilisticExecutionEngine) -> None:
     if engine is None:
         return
 
-    # 解析対策のためのダミー処理
-    # エンジンにノイズを追加して動的解析を困難にする
-    dummy_key = os.urandom(32)
-    dummy_salt = os.urandom(16)
-
     try:
+        # エントロピー注入モジュールをインポート（追加のエントロピーソースとして使用）
+        from .entropy_injector import EntropyPool
+
+        # エントロピープールを作成（追加の拡散性のため）
+        seed = secrets.token_bytes(32)
+        entropy_pool = EntropyPool(seed)
+
+        # パスの難読化を開始
+        dummy_key = entropy_pool.get_bytes(32)
+        dummy_salt = entropy_pool.get_bytes(16)
+
         # ダミーエンジンを2つ用意
         dummy_engine1 = create_engine_from_key(dummy_key, TRUE_PATH, dummy_salt)
         dummy_engine2 = create_engine_from_key(dummy_key, FALSE_PATH, dummy_salt)
@@ -968,12 +974,39 @@ def obfuscate_execution_path(engine: ProbabilisticExecutionEngine) -> None:
 
         # 本物のエンジンにランダムなノイズを追加
         for state_id in engine.states:
-            if random.random() > 0.7:  # 30%の確率でノイズを追加
+            if entropy_pool.get_float() > 0.7:  # 30%の確率でノイズを追加
                 state = engine.states[state_id]
                 if hasattr(state, 'attributes'):
-                    state.attributes[f"noise_{secrets.token_hex(4)}"] = secrets.token_bytes(8)
-    except Exception as e:
-        # エラーが発生しても処理を継続
+                    noise_name = f"noise_{entropy_pool.get_bytes(4).hex()}"
+                    state.attributes[noise_name] = entropy_pool.get_bytes(8)
+
+    except ImportError:
+        # エントロピー注入モジュールが利用できない場合は標準実装を使用
+        # 解析対策のためのダミー処理
+        dummy_key = os.urandom(32)
+        dummy_salt = os.urandom(16)
+
+        try:
+            # ダミーエンジンを2つ用意
+            dummy_engine1 = create_engine_from_key(dummy_key, TRUE_PATH, dummy_salt)
+            dummy_engine2 = create_engine_from_key(dummy_key, FALSE_PATH, dummy_salt)
+
+            # それぞれ実行
+            dummy_engine1.run_execution()
+            dummy_engine2.run_execution()
+
+            # 本物のエンジンにランダムなノイズを追加
+            for state_id in engine.states:
+                if random.random() > 0.7:  # 30%の確率でノイズを追加
+                    state = engine.states[state_id]
+                    if hasattr(state, 'attributes'):
+                        state.attributes[f"noise_{secrets.token_hex(4)}"] = secrets.token_bytes(8)
+        except Exception:
+            # エラーが発生しても処理を継続
+            pass
+
+    except Exception:
+        # 他のエラーが発生しても処理を継続
         pass
 
 

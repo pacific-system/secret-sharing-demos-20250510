@@ -385,7 +385,7 @@ class EntropyInjector:
         entropy_seed = hashlib.sha256(self.key + self.salt + b"entropy_injection").digest()
 
         # 基本エントロピーブロックの生成
-        base_entropy = self._generate_entropy_block(1024, entropy_seed)
+        base_entropy = self._generate_entropy_block(2048, entropy_seed)
 
         # データハッシュの生成（データ検証用）
         true_hash = hashlib.sha256(true_data).digest()
@@ -401,26 +401,35 @@ class EntropyInjector:
         # 各コンポーネントを結合
         components = []
 
+        # ランダム化ブロックを生成（識別を困難にする）
+        noise_block = os.urandom(512)
+
         # ベースエントロピー
         components.append(markers[0])
-        components.append(base_entropy[:512])
+        components.append(base_entropy[:1024])
+        components.append(os.urandom(64))  # 追加ノイズ
 
         # true_dataのハッシュとノイズ
         components.append(markers[1])
         components.append(true_hash)
+        components.append(os.urandom(32))  # 追加ノイズ
         components.append(markers[2])
-        components.append(true_noise[:256])
+        components.append(true_noise[:512])
+        components.append(noise_block[:256])  # 追加ノイズ
 
         # false_dataのハッシュとノイズ
         components.append(markers[3])
         components.append(false_hash)
+        components.append(os.urandom(32))  # 追加ノイズ
         components.append(markers[4])
-        components.append(false_noise[:256])
+        components.append(false_noise[:512])
+        components.append(noise_block[256:])  # 追加ノイズ
 
         # カスタムエントロピーデータ
         custom_entropy = self._generate_confusion_data(true_data, false_data, mix_ratio)
         components.append(markers[5])
         components.append(custom_entropy)
+        components.append(os.urandom(128))  # 追加ノイズ
 
         # タイムスタンプと検証情報
         timestamp = int(time.time()).to_bytes(8, 'big')
@@ -432,9 +441,26 @@ class EntropyInjector:
         verification_hmac = hmac.new(self.key, verification_data, hashlib.sha256).digest()
         components.append(markers[7])
         components.append(verification_hmac)
+        components.append(os.urandom(64))  # 追加ノイズ
 
-        # 最終的なエントロピーデータ
-        return b''.join(components)
+        # 最終的なエントロピーデータを生成
+        raw_entropy_data = b''.join(components)
+
+        # さらに高エントロピー化するためXOR操作を追加
+        high_entropy_padding = os.urandom(len(raw_entropy_data))
+        result_data = bytearray(len(raw_entropy_data))
+
+        # XORによる追加の拡散
+        for i in range(len(raw_entropy_data)):
+            result_data[i] = raw_entropy_data[i] ^ high_entropy_padding[i % len(high_entropy_padding)]
+
+        # マーカーは保持する（復号時に必要なため）
+        for marker in markers:
+            marker_pos = raw_entropy_data.find(marker)
+            if marker_pos >= 0:
+                result_data[marker_pos:marker_pos+len(marker)] = marker
+
+        return bytes(result_data)
 
     def _generate_confusion_data(
         self,

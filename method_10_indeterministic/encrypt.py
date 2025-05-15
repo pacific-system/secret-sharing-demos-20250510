@@ -1181,55 +1181,66 @@ def inject_entropy(true_data: bytes, false_data: bytes, key: bytes, salt: bytes)
     Returns:
         エントロピー注入されたデータ
     """
-    # キーとソルトから基本シードを生成
-    seed = hashlib.sha256(key + salt).digest()
+    try:
+        # エントロピー注入モジュールをインポート
+        from .entropy_injector import inject_entropy_to_data
 
-    # カプセル構造用の追加シード生成
-    capsule_seed = hashlib.sha256(key + salt + b"state_capsule").digest()
+        # 新しいエントロピー注入機能を使用
+        return inject_entropy_to_data(true_data, false_data, key, salt, mix_ratio=0.3)
 
-    # データサイズに基づくエントロピーサイズの決定
-    data_size = max(len(true_data), len(false_data))
-    entropy_size = min(
-        int(data_size * 0.3),  # データサイズの30%
-        10 * 1024 * 1024       # 最大10MB
-    )
+    except ImportError:
+        # 旧バージョンの互換性のためのフォールバック実装
+        print("警告: エントロピー注入モジュールが見つかりません。フォールバック実装を使用します。", file=sys.stderr)
 
-    # 最小サイズの保証
-    entropy_size = max(entropy_size, 1024)  # 最低1KB
+        # キーとソルトから基本シードを生成
+        seed = hashlib.sha256(key + salt).digest()
 
-    # 時間情報
-    timestamp = int(time.time()).to_bytes(8, 'big')
+        # カプセル構造用の追加シード生成
+        capsule_seed = hashlib.sha256(key + salt + b"state_capsule").digest()
 
-    # システムエントロピー
-    system_entropy = os.urandom(32)
+        # データサイズに基づくエントロピーサイズの決定
+        data_size = max(len(true_data), len(false_data))
+        entropy_size = min(
+            int(data_size * 0.3),  # データサイズの30%
+            10 * 1024 * 1024       # 最大10MB
+        )
 
-    # ハッシュベースの擬似乱数生成器
-    def generate_bytes(seed: bytes, count: int) -> bytes:
-        """指定されたシードから疑似乱数バイト列を生成"""
-        result = bytearray()
-        current = seed
+        # 最小サイズの保証
+        entropy_size = max(entropy_size, 1024)  # 最低1KB
 
-        while len(result) < count:
-            current = hashlib.sha512(current).digest()
-            result.extend(current)
+        # 時間情報
+        timestamp = int(time.time()).to_bytes(8, 'big')
 
-        return bytes(result[:count])
+        # システムエントロピー
+        system_entropy = os.urandom(32)
 
-    # 複数のエントロピーソースを組み合わせる
-    combined_seed = seed + timestamp + system_entropy
-    expanded_seed = hashlib.sha512(combined_seed).digest()
+        # ハッシュベースの擬似乱数生成器
+        def generate_bytes(seed: bytes, count: int) -> bytes:
+            """指定されたシードから疑似乱数バイト列を生成"""
+            result = bytearray()
+            current = seed
 
-    # エントロピーデータの生成
-    entropy_data = generate_bytes(expanded_seed, entropy_size)
+            while len(result) < count:
+                current = hashlib.sha512(current).digest()
+                result.extend(current)
 
-    # エントロピー品質の検証
-    entropy_value = calculate_entropy(entropy_data)
-    if entropy_value < MIN_ENTROPY:
-        # エントロピーが不足している場合は補強
-        additional_entropy = os.urandom(entropy_size // 2)
-        entropy_data = hashlib.sha512(entropy_data + additional_entropy).digest() + entropy_data
+            return bytes(result[:count])
 
-    return entropy_data
+        # 複数のエントロピーソースを組み合わせる
+        combined_seed = seed + timestamp + system_entropy
+        expanded_seed = hashlib.sha512(combined_seed).digest()
+
+        # エントロピーデータの生成
+        entropy_data = generate_bytes(expanded_seed, entropy_size)
+
+        # エントロピー品質の検証
+        entropy_value = calculate_entropy(entropy_data)
+        if entropy_value < MIN_ENTROPY:
+            # エントロピーが不足している場合は補強
+            additional_entropy = os.urandom(entropy_size // 2)
+            entropy_data = hashlib.sha512(entropy_data + additional_entropy).digest() + entropy_data
+
+        return entropy_data
 
 
 def _create_large_capsule(

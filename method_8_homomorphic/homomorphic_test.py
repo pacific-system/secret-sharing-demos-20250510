@@ -103,6 +103,14 @@ from method_8_homomorphic.key_analyzer import (
     analyze_key_type, extract_seed_from_key
 )
 
+# 識別不能性機能のインポート（循環インポートを避けるため indistinguishable_ext から）
+from method_8_homomorphic.indistinguishable_ext import (
+    analyze_key_type_enhanced,
+    remove_comprehensive_indistinguishability_enhanced,
+    safe_log10,
+    IndistinguishableWrapper
+)
+
 # デバッグユーティリティ
 try:
     from method_8_homomorphic.debug_utils import (
@@ -114,8 +122,8 @@ except ImportError:
     print("警告: debug_utils モジュールがインポートできません。一部のテスト機能が利用できません。")
 
 # 入出力パス設定
-TRUE_TEXT_PATH = "../common/true-false-text/t.text"
-FALSE_TEXT_PATH = "../common/true-false-text/f.text"
+TRUE_TEXT_PATH = "common/true-false-text/t.text"
+FALSE_TEXT_PATH = "common/true-false-text/f.text"
 OUTPUT_DIR = "test_output"
 TIMESTAMP = time.strftime("%Y%m%d-%H%M%S")
 

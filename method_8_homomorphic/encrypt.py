@@ -37,7 +37,8 @@ import argparse
 import binascii
 import random
 import secrets
-from typing import Dict, Any, Tuple, List, Optional
+import math
+from typing import Dict, Any, Tuple, List, Optional, Union, Set
 
 # 親ディレクトリをインポートパスに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -53,7 +54,9 @@ from method_8_homomorphic.config import (
     PAILLIER_KEY_BITS,
     ELGAMAL_KEY_BITS,
     MASK_SEED_SIZE,
-    MAX_CHUNK_SIZE
+    MAX_CHUNK_SIZE,
+    KDF_ITERATIONS,
+    SECURITY_PARAMETER
 )
 from method_8_homomorphic.homomorphic import (
     PaillierCrypto, ElGamalCrypto,
@@ -68,13 +71,259 @@ from method_8_homomorphic.crypto_adapters import (
     process_data_for_encryption, process_data_after_decryption,
     DataAdapter
 )
-from method_8_homomorphic.indistinguishable import (
-    randomize_ciphertext, batch_randomize_ciphertexts,
-    add_statistical_noise, remove_statistical_noise,
-    interleave_ciphertexts, deinterleave_ciphertexts,
-    add_redundancy, remove_redundancy,
-    apply_comprehensive_indistinguishability, remove_comprehensive_indistinguishability
+from method_8_homomorphic.key_analyzer import (
+    analyze_key_type, extract_seed_from_key
 )
+
+# 循環インポートを避けるため、indistinguishable.py の代わりに indistinguishable_ext.py から必要な関数をインポート
+from method_8_homomorphic.indistinguishable_ext import (
+    analyze_key_type_enhanced,
+    remove_comprehensive_indistinguishability_enhanced,
+    IndistinguishableWrapper
+)
+
+# 注：循環インポートの問題を解決するために、基本的なインライン関数を実装
+
+# 数値のログを安全に計算する関数
+def safe_log10(value):
+    """
+    大きな整数値に対しても安全にlog10を計算
+
+    Args:
+        value: 計算する値
+
+    Returns:
+        log10(value)の結果
+    """
+    if value <= 0:
+        return 0
+
+    # 大きな整数のビット長を利用した近似計算
+    if isinstance(value, int) and value > 1e17:
+        bit_length = value.bit_length()
+        return bit_length * math.log10(2)
+
+    # 通常の計算
+    try:
+        # 大きな整数は直接 float に変換するとオーバーフローするため、
+        # 文字列経由で変換を試みる
+        if isinstance(value, int) and value > 1e16:
+            # 次の桁数までしか float で精度を保てないので、文字列化して長さを取得
+            value_str = str(value)
+            mantissa = float("0." + value_str[:15])  # 仮数部
+            exponent = len(value_str)                # 指数部
+            return math.log10(mantissa) + exponent
+        else:
+            return math.log10(float(value))
+    except (OverflowError, ValueError):
+        # ビット長を使った近似
+        bit_length = value.bit_length()
+        return bit_length * math.log10(2)
+
+def randomize_ciphertext(paillier, ciphertext):
+    """暗号文を再ランダム化"""
+    if hasattr(paillier, 'randomize') and callable(paillier.randomize):
+        return paillier.randomize(ciphertext, paillier.public_key)
+    else:
+        r = random.randint(1, paillier.public_key['n'] - 1)
+        n_squared = paillier.public_key['n'] ** 2
+        g_r = pow(paillier.public_key['g'], r, n_squared)
+        return (ciphertext * g_r) % n_squared
+
+def batch_randomize_ciphertexts(paillier, ciphertexts):
+    """暗号文のリストを一括して再ランダム化"""
+    return [randomize_ciphertext(paillier, ct) for ct in ciphertexts]
+
+def interleave_ciphertexts(true_chunks, false_chunks, shuffle_seed=None):
+    """真と偽の暗号文を交互に配置してシャッフル"""
+    # シャッフルのシード値を設定
+    if shuffle_seed:
+        random.seed(int.from_bytes(shuffle_seed, 'big'))
+    else:
+        random.seed(time.time_ns())
+
+    # インデックスリストの準備
+    true_indices = list(range(len(true_chunks)))
+    false_indices = list(range(len(false_chunks)))
+
+    # シャッフル
+    random.shuffle(true_indices)
+    random.shuffle(false_indices)
+
+    # 交互配置用の統合インデックスリスト
+    interleaved_indices = []
+    for i in range(max(len(true_indices), len(false_indices))):
+        if i < len(true_indices):
+            interleaved_indices.append(("true", true_indices[i]))
+        if i < len(false_indices):
+            interleaved_indices.append(("false", false_indices[i]))
+
+    # 最終的なシャッフル
+    random.shuffle(interleaved_indices)
+
+    # 交互配置の実行
+    interleaved_ciphertexts = []
+    mapping = []
+
+    for idx, (chunk_type, orig_idx) in enumerate(interleaved_indices):
+        if chunk_type == "true" and orig_idx < len(true_chunks):
+            interleaved_ciphertexts.append(true_chunks[orig_idx])
+        elif chunk_type == "false" and orig_idx < len(false_chunks):
+            interleaved_ciphertexts.append(false_chunks[orig_idx])
+
+        mapping.append({
+            "index": idx,
+            "type": chunk_type,
+            "original_index": orig_idx
+        })
+
+    # メタデータ
+    metadata = {
+        "true_indices": true_indices,
+        "false_indices": false_indices,
+        "mapping": mapping,
+        "shuffle_seed": shuffle_seed.hex() if shuffle_seed else None,
+        "true_length": len(true_chunks),
+        "false_length": len(false_chunks)
+    }
+
+    return interleaved_ciphertexts, metadata
+
+def add_statistical_noise(ciphertexts, intensity=0.1, paillier=None):
+    """暗号文に統計的ノイズを追加"""
+    if not ciphertexts:
+        return [], []
+
+    noisy_ciphertexts = []
+    noise_values = []
+
+    # Paillierオブジェクトがある場合は準同型性を保ったノイズ追加
+    if paillier and hasattr(paillier, 'public_key') and paillier.public_key:
+        n = paillier.public_key['n']
+        # intの範囲内に収まるようにintensityを調整
+        noise_range = min(1000000, max(1, int(n * 0.0001)))  # 最大0.01%のノイズ
+
+        for ct in ciphertexts:
+            noise = random.randint(1, noise_range)
+            noise_values.append(noise)
+
+            try:
+                n_squared = paillier.public_key['n'] ** 2
+                g_noise = pow(paillier.public_key['g'], noise, n_squared)
+                noisy_ct = (ct * g_noise) % n_squared
+                noisy_ciphertexts.append(noisy_ct)
+            except Exception as e:
+                # エラーが発生した場合はより単純なノイズ付加を試みる
+                print(f"準同型ノイズ付加中にエラー: {e}")
+                noisy_ciphertexts.append(ct)
+    else:
+        # 単純なノイズ追加
+        max_val = max(ct if ct < 1e18 else ct.bit_length() for ct in ciphertexts)
+        min_val = min(ct if ct < 1e18 else 0 for ct in ciphertexts)
+        range_val = max(max_val - min_val, 1)
+
+        for ct in ciphertexts:
+            noise_max = min(1000000, int(range_val * intensity))
+            noise = random.randint(-noise_max, noise_max)
+            noise_values.append(noise)
+            noisy_ciphertexts.append(ct + noise)
+
+    return noisy_ciphertexts, noise_values
+
+def add_redundancy(ciphertexts, redundancy_factor=2, paillier=None):
+    """暗号文に冗長性を追加"""
+    if not ciphertexts:
+        return [], {}
+
+    redundant_ciphertexts = []
+    original_indices = []
+
+    for i, ct in enumerate(ciphertexts):
+        # 元の暗号文を追加
+        redundant_ciphertexts.append(ct)
+        original_indices.append(i)
+
+        # 冗長チャンクの追加
+        for j in range(redundancy_factor):
+            if paillier and hasattr(paillier, 'public_key') and paillier.public_key:
+                try:
+                    redundant_ct = randomize_ciphertext(paillier, ct)
+                except Exception as e:
+                    # エラーが発生した場合は単純なビット操作で冗長性を追加
+                    print(f"冗長性追加中にエラー: {e}")
+                    redundant_ct = ct ^ (1 << (j % 64))
+            else:
+                redundant_ct = ct ^ (1 << (j % 64))
+
+            redundant_ciphertexts.append(redundant_ct)
+            original_indices.append(i)
+
+    metadata = {
+        "redundancy_factor": redundancy_factor,
+        "original_length": len(ciphertexts),
+        "original_indices": original_indices
+    }
+
+    return redundant_ciphertexts, metadata
+
+def apply_comprehensive_indistinguishability(
+    true_ciphertexts, false_ciphertexts, paillier,
+    noise_intensity=0.05, redundancy_factor=1
+):
+    """総合的な識別不能性の適用"""
+    try:
+        # 1. 暗号文のランダム化
+        print("暗号文をランダム化中...")
+        randomized_true = batch_randomize_ciphertexts(paillier, true_ciphertexts)
+        randomized_false = batch_randomize_ciphertexts(paillier, false_ciphertexts)
+
+        # 2. 統計的ノイズの追加
+        print(f"統計的ノイズを追加中 (強度: {noise_intensity})...")
+        noisy_true, true_noise_values = add_statistical_noise(randomized_true, noise_intensity, paillier)
+        noisy_false, false_noise_values = add_statistical_noise(randomized_false, noise_intensity, paillier)
+
+        # 3. 冗長性の追加
+        print(f"冗長性を追加中 (係数: {redundancy_factor})...")
+        redundant_true, true_redundancy_metadata = add_redundancy(noisy_true, redundancy_factor, paillier)
+        redundant_false, false_redundancy_metadata = add_redundancy(noisy_false, redundancy_factor, paillier)
+
+        # 4. 交互配置とシャッフル
+        print("暗号文を交互配置してシャッフル中...")
+        shuffle_seed = secrets.token_bytes(16)
+        interleaved_ciphertexts, interleave_metadata = interleave_ciphertexts(
+            redundant_true, redundant_false, shuffle_seed)
+
+        # メタデータの集約
+        metadata = {
+            "interleave": interleave_metadata,
+            "true_redundancy": true_redundancy_metadata,
+            "false_redundancy": false_redundancy_metadata,
+            "true_noise_values": true_noise_values,
+            "false_noise_values": false_noise_values,
+            "noise_intensity": noise_intensity,
+            "redundancy_factor": redundancy_factor,
+            "original_true_length": len(true_ciphertexts),
+            "original_false_length": len(false_ciphertexts)
+        }
+
+        return interleaved_ciphertexts, metadata
+    except Exception as e:
+        print(f"識別不能性適用中に問題が発生しました: {e}")
+        # 問題が発生した場合は、単純な交互配置を適用
+        interleaved = []
+        for i in range(max(len(true_ciphertexts), len(false_ciphertexts))):
+            if i < len(true_ciphertexts):
+                interleaved.append(true_ciphertexts[i])
+            if i < len(false_ciphertexts):
+                interleaved.append(false_ciphertexts[i])
+
+        basic_metadata = {
+            "true_length": len(true_ciphertexts),
+            "false_length": len(false_ciphertexts),
+            "simplified": True
+        }
+
+        return interleaved, basic_metadata
 
 
 def parse_arguments() -> argparse.Namespace:

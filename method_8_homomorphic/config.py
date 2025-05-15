@@ -60,3 +60,10 @@ LEGACY_SUPPORT = True  # レガシーサポート（古いファイル形式を�
 
 # デバッグ設定
 DEBUG_MODE = False  # デバッグモード
+
+# デフォルト設定
+DEFAULT_CHARSET = "utf-8"  # デフォルトの文字エンコーディング
+CHUNK_SIZE = 64  # チャンクサイズ（バイト）
+
+# 暗号化設定のチャンクサイズ
+ENCRYPTION_CHUNK_SIZE = 64  # バイト

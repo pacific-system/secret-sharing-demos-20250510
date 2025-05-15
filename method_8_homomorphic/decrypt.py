@@ -35,14 +35,16 @@ import time
 import argparse
 import struct
 import sympy
-from typing import Dict, List, Any, Tuple, Optional, Union, cast
+import traceback
+from typing import Dict, List, Any, Tuple, Optional, Union, cast, Set, BinaryIO
 
 # モジュールのインポート
 from method_8_homomorphic.config import (
     KEY_SIZE_BYTES,
     SALT_SIZE,
     PAILLIER_KEY_BITS,
-    DEFAULT_CHARSET
+    DEFAULT_CHARSET,
+    MAX_CHUNK_SIZE
 )
 from method_8_homomorphic.homomorphic import (
     PaillierCrypto,
@@ -57,17 +59,177 @@ from method_8_homomorphic.crypto_mask import (
 from method_8_homomorphic.crypto_adapters import (
     process_data_for_encryption,
     process_data_after_decryption,
-    DataAdapter
+    DataAdapter,
+    TextAdapter,
+    BinaryAdapter
 )
 from method_8_homomorphic.key_analyzer import (
     analyze_key_type_robust,
     extract_seed_from_key,
     debug_analyze_key as debug_key_analysis
 )
-from method_8_homomorphic.indistinguishable import (
+from method_8_homomorphic.indistinguishable_ext import (
+    analyze_key_type_enhanced,
     remove_comprehensive_indistinguishability_enhanced,
-    safe_log10
+    IndistinguishableWrapper
 )
+
+# 循環インポートを避けるため必要な関数を直接実装
+def safe_log10(value):
+    """大きな整数値に対しても安全にlog10を計算"""
+    if value <= 0:
+        return 0
+
+    # 大きな整数のビット長を利用
+    if isinstance(value, int) and value > 1e17:
+        bit_length = value.bit_length()
+        return bit_length * math.log10(2)
+
+    # 通常の計算
+    try:
+        return math.log10(value)
+    except (OverflowError, ValueError):
+        # ビット長を使った近似
+        bit_length = value.bit_length()
+        return bit_length * math.log10(2)
+
+def deinterleave_ciphertexts(mixed_chunks, metadata, key_type):
+    """交互配置された暗号文チャンクを元に戻す"""
+    # メタデータから必要な情報を取得
+    true_indices = metadata.get("true_indices", [])
+    false_indices = metadata.get("false_indices", [])
+    mapping = metadata.get("mapping", [])
+
+    if not true_indices and not false_indices and not mapping:
+        # メタデータが不完全な場合
+        half = len(mixed_chunks) // 2
+        if key_type == "true":
+            return mixed_chunks[:half]
+        else:
+            return mixed_chunks[half:]
+
+    # マッピング情報がある場合
+    if mapping:
+        extracted_chunks = []
+        for entry in mapping:
+            if isinstance(entry, dict) and entry.get("type") == key_type:
+                chunk_index = entry.get("index", 0)
+                if 0 <= chunk_index < len(mixed_chunks):
+                    extracted_chunks.append(mixed_chunks[chunk_index])
+        return extracted_chunks
+
+    # インデックスリストのみがある場合
+    indices = true_indices if key_type == "true" else false_indices
+    return [mixed_chunks[i] for i in indices if i < len(mixed_chunks)]
+
+def remove_redundancy(redundant_ciphertexts, metadata):
+    """冗長性を除去して元の暗号文を復元"""
+    if not redundant_ciphertexts:
+        return []
+
+    # メタデータから必要な情報を取得
+    original_length = metadata.get("original_length", 0)
+    original_indices = metadata.get("original_indices", [])
+
+    if not original_indices or len(original_indices) != len(redundant_ciphertexts):
+        # メタデータが不完全な場合
+        redundancy_factor = metadata.get("redundancy_factor", 2)
+        original_length = len(redundant_ciphertexts) // (redundancy_factor + 1)
+        return redundant_ciphertexts[:original_length]
+
+    # 元の各暗号文に対応する全ての冗長チャンクを取得
+    chunks_by_original = {}
+    for i, orig_idx in enumerate(original_indices):
+        if orig_idx not in chunks_by_original:
+            chunks_by_original[orig_idx] = []
+        chunks_by_original[orig_idx].append(redundant_ciphertexts[i])
+
+    # 各グループの最初のチャンク（元の暗号文）を取得
+    original_ciphertexts = []
+    for i in range(original_length):
+        if i in chunks_by_original and chunks_by_original[i]:
+            original_ciphertexts.append(chunks_by_original[i][0])
+
+    return original_ciphertexts
+
+def remove_statistical_noise(ciphertexts, noise_values, paillier=None):
+    """統計的ノイズを除去して元の暗号文を復元"""
+    if not ciphertexts or not noise_values or len(ciphertexts) != len(noise_values):
+        return ciphertexts
+
+    denoised_ciphertexts = []
+
+    # Paillierオブジェクトがある場合は準同型性を保ったノイズ除去
+    if paillier and hasattr(paillier, 'public_key') and paillier.public_key:
+        for i, ct in enumerate(ciphertexts):
+            # ノイズの負の値を加算（減算と同等）
+            noise = noise_values[i]
+            n = paillier.public_key['n']
+            n_squared = n * n
+
+            # 逆元を計算
+            neg_noise = (n - (noise % n)) % n
+            g_neg_noise = pow(paillier.public_key['g'], neg_noise, n_squared)
+            denoised_ct = (ct * g_neg_noise) % n_squared
+
+            denoised_ciphertexts.append(denoised_ct)
+    else:
+        # 単純なノイズ除去
+        for i, ct in enumerate(ciphertexts):
+            denoised_ciphertexts.append(ct - noise_values[i])
+
+    return denoised_ciphertexts
+
+# 注: この関数も remove_comprehensive_indistinguishability_enhanced と同様に indistinguishable_ext へ移動
+
+# 拡張版の実装
+def remove_comprehensive_indistinguishability_enhanced(
+    indistinguishable_ciphertexts, metadata, key_type, paillier
+):
+    """拡張版: 総合的な識別不能性を除去して元の暗号文を復元"""
+    # 引数の検証
+    if not indistinguishable_ciphertexts:
+        return []
+
+    if not metadata:
+        return indistinguishable_ciphertexts
+
+    if key_type not in ["true", "false"]:
+        raise ValueError(f"無効なキータイプ: {key_type}. 'true'または'false'のみ有効です。")
+
+    if not paillier or not hasattr(paillier, 'public_key') or not paillier.public_key:
+        raise ValueError("有効なPaillier暗号インスタンスが必要です")
+
+    # メタデータの構造を解析
+    if "indistinguishable_metadata" in metadata:
+        # 新しい構造
+        indist_metadata = metadata.get("indistinguishable_metadata", {})
+
+        # 鍵タイプに応じたメタデータを取得
+        key_specific_metadata = indist_metadata.get(f"{key_type}_indist_metadata", None)
+
+        if key_specific_metadata:
+            # 識別不能性を除去
+            print(f"拡張された識別不能性（{key_type}鍵）を除去中...")
+            return remove_comprehensive_indistinguishability(
+                indistinguishable_ciphertexts, key_specific_metadata, key_type, paillier
+            )
+        elif indist_metadata.get("randomized", False):
+            # ランダム化のみが適用されている場合
+            print(f"ランダム化のみが適用されています。特別な処理は不要です。")
+            return indistinguishable_ciphertexts
+    elif isinstance(metadata, dict):
+        # 直接 remove_comprehensive_indistinguishability に渡せる形式の場合
+        # 標準的な実装との互換性のために direct_metadata を探す
+        direct_metadata = metadata.get("direct_metadata", metadata)
+        print(f"標準的な識別不能性（{key_type}鍵）を除去中...")
+        return remove_comprehensive_indistinguishability(
+            indistinguishable_ciphertexts, direct_metadata, key_type, paillier
+        )
+
+    # 識別不能性メタデータが見つからない場合はそのまま返す
+    print("識別不能性メタデータが見つかりません。暗号文をそのまま返します。")
+    return indistinguishable_ciphertexts
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -269,56 +431,7 @@ def mod_inverse(a: int, m: int) -> int:
         return x % m
 
 
-def remove_comprehensive_indistinguishability_enhanced(
-    indistinguishable_ciphertexts: List[int],
-    metadata: Dict[str, Any],
-    key_type: str,
-    paillier: PaillierCrypto
-) -> List[int]:
-    """
-    識別不能性を除去する拡張関数
-
-    standard 版と enhanced 版の両方に対応するよう、metadata の構造を解析して対応
-
-    Args:
-        indistinguishable_ciphertexts: 識別不能性が適用された暗号文
-        metadata: 識別不能性のメタデータ
-        key_type: 鍵タイプ ("true" または "false")
-        paillier: PaillierCrypto インスタンス
-
-    Returns:
-        識別不能性が除去された暗号文
-    """
-    # メタデータの構造を解析
-    if "indistinguishable_metadata" in metadata:
-        # 新しい構造（encrypt.py で識別不能性機能を追加したケース）
-        indist_metadata = metadata.get("indistinguishable_metadata", {})
-
-        # 鍵タイプに応じたメタデータを取得
-        key_specific_metadata = indist_metadata.get(f"{key_type}_indist_metadata", None)
-
-        if key_specific_metadata:
-            # 識別不能性を除去
-            print(f"拡張された識別不能性（{key_type}鍵）を除去中...")
-            return remove_comprehensive_indistinguishability(
-                indistinguishable_ciphertexts, key_specific_metadata, key_type, paillier
-            )
-        elif indist_metadata.get("randomized", False):
-            # ランダム化のみが適用されている場合
-            print(f"ランダム化のみが適用されています。特別な処理は不要です。")
-            return indistinguishable_ciphertexts
-    elif isinstance(metadata, dict):
-        # 直接 remove_comprehensive_indistinguishability に渡せる形式の場合
-        # 標準的な実装との互換性のために direct_metadata を探す
-        direct_metadata = metadata.get("direct_metadata", metadata)
-        print(f"標準的な識別不能性（{key_type}鍵）を除去中...")
-        return remove_comprehensive_indistinguishability(
-            indistinguishable_ciphertexts, direct_metadata, key_type, paillier
-        )
-
-    # 識別不能性メタデータが見つからない場合はそのまま返す
-    print("識別不能性メタデータが見つかりません。暗号文をそのまま返します。")
-    return indistinguishable_ciphertexts
+# 注: indistinguishable_ext に移動した関数なので、ここでの再定義は不要
 
 
 def derive_homomorphic_keys(master_key: bytes, public_key: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -719,7 +832,7 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
                 adapter = BinaryAdapter()
 
             # 復号後のデータ処理
-            result_data = process_data_after_decryption(plaintext_chunks, original_size, adapter)
+            result_data = process_data_after_decryption(plaintext_chunks, data_type)
 
             # 出力ファイルパスの準備
             if not output_path:

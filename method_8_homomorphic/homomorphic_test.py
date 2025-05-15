@@ -3118,7 +3118,7 @@ def test_indistinguishable_features() -> Dict[str, Any]:
             log_message("\n結論: 攻撃者は統計的分析によって復号データを区別することはほぼ不可能です。")
         elif diff_ratio < 0.5:
             log_message("\n結論: 攻撃者は統計的分析によって復号データを区別することは非常に困難です。")
-        else:
+    else:
             log_message("\n結論: 攻撃者は統計的分析によって復号データを区別できる可能性があります。強化が必要です。")
 
         # 統計分析結果を保存

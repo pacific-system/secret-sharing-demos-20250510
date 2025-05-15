@@ -68,168 +68,18 @@ from method_8_homomorphic.key_analyzer import (
     extract_seed_from_key,
     debug_analyze_key as debug_key_analysis
 )
+
+# 循環インポートを解決するため、すべての必要な関数を indistinguishable_ext からインポート
 from method_8_homomorphic.indistinguishable_ext import (
     analyze_key_type_enhanced,
+    remove_comprehensive_indistinguishability,
     remove_comprehensive_indistinguishability_enhanced,
-    IndistinguishableWrapper
+    IndistinguishableWrapper,
+    safe_log10,
+    deinterleave_ciphertexts,
+    remove_redundancy,
+    remove_statistical_noise
 )
-
-# 循環インポートを避けるため必要な関数を直接実装
-def safe_log10(value):
-    """大きな整数値に対しても安全にlog10を計算"""
-    if value <= 0:
-        return 0
-
-    # 大きな整数のビット長を利用
-    if isinstance(value, int) and value > 1e17:
-        bit_length = value.bit_length()
-        return bit_length * math.log10(2)
-
-    # 通常の計算
-    try:
-        return math.log10(value)
-    except (OverflowError, ValueError):
-        # ビット長を使った近似
-        bit_length = value.bit_length()
-        return bit_length * math.log10(2)
-
-def deinterleave_ciphertexts(mixed_chunks, metadata, key_type):
-    """交互配置された暗号文チャンクを元に戻す"""
-    # メタデータから必要な情報を取得
-    true_indices = metadata.get("true_indices", [])
-    false_indices = metadata.get("false_indices", [])
-    mapping = metadata.get("mapping", [])
-
-    if not true_indices and not false_indices and not mapping:
-        # メタデータが不完全な場合
-        half = len(mixed_chunks) // 2
-        if key_type == "true":
-            return mixed_chunks[:half]
-        else:
-            return mixed_chunks[half:]
-
-    # マッピング情報がある場合
-    if mapping:
-        extracted_chunks = []
-        for entry in mapping:
-            if isinstance(entry, dict) and entry.get("type") == key_type:
-                chunk_index = entry.get("index", 0)
-                if 0 <= chunk_index < len(mixed_chunks):
-                    extracted_chunks.append(mixed_chunks[chunk_index])
-        return extracted_chunks
-
-    # インデックスリストのみがある場合
-    indices = true_indices if key_type == "true" else false_indices
-    return [mixed_chunks[i] for i in indices if i < len(mixed_chunks)]
-
-def remove_redundancy(redundant_ciphertexts, metadata):
-    """冗長性を除去して元の暗号文を復元"""
-    if not redundant_ciphertexts:
-        return []
-
-    # メタデータから必要な情報を取得
-    original_length = metadata.get("original_length", 0)
-    original_indices = metadata.get("original_indices", [])
-
-    if not original_indices or len(original_indices) != len(redundant_ciphertexts):
-        # メタデータが不完全な場合
-        redundancy_factor = metadata.get("redundancy_factor", 2)
-        original_length = len(redundant_ciphertexts) // (redundancy_factor + 1)
-        return redundant_ciphertexts[:original_length]
-
-    # 元の各暗号文に対応する全ての冗長チャンクを取得
-    chunks_by_original = {}
-    for i, orig_idx in enumerate(original_indices):
-        if orig_idx not in chunks_by_original:
-            chunks_by_original[orig_idx] = []
-        chunks_by_original[orig_idx].append(redundant_ciphertexts[i])
-
-    # 各グループの最初のチャンク（元の暗号文）を取得
-    original_ciphertexts = []
-    for i in range(original_length):
-        if i in chunks_by_original and chunks_by_original[i]:
-            original_ciphertexts.append(chunks_by_original[i][0])
-
-    return original_ciphertexts
-
-def remove_statistical_noise(ciphertexts, noise_values, paillier=None):
-    """統計的ノイズを除去して元の暗号文を復元"""
-    if not ciphertexts or not noise_values or len(ciphertexts) != len(noise_values):
-        return ciphertexts
-
-    denoised_ciphertexts = []
-
-    # Paillierオブジェクトがある場合は準同型性を保ったノイズ除去
-    if paillier and hasattr(paillier, 'public_key') and paillier.public_key:
-        for i, ct in enumerate(ciphertexts):
-            # ノイズの負の値を加算（減算と同等）
-            noise = noise_values[i]
-            n = paillier.public_key['n']
-            n_squared = n * n
-
-            # 逆元を計算
-            neg_noise = (n - (noise % n)) % n
-            g_neg_noise = pow(paillier.public_key['g'], neg_noise, n_squared)
-            denoised_ct = (ct * g_neg_noise) % n_squared
-
-            denoised_ciphertexts.append(denoised_ct)
-    else:
-        # 単純なノイズ除去
-        for i, ct in enumerate(ciphertexts):
-            denoised_ciphertexts.append(ct - noise_values[i])
-
-    return denoised_ciphertexts
-
-# 注: この関数も remove_comprehensive_indistinguishability_enhanced と同様に indistinguishable_ext へ移動
-
-# 拡張版の実装
-def remove_comprehensive_indistinguishability_enhanced(
-    indistinguishable_ciphertexts, metadata, key_type, paillier
-):
-    """拡張版: 総合的な識別不能性を除去して元の暗号文を復元"""
-    # 引数の検証
-    if not indistinguishable_ciphertexts:
-        return []
-
-    if not metadata:
-        return indistinguishable_ciphertexts
-
-    if key_type not in ["true", "false"]:
-        raise ValueError(f"無効なキータイプ: {key_type}. 'true'または'false'のみ有効です。")
-
-    if not paillier or not hasattr(paillier, 'public_key') or not paillier.public_key:
-        raise ValueError("有効なPaillier暗号インスタンスが必要です")
-
-    # メタデータの構造を解析
-    if "indistinguishable_metadata" in metadata:
-        # 新しい構造
-        indist_metadata = metadata.get("indistinguishable_metadata", {})
-
-        # 鍵タイプに応じたメタデータを取得
-        key_specific_metadata = indist_metadata.get(f"{key_type}_indist_metadata", None)
-
-        if key_specific_metadata:
-            # 識別不能性を除去
-            print(f"拡張された識別不能性（{key_type}鍵）を除去中...")
-            return remove_comprehensive_indistinguishability(
-                indistinguishable_ciphertexts, key_specific_metadata, key_type, paillier
-            )
-        elif indist_metadata.get("randomized", False):
-            # ランダム化のみが適用されている場合
-            print(f"ランダム化のみが適用されています。特別な処理は不要です。")
-            return indistinguishable_ciphertexts
-    elif isinstance(metadata, dict):
-        # 直接 remove_comprehensive_indistinguishability に渡せる形式の場合
-        # 標準的な実装との互換性のために direct_metadata を探す
-        direct_metadata = metadata.get("direct_metadata", metadata)
-        print(f"標準的な識別不能性（{key_type}鍵）を除去中...")
-        return remove_comprehensive_indistinguishability(
-            indistinguishable_ciphertexts, direct_metadata, key_type, paillier
-        )
-
-    # 識別不能性メタデータが見つからない場合はそのまま返す
-    print("識別不能性メタデータが見つかりません。暗号文をそのまま返します。")
-    return indistinguishable_ciphertexts
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -429,9 +279,6 @@ def mod_inverse(a: int, m: int) -> int:
         raise ValueError(f"モジュラ逆数が存在しません: {a} と {m} は互いに素ではありません。")
     else:
         return x % m
-
-
-# 注: indistinguishable_ext に移動した関数なので、ここでの再定義は不要
 
 
 def derive_homomorphic_keys(master_key: bytes, public_key: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -813,55 +660,77 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
                 # エラーが発生しても処理を続行
                 plaintext_chunks.append(0)  # ダミー値
 
-        # データアダプタの決定とデータ処理
+        # 復号したチャンクを結合
+        raw_data = b"".join(plaintext_chunks)
+
+        # メタデータからデータタイプを取得
+        data_type = encrypted_data.get(f"{key_type}_data_type", data_type)
+        print(f"{key_type}鍵データの後処理中... データタイプ: {data_type}")
+
+        # 特殊エンコーディングの検出
+        encoding_marker = None
         try:
-            # データタイプに基づいてアダプタを選択
-            adapter_type = None
-            if force_text:
-                adapter_type = "text"
-            elif force_binary:
-                adapter_type = "binary"
-            else:
-                adapter_type = data_type if data_type != "auto" else (current_data_type or "text")
+            # ASCII文字列として判定可能か確認
+            ascii_str = raw_data.decode('ascii', errors='ignore')
 
-            # アダプタの生成
-            adapter: DataAdapter
-            if adapter_type == "text":
-                adapter = TextAdapter()
-            else:
-                adapter = BinaryAdapter()
+            # 一般的なエンコーディングマーカーを探す
+            for marker in ['TXT-MULTI:', 'BIN-BASE64:', 'TXT:', 'B64:']:
+                if marker in ascii_str:
+                    marker_pos = ascii_str.find(marker)
+                    if marker_pos >= 0:
+                        encoding_marker = marker
+                        print(f"[DEBUG] エンコーディングマーカーを検出: {marker} (位置: {marker_pos})")
 
-            # 復号後のデータ処理
-            result_data = process_data_after_decryption(plaintext_chunks, data_type)
-
-            # 出力ファイルパスの準備
-            if not output_path:
-                # デフォルトの出力ファイル名を生成
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
-                filename, _ = os.path.splitext(os.path.basename(encrypted_file_path))
-                output_path = f"{filename}_decrypted_{timestamp}.{OUTPUT_EXTENSION}"
-
-            # 出力ディレクトリの確保
-            output_dir = os.path.dirname(output_path)
-            if output_dir:
-                ensure_directory(output_dir)
-
-            # 出力モード（テキストまたはバイナリ）
-            mode = "w" if isinstance(result_data, str) else "wb"
-
-            # 結果を出力ファイルに書き込み
-            with open(output_path, mode) as f:
-                f.write(result_data)
-
-            print(f"\n復号完了: {output_path}")
-            print(f"処理時間: {time.time() - start_time:.2f}秒")
-            return True
-
+                        # マーカーの位置からデータを抽出
+                        raw_data = raw_data[marker_pos:]
+                        break
         except Exception as e:
-            print(f"\nエラー: データ処理中に問題が発生しました: {e}", file=sys.stderr)
-            if verbose:
-                traceback.print_exc()
-            return False
+            print(f"[WARNING] エンコーディングマーカー検出エラー: {e}")
+
+        # 復号結果を元の形式に戻す
+        try:
+            # エンコーディングマーカーがある場合、TextAdapterを直接使用
+            if encoding_marker == 'TXT-MULTI:':
+                text_adapter = TextAdapter()
+                try:
+                    result_data = text_adapter.reverse_multi_stage_encoding(raw_data)
+                    print(f"[DEBUG] 多段エンコーディングの逆変換に成功")
+                except Exception as e:
+                    print(f"[ERROR] 多段エンコーディング逆変換エラー: {e}")
+                    # 標準処理へフォールバック
+                    result_data = process_data_after_decryption(raw_data, data_type)
+            else:
+                # 通常の処理
+                result_data = process_data_after_decryption(raw_data, data_type)
+
+            # デコードされたデータをチェック
+            if isinstance(result_data, str):
+                result_bytes = result_data.encode('utf-8', errors='replace')
+            else:
+                result_bytes = result_data if isinstance(result_data, bytes) else str(result_data).encode('utf-8', errors='replace')
+
+            # 出力処理
+            if isinstance(result_data, str):
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(result_data)
+            else:
+                with open(output_path, 'wb') as f:
+                    f.write(result_data)
+
+            return True
+        except Exception as e:
+            print(f"ERROR: データの後処理中にエラーが発生しました: {e}")
+            traceback.print_exc()
+
+            # 緊急フォールバック - バイナリとして書き出し
+            try:
+                with open(output_path, 'wb') as f:
+                    f.write(raw_data)
+                print(f"WARNING: 緊急フォールバックとしてバイナリデータを保存しました")
+                return True
+            except Exception as e2:
+                print(f"CRITICAL ERROR: バックアップ保存にも失敗しました: {e2}")
+                return False
 
     except Exception as e:
         print(f"エラー: 復号処理中に問題が発生しました: {e}", file=sys.stderr)

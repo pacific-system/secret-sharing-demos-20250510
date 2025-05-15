@@ -40,14 +40,6 @@ from method_8_homomorphic.config import (
     MASK_SEED_SIZE
 )
 from method_8_homomorphic.homomorphic import PaillierCrypto
-from method_8_homomorphic.indistinguishable import (
-    add_statistical_noise,
-    remove_statistical_noise,
-    deinterleave_ciphertexts,
-    remove_redundancy,
-    randomize_ciphertext,
-    batch_randomize_ciphertexts
-)
 
 # 数値のログを安全に計算する関数
 def safe_log10(value):
@@ -70,11 +62,56 @@ def safe_log10(value):
 
     # 通常の計算
     try:
-        return math.log10(value)
+        # 大きな整数は直接 float に変換するとオーバーフローするため、
+        # 文字列経由で変換を試みる
+        if isinstance(value, int) and value > 1e16:
+            # 次の桁数までしか float で精度を保てないので、文字列化して長さを取得
+            value_str = str(value)
+            mantissa = float("0." + value_str[:15])  # 仮数部
+            exponent = len(value_str)                # 指数部
+            return math.log10(mantissa) + exponent
+        else:
+            return math.log10(float(value))
     except (OverflowError, ValueError):
         # ビット長を使った近似
         bit_length = value.bit_length()
         return bit_length * math.log10(2)
+
+# 暗号文のランダム化関数
+def randomize_ciphertext(paillier: PaillierCrypto, ciphertext: int) -> int:
+    """
+    暗号文を再ランダム化
+
+    準同型暗号の性質を利用して、同じ平文に対応する別の暗号文を生成します。
+    これにより、同じ平文でも毎回異なる暗号文が生成され、暗号文からの情報漏洩を防ぎます。
+
+    Args:
+        paillier: PaillierCryptoインスタンス
+        ciphertext: ランダム化する暗号文
+
+    Returns:
+        ランダム化された暗号文
+    """
+    if hasattr(paillier, 'randomize') and callable(paillier.randomize):
+        return paillier.randomize(ciphertext, paillier.public_key)
+    else:
+        r = random.randint(1, paillier.public_key['n'] - 1)
+        n_squared = paillier.public_key['n'] ** 2
+        g_r = pow(paillier.public_key['g'], r, n_squared)
+        return (ciphertext * g_r) % n_squared
+
+def batch_randomize_ciphertexts(paillier: PaillierCrypto, ciphertexts: List[int]) -> List[int]:
+    """
+    暗号文のリストを一括して再ランダム化
+
+    Args:
+        paillier: PaillierCryptoインスタンス
+        ciphertexts: ランダム化する暗号文のリスト
+
+    Returns:
+        ランダム化された暗号文のリスト
+    """
+    return [randomize_ciphertext(paillier, ct) for ct in ciphertexts]
 
 def deinterleave_ciphertexts_enhanced(
     mixed_chunks: List[int],

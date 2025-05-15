@@ -216,28 +216,46 @@ class TextAdapter(DataAdapter):
         print(f"[DEBUG] 多段エンコーディング開始: '{text[:30]}'... (長さ: {len(text)})")
 
         try:
+            # 特殊文字や非ASCII文字を含んでいるかチェック
+            has_special_chars = any(ord(c) > 127 for c in text)
+
             # ステップ1: UTF-8でエンコード
             utf8_data = text.encode('utf-8')
             print(f"[DEBUG] UTF-8エンコード後: {len(utf8_data)}バイト")
 
             # ステップ2: latin-1としてデコードし、再度エンコード（安全なバイト変換）
-            latin1_text = utf8_data.decode('latin-1')
-            latin1_data = latin1_text.encode('latin-1')
+            # latin-1は1バイトあたり1文字なので、どんなバイトもデコードできる
+            latin1_text = utf8_data.decode('latin-1', errors='replace')
+            latin1_data = latin1_text.encode('latin-1', errors='replace')
             print(f"[DEBUG] Latin-1変換後: {len(latin1_data)}バイト")
 
             # ステップ3: Base64エンコード
             base64_data = base64.b64encode(latin1_data)
             print(f"[DEBUG] Base64エンコード後: {len(base64_data)}バイト")
 
-            # ヘッダーを追加（変換方法を記録）
-            result = b'TXT-MULTI:utf8-latin1-base64:' + base64_data
+            # Base64データの検証（無効な文字がないことを確認）
+            base64_str = base64_data.decode('ascii', errors='replace')
+            valid_base64_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
+            if not all(c in valid_base64_chars for c in base64_str):
+                print(f"[WARNING] Base64データに無効な文字が含まれています")
+                # 無効な文字を除去
+                cleaned_base64 = ''.join(c for c in base64_str if c in valid_base64_chars)
+                base64_data = cleaned_base64.encode('ascii')
+
+            # 情報を含むヘッダーを追加（変換方法と特殊文字の有無を記録）
+            enc_type = 'utf8-latin1-base64-special' if has_special_chars else 'utf8-latin1-base64'
+            result = b'TXT-MULTI:' + enc_type.encode('ascii') + b':' + base64_data
             print(f"[DEBUG] 最終結果 (先頭30バイト): {result[:30]}")
 
             return result
         except Exception as e:
             print(f"[ERROR] 多段エンコーディング中にエラーが発生: {e}")
             # エラー発生時はテキスト形式で保存
-            result = b'TXT:utf-8:' + text.encode('utf-8')
+            try:
+                result = b'TXT:utf-8:' + text.encode('utf-8', errors='replace')
+            except Exception:
+                # 最終フォールバック: とにかく何かを返す
+                result = b'TXT:ascii:' + text.encode('ascii', errors='replace')
             return result
 
     def reverse_multi_stage_encoding(self, data: bytes) -> str:
@@ -269,77 +287,134 @@ class TextAdapter(DataAdapter):
                     except UnicodeDecodeError:
                         continue
                 # デコードできなかった場合はlatin-1で強制デコード
-                return binary_data.decode('latin-1')
+                return binary_data.decode('latin-1', errors='replace')
             except Exception as e:
                 print(f"[ERROR] バイナリデータ復元中にエラー: {e}")
                 raise ValueError("バイナリデータの復元に失敗しました")
 
         # 多段エンコーディングのヘッダーチェック
-        if not data.startswith(b'TXT-MULTI:'):
-            raise ValueError("多段エンコーディングのヘッダーがありません")
+        if not isinstance(data, bytes):
+            data = str(data).encode('ascii', errors='ignore')
 
-        header_end = data.find(b':', 10)  # 'TXT-MULTI:' の後のコロンを検索
+        header_match = None
+        if data.startswith(b'TXT-MULTI:'):
+            header_match = data
+        else:
+            # データ内でヘッダーを検索
+            data_str = data.decode('ascii', errors='ignore')
+            header_pos = data_str.find('TXT-MULTI:')
+            if header_pos >= 0:
+                header_match = data[header_pos:]
+                print(f"[DEBUG] ヘッダー位置: {header_pos}、抽出されたヘッダー: {header_match[:30]}")
+            else:
+                # ヘッダーが見つからない場合はエラー
+                raise ValueError("多段エンコーディングのヘッダーがありません")
+
+        if not header_match:
+            raise ValueError("多段エンコーディングのヘッダーが見つかりません")
+
+        header_end = header_match.find(b':', 10)  # 'TXT-MULTI:' の後のコロンを検索
         if header_end < 0:
             raise ValueError("無効な多段エンコーディングフォーマット")
 
         # エンコーディング情報を取得
-        encoding_info = data[10:header_end].decode('ascii')
+        encoding_info = header_match[10:header_end].decode('ascii', errors='ignore')
         print(f"[DEBUG] エンコーディング情報: {encoding_info}")
 
         # エンコーディング方式の検証
-        if encoding_info != 'utf8-latin1-base64':
+        if encoding_info not in ['utf8-latin1-base64', 'utf8-latin1-base64-special']:
             raise ValueError(f"サポートされていないエンコーディング方式: {encoding_info}")
+
+        # 特殊文字処理モードの検出
+        has_special_chars = 'special' in encoding_info
 
         try:
             # Base64部分を取得
-            base64_data = data[header_end+1:]
+            base64_data = header_match[header_end+1:]
             print(f"[DEBUG] Base64データサイズ: {len(base64_data)}バイト")
+            print(f"[DEBUG] Base64データ先頭: {base64_data[:min(30, len(base64_data))].hex()}")
 
             # Base64データをクリーンアップ（無効な文字を除去）
             try:
-                cleaned_base64 = base64_data.decode('ascii', errors='ignore').encode('ascii')
-            except Exception:
-                cleaned_base64 = base64_data
+                # ASCII文字のみに制限
+                valid_chars = set(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
+                cleaned_base64 = bytearray()
+                for b in base64_data:
+                    if chr(b).encode('ascii', errors='ignore') in valid_chars:
+                        cleaned_base64.append(b)
+
+                cleaned_base64 = bytes(cleaned_base64)
+
+                # パディングの調整
+                missing_padding = len(cleaned_base64) % 4
+                if missing_padding:
+                    cleaned_base64 += b'=' * (4 - missing_padding)
+
+                print(f"[DEBUG] クリーンアップ後のBase64サイズ: {len(cleaned_base64)}バイト")
+            except Exception as e:
+                print(f"[WARNING] Base64クリーンアップエラー: {e}")
+                # もっと単純なクリーンアップを試す
+                try:
+                    # ASCIIとして解釈し、無効な文字を除去
+                    base64_str = base64_data.decode('ascii', errors='ignore')
+                    valid_base64_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
+                    cleaned_base64_str = ''.join(c for c in base64_str if c in valid_base64_chars)
+
+                    # パディングの調整
+                    while len(cleaned_base64_str) % 4 != 0:
+                        cleaned_base64_str += '='
+
+                    cleaned_base64 = cleaned_base64_str.encode('ascii')
+                except Exception:
+                    cleaned_base64 = base64_data
 
             # ステップ1: Base64デコード
             try:
                 latin1_data = base64.b64decode(cleaned_base64)
+                print(f"[DEBUG] Base64デコード成功: {len(latin1_data)}バイト")
             except Exception as e:
-                print(f"[WARNING] 標準的なBase64デコードに失敗: {e}")
-                # 末尾のパディングを調整して再試行
-                padded_base64 = cleaned_base64
-                while len(padded_base64) % 4 != 0:
-                    padded_base64 += b'='
+                print(f"[ERROR] Base64デコードに失敗: {e}")
+                # フォールバック: ASCIIとして解釈し直接変換
                 try:
-                    latin1_data = base64.b64decode(padded_base64)
+                    ascii_text = cleaned_base64.decode('ascii', errors='ignore')
+                    latin1_data = ascii_text.encode('latin-1', errors='replace')
                 except Exception as e2:
-                    print(f"[ERROR] パディング調整後もBase64デコードに失敗: {e2}")
-                    # 最後の手段：ヘッダー以降の全データをLatin-1として解釈
-                    return data[header_end+1:].decode('latin-1')
-
-            print(f"[DEBUG] Base64デコード後: {len(latin1_data)}バイト")
+                    print(f"[ERROR] フォールバック変換も失敗: {e2}")
+                    raise ValueError("Base64データの復元に失敗しました")
 
             # ステップ2: latin-1としてデコード
-            latin1_text = latin1_data.decode('latin-1')
+            latin1_text = latin1_data.decode('latin-1', errors='replace')
+            print(f"[DEBUG] Latin-1デコード後のサイズ: {len(latin1_text)}")
 
             # ステップ3: UTF-8として解釈
-            utf8_data = latin1_text.encode('latin-1')
+            utf8_data = latin1_text.encode('latin-1', errors='replace')
 
-            try:
-                text = utf8_data.decode('utf-8')
-            except UnicodeDecodeError:
-                # UTF-8デコードに失敗した場合はLatin-1として直接返す
-                print("[WARNING] UTF-8デコードに失敗しました。Latin-1として返します")
-                return latin1_text
-
-            print(f"[DEBUG] UTF-8デコード後: '{text[:30]}'... (長さ: {len(text)})")
+            # 特殊文字処理モードに応じて適切なデコード方法を選択
+            if has_special_chars:
+                try:
+                    # 特殊文字モードではより厳密なUTF-8デコード
+                    text = utf8_data.decode('utf-8', errors='replace')
+                    print(f"[DEBUG] 特殊文字モードでUTF-8デコード成功: {len(text)}文字")
+                except UnicodeDecodeError as e:
+                    print(f"[WARNING] 特殊文字モードでのUTF-8デコードに失敗: {e}")
+                    # フォールバック
+                    text = latin1_text
+            else:
+                try:
+                    text = utf8_data.decode('utf-8', errors='replace')
+                    print(f"[DEBUG] UTF-8デコード成功: {len(text)}文字")
+                except UnicodeDecodeError as e:
+                    print(f"[WARNING] UTF-8デコードエラー: {e}")
+                    # UTF-8デコードに失敗した場合はLatin-1として直接返す
+                    print("[WARNING] UTF-8デコードに失敗しました。Latin-1として返します")
+                    text = latin1_text
 
             return text
         except Exception as e:
             print(f"[ERROR] 多段エンコーディング逆変換中にエラー: {e}")
-            # どうしても変換できない場合は、元データをLatin-1でデコードして返す
+            # 変換できない場合は、元データのASCII部分を抽出して返す
             try:
-                return data.decode('latin-1', errors='replace')
+                return data.decode('ascii', errors='replace')
             except Exception:
                 # 最終手段：バイナリを16進数表現に変換
                 return data.hex()
@@ -624,88 +699,97 @@ def process_data_after_decryption(data: bytes, data_type: str) -> Union[str, byt
         変換後のデータ
     """
     print(f"[DEBUG] 復号後: データタイプ={data_type}, サイズ={len(data)}バイト")
-    print(f"[DEBUG] 復号後先頭バイト: {data[:min(20, len(data))]}")
+    print(f"[DEBUG] 復号後先頭バイト: {data[:min(30, len(data))].hex()}")
 
     # 無効なデータをチェック
     if not data:
         print("[WARNING] 空のデータを受け取りました")
         return b'' if data_type == 'binary' else ''
 
-    try:
-        # バイナリデータからテキストを検出（ヘッダーがない場合の対応）
+    # データタイプに応じた処理
+    if data_type == 'text':
+        # テキスト形式の場合
+        text_adapter = TextAdapter()
+
         try:
-            # ASCII文字として判定可能か確認
-            ascii_text = data.decode('ascii', errors='ignore')
-            if 'TXT-MULTI:' in ascii_text[:20]:
-                print("[DEBUG] テキスト内でTXT-MULTIヘッダーを検出")
-                # バイト列からTXT-MULTIヘッダーの位置を特定
-                header_pos = ascii_text.find('TXT-MULTI:')
+            # データをASCII文字列として判定（エラーは無視）
+            ascii_str = data.decode('ascii', errors='ignore')
+
+            # TXT-MULTI ヘッダーを検索
+            if 'TXT-MULTI:' in ascii_str:
+                print("[DEBUG] テキストデータにTXT-MULTIヘッダーを検出")
+                header_pos = ascii_str.find('TXT-MULTI:')
                 if header_pos >= 0:
-                    # ヘッダーからのデータを抽出
-                    header_data = data[header_pos:]
-                    text_adapter = TextAdapter()
                     try:
-                        result = text_adapter.reverse_multi_stage_encoding(header_data)
-                        print(f"[DEBUG] 多段エンコーディング部分からの復号成功")
-                        return result
+                        # ヘッダーの位置からのデータを抽出
+                        header_data = data[header_pos:]
+                        print(f"[DEBUG] ヘッダー位置: {header_pos}, 抽出データ先頭: {header_data[:20].hex()}")
+                        return text_adapter.reverse_multi_stage_encoding(header_data)
                     except Exception as e:
-                        print(f"[DEBUG] 多段エンコーディング部分からの復号に失敗: {e}")
-        except Exception as e:
-            print(f"[DEBUG] ASCII検出中にエラー: {e}")
+                        print(f"[WARNING] 多段エンコーディング逆変換中にエラー: {e}")
 
-        # 多段エンコーディングの判定（ヘッダー付きデータ）
-        if isinstance(data, (bytes, bytearray)) and data.startswith(b'TXT-MULTI:'):
-            try:
-                text_adapter = TextAdapter()
-                result = text_adapter.reverse_multi_stage_encoding(data)
-                print(f"[DEBUG] 多段エンコーディングの復号成功: {result[:min(50, len(result))]}")
-                return result
-            except Exception as e:
-                print(f"[DEBUG] 多段エンコーディングの復号に失敗: {e}")
-                # 失敗した場合は通常の処理に進む
+            # ヘッダーがバイナリデータ内にある可能性
+            full_data = data
+            for i in range(len(full_data) - 10):  # 最低10バイトのヘッダーを想定
+                chunk = full_data[i:i+15]  # 15バイトのチャンクを取得
+                try:
+                    chunk_str = chunk.decode('ascii', errors='ignore')
+                    if 'TXT-MULTI:' in chunk_str:
+                        print(f"[DEBUG] バイナリ内でTXT-MULTIヘッダーを検出: 位置={i}")
+                        try:
+                            return text_adapter.reverse_multi_stage_encoding(full_data[i:])
+                        except Exception as e:
+                            print(f"[WARNING] バイナリ内のヘッダーからの逆変換でエラー: {e}")
+                except:
+                    pass
 
-        # データタイプが指定されていない場合は自動検出
-        detected_type = data_type
-        if data_type == 'auto':
-            detected_type = DataAdapter.detect_data_type(data)
-            print(f"[DEBUG] 自動検出したデータタイプ: {detected_type}")
-
-        # テキストデータの特別処理
-        if detected_type == 'text' or data_type == 'text':
-            # 複数のエンコーディングを試す
+            # もしヘッダーが見つからなければ、異なるエンコーディングでテキスト化を試みる
             for encoding in ['utf-8', 'latin-1', 'shift-jis', 'euc-jp']:
                 try:
                     text = data.decode(encoding)
-                    print(f"[DEBUG] {encoding}でデコード成功: {text[:20]}")
+                    print(f"[DEBUG] {encoding}でデコード成功: {text[:min(50, len(text))]}")
                     return text
                 except UnicodeDecodeError:
                     continue
 
-            # どのエンコーディングでもデコードできない場合は、latin-1で強制デコード
-            try:
-                text = data.decode('latin-1')
-                print(f"[DEBUG] latin-1でデコード成功: {text[:20]}")
-                return text
-            except Exception as e:
-                print(f"[DEBUG] 最終的なテキストデコードにも失敗: {e}")
+            # デコードできない場合はラテン1で強制デコード
+            print("[DEBUG] 強制的にlatin-1でデコード")
+            return data.decode('latin-1', errors='replace')
 
-        # 適切なアダプタの取得と変換
-        try:
-            adapter = DataAdapter.get_adapter(detected_type)
-            result = adapter.from_processable(data)
-            print(f"[DEBUG] 変換後: 型={type(result).__name__}, サイズ={len(result) if hasattr(result, '__len__') else 'N/A'}")
-            return result
         except Exception as e:
-            print(f"[DEBUG] データ変換中にエラー: {e}")
-            # 変換エラー時は元のデータをそのまま返す
+            print(f"[ERROR] テキストの復元中にエラー: {e}")
+            # エラー発生時はバイナリとして返す
+            try:
+                return data.decode('latin-1', errors='replace')
+            except:
+                return data
 
-    except Exception as e:
-        print(f"[ERROR] データ処理中に予期しないエラー: {e}")
-        import traceback
-        traceback.print_exc()
+    elif data_type == 'binary':
+        # バイナリ形式の場合はそのまま返す
+        return data
 
-    # すべての変換が失敗した場合、元のデータをそのまま返す
-    return data
+    elif data_type == 'json':
+        # JSON形式の場合
+        json_adapter = JSONAdapter()
+        json_data = json_adapter.from_processable(data)
+
+        # JSON文字列として解析を試みる
+        try:
+            return json_data.decode('utf-8')
+        except:
+            return json_data
+
+    elif data_type == 'base64':
+        # Base64形式の場合
+        base64_adapter = Base64Adapter()
+        return base64_adapter.from_processable(data)
+
+    else:
+        # 不明な形式の場合は、テキスト変換を試みる
+        try:
+            return data.decode('utf-8', errors='replace')
+        except:
+            return data
 
 
 if __name__ == "__main__":

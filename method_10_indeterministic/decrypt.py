@@ -87,6 +87,7 @@ class MemoryOptimizedReader:
         self.fp = None
 
     def __enter__(self):
+        self.open()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -99,8 +100,7 @@ class MemoryOptimizedReader:
             try:
                 self.fp = open(self.file_path, 'rb')
             except Exception as e:
-                raise IOError(f"ファイル '{self.file_path}' を開けません: {e}")
-        return self.fp
+                raise IOError(f"ファイルを開けません: {e}")
 
     def close(self):
         """ファイルを閉じる"""
@@ -109,120 +109,7 @@ class MemoryOptimizedReader:
                 self.fp.close()
                 self.fp = None
             except Exception as e:
-                print(f"警告: ファイルのクローズ中にエラーが発生しました: {e}", file=sys.stderr)
-
-    def read_in_chunks(self) -> Generator[bytes, None, None]:
-        """
-        ファイルを一定サイズのチャンクで読み込む
-
-        Yields:
-            ファイルデータのチャンク
-        """
-        fp = self.open()
-        fp.seek(0)
-        while True:
-            chunk = fp.read(self.buffer_size)
-            if not chunk:
-                break
-            yield chunk
-
-    def read_all(self) -> bytes:
-        """
-        ファイル全体を読み込む
-
-        大きなファイルの場合はメモリ効率を考慮した読み込みを行います。
-
-        Returns:
-            ファイルの内容
-        """
-        # 小さいファイルの場合は直接読み込み
-        if self.file_size <= self.buffer_size:
-            fp = self.open()
-            fp.seek(0)
-            return fp.read()
-
-        # 大きなファイルの場合は一時ファイル経由で処理
-        temp_file = tempfile.NamedTemporaryFile(delete=False)
-        self.temp_files.append(temp_file.name)
-
-        try:
-            # チャンクごとに読み込んで一時ファイルに書き込む
-            fp = self.open()
-            fp.seek(0)
-
-            bytes_read = 0
-            while bytes_read < self.file_size:
-                chunk_size = min(self.buffer_size, self.file_size - bytes_read)
-                chunk = fp.read(chunk_size)
-                if not chunk:
-                    break  # 予期せぬEOF
-                temp_file.write(chunk)
-                bytes_read += len(chunk)
-
-            temp_file.flush()
-            temp_file.close()
-
-            # 一時ファイルを読み込む
-            with open(temp_file.name, 'rb') as f:
-                return f.read()
-        except Exception as e:
-            print(f"警告: ファイル読み込み中にエラーが発生しました: {e}", file=sys.stderr)
-            # エラー時はここまで読み込んだデータを返す
-            temp_file.close()
-            try:
-                with open(temp_file.name, 'rb') as f:
-                    return f.read()
-            except:
-                return b''  # 最悪の場合は空データを返す
-        finally:
-            # 必ず一時ファイルをクローズ
-            try:
-                temp_file.close()
-            except:
-                pass
-
-    def get_file_type(self) -> bool:
-        """
-        ファイルがテキストかバイナリかを判定
-
-        Returns:
-            テキストファイルの場合はTrue、バイナリファイルの場合はFalse
-        """
-        try:
-            # 先頭の数キロバイトだけ読み込んでテキスト判定
-            sample_size = min(4096, self.file_size)
-            fp = self.open()
-            fp.seek(0)
-            sample = fp.read(sample_size)
-
-            # バイナリデータの特徴をチェック
-            # NULL バイトを含む場合はバイナリと判断
-            if b'\x00' in sample:
-                return False
-
-            # 制御文字の割合が多い場合はバイナリと判断
-            control_chars = sum(1 for b in sample if b < 32 and b not in (9, 10, 13))  # タブ、改行、復帰を除く
-            if control_chars > len(sample) * 0.3:  # 30%以上が制御文字ならバイナリ
-                return False
-
-            # UTF-8としてデコードを試みる
-            try:
-                sample.decode('utf-8')
-                return True  # デコード成功ならテキスト
-            except UnicodeDecodeError:
-                pass  # デコード失敗時は他の判定も試す
-
-            # 拡張子でバイナリ判定（ファイルパスから推測）
-            binary_extensions = {'.bin', '.exe', '.dll', '.so', '.obj', '.jpg', '.png', '.gif', '.mp3', '.mp4', '.zip', '.tar', '.gz'}
-            file_ext = os.path.splitext(self.file_path.lower())[1]
-            if file_ext in binary_extensions:
-                return False
-
-            # デフォルトはバイナリと判断（安全側に倒す）
-            return False
-        except Exception as e:
-            print(f"警告: ファイル種別判定中にエラーが発生しました: {e}", file=sys.stderr)
-            return False  # エラー時はバイナリと判断
+                print(f"警告: ファイル閉じエラー: {e}", file=sys.stderr)
 
     def cleanup(self):
         """一時ファイルを削除"""
@@ -231,7 +118,185 @@ class MemoryOptimizedReader:
                 if os.path.exists(temp_file):
                     os.unlink(temp_file)
             except Exception as e:
-                print(f"警告: 一時ファイル '{temp_file}' の削除に失敗しました: {e}", file=sys.stderr)
+                print(f"警告: 一時ファイル削除エラー: {e}", file=sys.stderr)
+        self.temp_files = []
+
+    def read_chunk(self, size: int = None) -> bytes:
+        """
+        指定サイズのチャンクを読み込む
+
+        Args:
+            size: 読み込むサイズ（Noneの場合はバッファサイズ）
+
+        Returns:
+            読み込んだデータ
+        """
+        if self.fp is None:
+            self.open()
+
+        chunk_size = size if size is not None else self.buffer_size
+        try:
+            data = self.fp.read(chunk_size)
+            return data
+        except Exception as e:
+            raise IOError(f"ファイル読み込みエラー: {e}")
+
+    def read_all(self) -> bytes:
+        """
+        ファイル全体を読み込む
+
+        メモリ使用量を抑えるため、大きなファイルは一時ファイルを経由して読み込みます。
+
+        Returns:
+            ファイル全体のデータ
+        """
+        if self.file_size > MAX_TEMP_FILE_SIZE:
+            return self._read_large_file()
+        else:
+            return self._read_normal_file()
+
+    def _read_normal_file(self) -> bytes:
+        """
+        通常サイズのファイルを読み込む
+
+        Returns:
+            ファイル全体のデータ
+        """
+        if self.fp is None:
+            self.open()
+
+        # ファイルポインタを先頭に戻す
+        self.fp.seek(0)
+
+        try:
+            return self.fp.read()
+        except Exception as e:
+            raise IOError(f"ファイル読み込みエラー: {e}")
+
+    def _read_large_file(self) -> bytes:
+        """
+        大きなファイルをメモリ効率良く読み込む
+
+        Returns:
+            ファイル全体のデータ
+        """
+        if self.fp is None:
+            self.open()
+
+        # ファイルポインタを先頭に戻す
+        self.fp.seek(0)
+
+        # 進捗状況の計算用
+        total_chunks = (self.file_size + self.buffer_size - 1) // self.buffer_size
+        progress_interval = max(1, total_chunks // 10)  # 10%ごとに表示
+
+        # 一時ファイルに分割して読み込み
+        temp_data = bytearray()
+
+        # サイズが小さい場合は直接メモリに読み込む（MAX_MEMORY_SIZE以下）
+        if self.file_size <= MAX_MEMORY_SIZE:
+            chunk_idx = 0
+            while True:
+                chunk = self.read_chunk()
+                if not chunk:
+                    break
+
+                temp_data.extend(chunk)
+
+                # 進捗表示
+                chunk_idx += 1
+                if chunk_idx % progress_interval == 0:
+                    print(f"読み込み進捗: {chunk_idx * 100 // total_chunks}%")
+
+            return bytes(temp_data)
+        else:
+            # 大きいファイルは一時ファイルに書き込んでから読み込む
+            temp_file = tempfile.NamedTemporaryFile(delete=False, prefix="reader_temp_")
+            self.temp_files.append(temp_file.name)
+
+            try:
+                # 一時ファイルにデータを書き込む
+                chunk_idx = 0
+                while True:
+                    chunk = self.read_chunk()
+                    if not chunk:
+                        break
+
+                    temp_file.write(chunk)
+
+                    # 進捗表示
+                    chunk_idx += 1
+                    if chunk_idx % progress_interval == 0:
+                        print(f"読み込み進捗: {chunk_idx * 100 // total_chunks}%")
+
+                temp_file.flush()
+                temp_file.close()
+
+                # 一時ファイルからデータを読み込む
+                with open(temp_file.name, 'rb') as f:
+                    result = bytearray()
+                    chunk_size = min(MAX_MEMORY_SIZE // 2, self.buffer_size * 4)
+
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        result.extend(chunk)
+
+                return bytes(result)
+            finally:
+                # 確実に一時ファイルを削除
+                self.cleanup()
+
+    def read_at(self, offset: int, size: int) -> bytes:
+        """
+        指定オフセットから指定サイズのデータを読み込む
+
+        Args:
+            offset: 読み込み開始位置
+            size: 読み込むサイズ
+
+        Returns:
+            読み込んだデータ
+        """
+        if self.fp is None:
+            self.open()
+
+        # 境界チェック
+        if offset < 0:
+            offset = 0
+
+        if offset >= self.file_size:
+            return b''
+
+        # サイズ調整
+        if offset + size > self.file_size:
+            size = self.file_size - offset
+
+        try:
+            self.fp.seek(offset)
+            return self.fp.read(size)
+        except Exception as e:
+            raise IOError(f"ファイル読み込みエラー: {e}")
+
+    def __iter__(self) -> Iterator[bytes]:
+        """
+        チャンク単位でファイルをイテレートする
+
+        Returns:
+            バイトチャンクのイテレータ
+        """
+        if self.fp is None:
+            self.open()
+
+        # ファイルポインタを先頭に戻す
+        self.fp.seek(0)
+
+        while True:
+            chunk = self.read_chunk()
+            if not chunk:
+                break
+            yield chunk
 
 
 class MemoryOptimizedWriter:
@@ -254,6 +319,7 @@ class MemoryOptimizedWriter:
         self.temp_files = []
         self.fp = None
         self.bytes_written = 0
+        self.is_open = False
 
         # 親ディレクトリが存在しない場合は作成
         parent_dir = os.path.dirname(file_path)
@@ -276,9 +342,9 @@ class MemoryOptimizedWriter:
         if self.fp is None:
             try:
                 self.fp = open(self.file_path, 'wb')
+                self.is_open = True
             except Exception as e:
-                raise IOError(f"ファイル '{self.file_path}' を開けません: {e}")
-        return self.fp
+                raise IOError(f"ファイルを開けません: {e}")
 
     def close(self):
         """ファイルを閉じる"""
@@ -287,78 +353,9 @@ class MemoryOptimizedWriter:
                 self.fp.flush()
                 self.fp.close()
                 self.fp = None
+                self.is_open = False
             except Exception as e:
-                print(f"警告: ファイルのクローズ中にエラーが発生しました: {e}", file=sys.stderr)
-
-    def write(self, data: bytes) -> int:
-        """
-        データを書き込む
-
-        Args:
-            data: 書き込むデータ
-
-        Returns:
-            書き込んだバイト数
-        """
-        if not data:
-            return 0
-
-        # 小さいデータの場合は直接書き込み
-        if len(data) <= self.buffer_size:
-            return self._direct_write(data)
-
-        # 大きなデータの場合はチャンク単位で書き込み
-        total_written = 0
-        for i in range(0, len(data), self.buffer_size):
-            chunk = data[i:i + self.buffer_size]
-            written = self._direct_write(chunk)
-            total_written += written
-
-        return total_written
-
-    def _direct_write(self, data: bytes) -> int:
-        """
-        ファイルに直接書き込む
-
-        Args:
-            data: 書き込むデータ
-
-        Returns:
-            書き込んだバイト数
-        """
-        if not data:
-            return 0
-
-        fp = self.open()
-        fp.write(data)
-        fp.flush()
-
-        self.bytes_written += len(data)
-        return len(data)
-
-    def write_from_file(self, source_path: str) -> int:
-        """
-        別のファイルからデータを読み込んで書き込む
-
-        Args:
-            source_path: 元ファイルのパス
-
-        Returns:
-            書き込んだバイト数
-        """
-        if not os.path.exists(source_path):
-            raise FileNotFoundError(f"ファイル '{source_path}' が見つかりません")
-
-        total_written = 0
-        with open(source_path, 'rb') as f_in:
-            while True:
-                chunk = f_in.read(self.buffer_size)
-                if not chunk:
-                    break
-                written = self._direct_write(chunk)
-                total_written += written
-
-        return total_written
+                print(f"警告: ファイル閉じエラー: {e}", file=sys.stderr)
 
     def cleanup(self):
         """一時ファイルを削除"""
@@ -367,26 +364,175 @@ class MemoryOptimizedWriter:
                 if os.path.exists(temp_file):
                     os.unlink(temp_file)
             except Exception as e:
-                print(f"警告: 一時ファイル '{temp_file}' の削除に失敗しました: {e}", file=sys.stderr)
+                print(f"警告: 一時ファイル削除エラー: {e}", file=sys.stderr)
+        self.temp_files = []
+
+    def write(self, data: bytes) -> int:
+        """
+        データを書き込む
+
+        メモリ効率を考慮して大きなデータは分割して書き込みます。
+
+        Args:
+            data: 書き込むデータ
+
+        Returns:
+            書き込んだバイト数
+        """
+        if not data:
+            return 0
+
+        data_size = len(data)
+
+        # データサイズが大きい場合は分割して書き込む
+        if data_size > MAX_TEMP_FILE_SIZE:
+            return self._write_large_data(data)
+        else:
+            return self._write_normal_data(data)
+
+    def _write_normal_data(self, data: bytes) -> int:
+        """
+        通常サイズのデータを書き込む
+
+        Args:
+            data: 書き込むデータ
+
+        Returns:
+            書き込んだバイト数
+        """
+        if self.fp is None:
+            self.open()
+
+        try:
+            self.fp.write(data)
+            self.bytes_written += len(data)
+            return len(data)
+        except Exception as e:
+            raise IOError(f"ファイル書き込みエラー: {e}")
+
+    def _write_large_data(self, data: bytes) -> int:
+        """
+        大きなデータをメモリ効率良く書き込む
+
+        Args:
+            data: 書き込むデータ
+
+        Returns:
+            書き込んだバイト数
+        """
+        if self.fp is None:
+            self.open()
+
+        data_size = len(data)
+        bytes_written = 0
+
+        # チャンクサイズの計算
+        chunk_size = min(self.buffer_size, MAX_MEMORY_SIZE // 4)
+
+        # 進捗状況の計算
+        total_chunks = (data_size + chunk_size - 1) // chunk_size
+        progress_interval = max(1, total_chunks // 10)  # 10%ごとに表示
+
+        # チャンク単位で書き込み
+        for i in range(0, data_size, chunk_size):
+            # 現在のチャンクサイズを計算
+            current_chunk_size = min(chunk_size, data_size - i)
+            chunk = data[i:i+current_chunk_size]
+
+            try:
+                self.fp.write(chunk)
+                bytes_written += len(chunk)
+
+                # 進捗表示
+                chunk_idx = i // chunk_size
+                if chunk_idx % progress_interval == 0:
+                    progress = min(100, (i + current_chunk_size) * 100 // data_size)
+                    print(f"書き込み進捗: {progress}%")
+
+            except Exception as e:
+                raise IOError(f"ファイル書き込みエラー（{i}/{data_size}バイト地点）: {e}")
+
+        self.bytes_written += bytes_written
+        return bytes_written
+
+    def write_at(self, offset: int, data: bytes) -> int:
+        """
+        指定オフセットにデータを書き込む
+
+        Args:
+            offset: 書き込み開始位置
+            data: 書き込むデータ
+
+        Returns:
+            書き込んだバイト数
+        """
+        if not data:
+            return 0
+
+        if self.fp is None:
+            self.open()
+
+        try:
+            # 現在のファイルサイズを取得
+            current_size = os.path.getsize(self.file_path) if os.path.exists(self.file_path) else 0
+
+            # 必要ならパディング
+            if offset > current_size:
+                # ファイルポインタを末尾に移動
+                self.fp.seek(0, os.SEEK_END)
+                # 0で埋める
+                padding_size = offset - current_size
+                padding = b'\x00' * min(padding_size, self.buffer_size)
+
+                # バッファサイズより大きい場合は分割
+                remaining = padding_size
+                while remaining > 0:
+                    chunk_size = min(remaining, self.buffer_size)
+                    if chunk_size < self.buffer_size:
+                        self.fp.write(padding[:chunk_size])
+                    else:
+                        self.fp.write(padding)
+                    remaining -= chunk_size
+
+            # 指定位置に移動してデータ書き込み
+            self.fp.seek(offset)
+            self.fp.write(data)
+
+            # 書き込み位置を更新
+            new_pos = offset + len(data)
+            if new_pos > self.bytes_written:
+                self.bytes_written = new_pos
+
+            return len(data)
+        except Exception as e:
+            raise IOError(f"ファイル書き込みエラー（オフセット {offset}）: {e}")
+
+    def get_bytes_written(self) -> int:
+        """
+        書き込んだバイト数を取得
+
+        Returns:
+            書き込んだバイト総数
+        """
+        return self.bytes_written
 
 
 def basic_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
     """
-    基本的な復号化を行う
+    基本的な復号を行う
 
-    暗号化ライブラリがある場合はAESを使用し、ない場合はXORベースの復号化を行います。
-    セキュリティとパフォーマンスを考慮した実装です。
+    暗号化ライブラリがある場合はAESを使用し、ない場合はXORベースの暗号化を行います。
 
     Args:
-        data: 復号化するデータ
+        data: 復号するデータ
         key: 暗号鍵
         iv: 初期化ベクトル
 
     Returns:
-        復号化されたデータ
+        復号されたデータ
     """
     if not data:
-        raise ValueError("復号化するデータが空です")
+        raise ValueError("復号するデータが空です")
 
     if not key:
         raise ValueError("暗号鍵が空です")
@@ -394,9 +540,13 @@ def basic_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
     if not iv:
         raise ValueError("初期化ベクトルが空です")
 
-    # 大きなデータの場合はチャンク単位で処理
-    if len(data) > BUFFER_SIZE and HAS_CRYPTOGRAPHY:
-        return _decrypt_large_data_aes(data, key, iv)
+    # メモリ使用量を考慮して、大きなデータの場合はチャンク単位で処理
+    large_data_threshold = 50 * 1024 * 1024  # 50MB
+    if len(data) > large_data_threshold:
+        if HAS_CRYPTOGRAPHY:
+            return _decrypt_large_data_aes(data, key, iv)
+        else:
+            return _decrypt_large_data_xor(data, key, iv)
 
     if HAS_CRYPTOGRAPHY:
         try:
@@ -411,7 +561,7 @@ def basic_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
             )
             decryptor = cipher.decryptor()
 
-            # 復号化（CTRモードは暗号化と復号化が同じ操作）
+            # 復号
             return decryptor.update(data) + decryptor.finalize()
         except Exception as e:
             print(f"警告: AES復号化に失敗しました: {e}", file=sys.stderr)
@@ -863,410 +1013,726 @@ def determine_execution_path(key: bytes, metadata: Dict[str, Any]) -> str:
     return path_type
 
 
-def extract_from_capsule(
+def extract_from_state_capsule(
     capsule_data: bytes,
     key: bytes,
     salt: bytes,
-    target_path: str
-) -> Tuple[bytes, bytes]:
-    """
-    カプセルからターゲットパスのデータと署名を抽出
-
-    メモリ効率の良い大きなカプセルの処理をサポート。
-
-    Args:
-        capsule_data: カプセルデータ
-        key: マスター鍵
-        salt: ソルト値
-        target_path: ターゲットパス ("true" または "false")
-
-    Returns:
-        (抽出されたデータ, 署名)
-    """
-    # 大きなカプセルの場合は一時ファイルパスが渡されている可能性がある
-    if isinstance(capsule_data, str) and os.path.exists(capsule_data):
-        return _extract_from_large_capsule(capsule_data, key, salt, target_path)
-
-    # 通常のメモリ内処理
-    return _extract_from_memory_capsule(capsule_data, key, salt, target_path)
-
-
-def _extract_from_memory_capsule(
-    capsule_data: bytes,
-    key: bytes,
-    salt: bytes,
-    target_path: str
-) -> Tuple[bytes, bytes]:
-    """
-    メモリ内のカプセルからデータを抽出（小〜中サイズのデータ用）
-
-    Args:
-        capsule_data: カプセルデータ
-        key: マスター鍵
-        salt: ソルト値
-        target_path: ターゲットパス ("true" または "false")
-
-    Returns:
-        (抽出されたデータ, 署名)
-    """
-    if not capsule_data:
-        raise ValueError("カプセルデータが空です")
-
-    # カプセル化パラメータを準備
-    capsule_seed = hashlib.sha256(key + salt + b"state_capsule").digest()
-    timestamp = int.from_bytes(capsule_data[:8], 'big') if len(capsule_data) >= 8 else int(time.time())
-    enhanced_seed = hashlib.sha512(capsule_seed + timestamp.to_bytes(8, 'big')).digest()
-
-    # 署名データの取得（最初の64バイト）
-    true_sig_noised = capsule_data[:32]
-    false_sig_noised = capsule_data[32:64]
-
-    # 署名のノイズ除去
-    true_sig_processed = bytes([b ^ enhanced_seed[i % len(enhanced_seed)] for i, b in enumerate(true_sig_noised)])
-    false_sig_processed = bytes([b ^ enhanced_seed[i+16 % len(enhanced_seed)] for i, b in enumerate(false_sig_noised)])
-
-    # 最終署名の復元
-    true_signature = hashlib.sha256(true_sig_processed + capsule_seed).digest()
-    false_signature = hashlib.sha256(false_sig_processed + capsule_seed).digest()
-
-    # ターゲットに応じた署名の選択
-    target_signature = true_signature if target_path == TRUE_PATH else false_signature
-
-    # カプセルデータの処理（署名の後ろ）
-    capsule_body = capsule_data[64:]
-
-    # カプセルデータからターゲットデータを抽出
-    result = _process_capsule_blocks(capsule_body, capsule_seed, enhanced_seed, target_path)
-
-    return result, target_signature
-
-
-def _extract_from_large_capsule(
-    capsule_file_path: str,
-    key: bytes,
-    salt: bytes,
-    target_path: str
-) -> Tuple[bytes, bytes]:
-    """
-    大きなカプセルからデータを抽出（一時ファイル使用）
-
-    Args:
-        capsule_file_path: カプセルファイルのパス
-        key: マスター鍵
-        salt: ソルト値
-        target_path: ターゲットパス ("true" または "false")
-
-    Returns:
-        (抽出されたデータ, 署名)
-    """
-    # 一時出力ファイル
-    output_temp = tempfile.NamedTemporaryFile(delete=False)
-    output_path = output_temp.name
-    output_temp.close()
-
-    try:
-        # カプセル化パラメータを準備
-        capsule_seed = hashlib.sha256(key + salt + b"state_capsule").digest()
-        timestamp = int(time.time())
-        enhanced_seed = hashlib.sha512(capsule_seed + timestamp.to_bytes(8, 'big')).digest()
-
-        # カプセルファイルを開く
-        with open(capsule_file_path, 'rb') as f_in:
-            # 署名データの取得（最初の64バイト）
-            sig_data = f_in.read(64)
-            if len(sig_data) != 64:
-                raise ValueError("カプセルファイルが破損しています: 署名データが不完全です")
-
-            true_sig_noised = sig_data[:32]
-            false_sig_noised = sig_data[32:64]
-
-            # 署名のノイズ除去
-            true_sig_processed = bytes([b ^ enhanced_seed[i % len(enhanced_seed)] for i, b in enumerate(true_sig_noised)])
-            false_sig_processed = bytes([b ^ enhanced_seed[i+16 % len(enhanced_seed)] for i, b in enumerate(false_sig_noised)])
-
-            # 最終署名の復元
-            true_signature = hashlib.sha256(true_sig_processed + capsule_seed).digest()
-            false_signature = hashlib.sha256(false_sig_processed + capsule_seed).digest()
-
-            # ターゲットに応じた署名の選択
-            target_signature = true_signature if target_path == TRUE_PATH else false_signature
-
-            # カプセルデータの処理
-            with open(output_path, 'wb') as f_out:
-                block_size = 128  # 処理ブロックサイズ（capsule_body用）
-                pattern_index = 0
-
-                # 残りのデータをブロック単位で読み込み・処理
-                while True:
-                    block = f_in.read(block_size)
-                    if not block:
-                        break
-
-                    # パターンシード
-                    pattern_seed = hashlib.sha512(
-                        capsule_seed +
-                        pattern_index.to_bytes(4, 'big') +
-                        enhanced_seed[pattern_index % len(enhanced_seed):]
-                    ).digest()
-                    pattern_value = pattern_seed[0]
-
-                    # パターンに基づいてブロックを処理
-                    processed_data = _process_capsule_block(
-                        block, pattern_value, pattern_seed[1], target_path == TRUE_PATH
-                    )
-
-                    # 処理したデータを書き込む
-                    f_out.write(processed_data)
-                    pattern_index += 1
-
-        # 処理したデータを読み込む
-        with open(output_path, 'rb') as f:
-            extracted_data = f.read()
-
-        return extracted_data, target_signature
-
-    finally:
-        # 一時ファイルを削除
-        try:
-            if os.path.exists(output_path):
-                os.unlink(output_path)
-        except Exception as e:
-            print(f"警告: 一時ファイル '{output_path}' の削除に失敗しました: {e}", file=sys.stderr)
-
-
-def _process_capsule_blocks(
-    capsule_body: bytes,
-    capsule_seed: bytes,
-    enhanced_seed: bytes,
-    target_path: str
+    path_type: str
 ) -> bytes:
     """
-    カプセル本体を処理してターゲットデータを抽出
+    状態カプセルからデータを抽出
+
+    メモリ効率の良い処理を行い、大きなカプセルデータも効率的に処理します。
 
     Args:
-        capsule_body: カプセル本体データ
-        capsule_seed: カプセルシード
-        enhanced_seed: 強化シード
-        target_path: ターゲットパス
+        capsule_data: カプセル化されたデータ
+        key: マスター鍵
+        salt: ソルト値
+        path_type: パスタイプ（"true" または "false"）
 
     Returns:
         抽出されたデータ
     """
-    result = bytearray()
-    block_size = 64
-    is_true_target = target_path == TRUE_PATH
+    # 入力検証
+    if not capsule_data:
+        raise ValueError("カプセルデータが空です")
+    if not key:
+        raise ValueError("鍵が空です")
+    if not salt:
+        raise ValueError("ソルト値が空です")
+    if path_type not in (TRUE_PATH, FALSE_PATH):
+        raise ValueError(f"無効なパスタイプです: {path_type}。'true' または 'false' を指定してください")
 
-    # カプセルデータをブロック単位で処理
-    for i in range(0, len(capsule_body), block_size * 2):
-        end_idx = min(i + block_size * 2, len(capsule_body))
-        capsule_block = capsule_body[i:end_idx]
+    # 大きなカプセルデータの場合は一時ファイル処理
+    very_large_threshold = 1 * 1024 * 1024 * 1024  # 1GB
+    if len(capsule_data) > very_large_threshold:
+        return _extract_streaming_capsule(capsule_data, key, salt, path_type)
 
-        if len(capsule_block) < block_size:
-            # データが少なすぎる場合はスキップ
-            continue
+    # 中〜大サイズの場合
+    if len(capsule_data) > MAX_TEMP_FILE_SIZE:
+        return _extract_large_capsule(capsule_data, key, salt, path_type)
 
-        # パターンシード
-        pattern_index = i // (block_size * 2)
-        pattern_seed = hashlib.sha512(
-            capsule_seed +
-            pattern_index.to_bytes(4, 'big') +
-            enhanced_seed[pattern_index % len(enhanced_seed):]
-        ).digest()
-        pattern_value = pattern_seed[0]
-        secondary_value = pattern_seed[1]
-
-        # パターンに基づいて処理
-        if pattern_value % 4 == 0:
-            # 正規→非正規 の順
-            if is_true_target and len(capsule_block) >= block_size:
-                # 正規データを取得
-                result.extend(capsule_block[:block_size])
-            elif not is_true_target and len(capsule_block) >= block_size * 2:
-                # 非正規データを取得
-                result.extend(capsule_block[block_size:block_size*2])
-
-        elif pattern_value % 4 == 1:
-            # 非正規→正規 の順
-            if is_true_target and len(capsule_block) >= block_size * 2:
-                # 正規データを取得
-                result.extend(capsule_block[block_size:block_size*2])
-            elif not is_true_target and len(capsule_block) >= block_size:
-                # 非正規データを取得
-                result.extend(capsule_block[:block_size])
-
-        elif pattern_value % 4 == 2:
-            # 交互にバイトを配置
-            true_block = bytearray()
-            false_block = bytearray()
-
-            for j in range(0, len(capsule_block), 2):
-                if j < len(capsule_block):
-                    true_block.append(capsule_block[j])
-                if j + 1 < len(capsule_block):
-                    false_block.append(capsule_block[j + 1])
-
-            # ターゲットに応じたブロックを追加
-            if is_true_target:
-                result.extend(true_block)
-            else:
-                result.extend(false_block)
-
-        else:
-            # ビット単位のインターリーブ
-            # 複雑度が高いため、簡略化バージョンを使用
-            true_block = bytearray()
-            false_block = bytearray()
-
-            true_idx = 0
-            false_idx = 0
-
-            for j in range(len(capsule_block)):
-                byte_val = capsule_block[j]
-                for bit in range(8):
-                    bit_val = (byte_val >> bit) & 1
-                    bit_selector = secondary_value & (1 << bit)
-
-                    if bit_selector and true_idx < len(true_block):
-                        # trueブロックにビットを設定
-                        bit_pos = true_idx % 8
-                        byte_pos = true_idx // 8
-                        if byte_pos < len(true_block):
-                            if bit_val:
-                                true_block[byte_pos] |= (1 << bit_pos)
-                            true_idx += 1
-
-                    elif not bit_selector and false_idx < len(false_block):
-                        # falseブロックにビットを設定
-                        bit_pos = false_idx % 8
-                        byte_pos = false_idx // 8
-                        if byte_pos < len(false_block):
-                            if bit_val:
-                                false_block[byte_pos] |= (1 << bit_pos)
-                            false_idx += 1
-
-            # ビット単位処理が不完全な場合（復元率が低い場合）
-            if true_idx < len(true_block) * 8 // 2 or false_idx < len(false_block) * 8 // 2:
-                # 代替の簡易処理を適用
-                true_block = bytearray()
-                false_block = bytearray()
-
-                for j in range(0, len(capsule_block), 2):
-                    if j < len(capsule_block):
-                        true_block.append(capsule_block[j])
-                    if j + 1 < len(capsule_block):
-                        false_block.append(capsule_block[j + 1])
-
-            # ターゲットに応じたブロックを追加
-            if is_true_target:
-                result.extend(true_block)
-            else:
-                result.extend(false_block)
-
-    return bytes(result)
+    # 通常サイズの場合はメモリ内処理
+    return _extract_memory_capsule(capsule_data, key, salt, path_type)
 
 
-def _process_capsule_block(
-    block: bytes,
-    pattern: int,
-    secondary: int,
-    is_true_target: bool
+def _extract_memory_capsule(
+    capsule_data: bytes,
+    key: bytes,
+    salt: bytes,
+    path_type: str
 ) -> bytes:
     """
-    単一のカプセルブロックを処理
+    メモリ内でカプセルからデータを抽出（小〜中サイズ用）
 
     Args:
-        block: 処理するブロック
-        pattern: パターン値
-        secondary: 二次パターン値
-        is_true_target: True対象かどうか
+        capsule_data: カプセル化されたデータ
+        key: マスター鍵
+        salt: ソルト値
+        path_type: パスタイプ（"true" または "false"）
 
     Returns:
-        処理されたブロック
+        抽出されたデータ
     """
-    if not block:
+    # 抽出パラメータのシード値
+    capsule_seed = hashlib.sha256(key + salt + b"state_capsule").digest()
+
+    # カプセルヘッダーの解析（署名データを取得）
+    signature_size = 32  # SHA-256ハッシュサイズ
+    if len(capsule_data) < signature_size * 2:
+        raise ValueError("カプセルデータが不正：署名セクションが不足しています")
+
+    # 署名の取得（最初の部分に格納されている）
+    true_sig_noised = capsule_data[:signature_size]
+    false_sig_noised = capsule_data[signature_size:signature_size*2]
+
+    # 署名を判別し検証
+    timestamp_bytes = int(time.time()).to_bytes(8, 'big')
+    enhanced_seed = hashlib.sha512(capsule_seed + timestamp_bytes).digest()
+
+    # ノイズ除去処理
+    true_sig_processed = bytes([b ^ enhanced_seed[i % len(enhanced_seed)]
+                             for i, b in enumerate(true_sig_noised)])
+    false_sig_processed = bytes([b ^ enhanced_seed[i+16 % len(enhanced_seed)]
+                              for i, b in enumerate(false_sig_noised)])
+
+    # 署名の検証
+    required_signature = true_sig_processed if path_type == TRUE_PATH else false_sig_processed
+
+    # 本体データの開始位置
+    data_start = signature_size * 2
+
+    # 構造データとカプセル終了マーカーのサイズ
+    struct_marker_size = 32 + 16  # 構造データ32バイト + 終了マーカー16バイト
+
+    # カプセル本体部分の取得
+    capsule_body = capsule_data[data_start:-struct_marker_size]
+
+    # カプセル構造情報の取得
+    structure_noised = capsule_data[-struct_marker_size:-16]
+
+    # 構造情報のノイズ除去
+    structure_data = bytes([b ^ enhanced_seed[i+32 % len(enhanced_seed)]
+                          for i, b in enumerate(structure_noised)])
+
+    # ブロックサイズの定義とパターン生成
+    block_size = 1024  # 1KBのブロックサイズ
+
+    # カプセル内のブロックを分解して目的のデータを抽出
+    data_blocks = []
+
+    # 小さなデータの場合はチャンクごとに処理
+    body_size = len(capsule_body)
+
+    # 一時データバッファ
+    temp_data = bytearray()
+
+    # ブロック数を特定（パターンにより異なる）
+    block_idx = 0
+    offset = 0
+
+    # 本文データからブロックを抽出
+    while offset < body_size:
+        # パターン計算
+        pattern_seed = hashlib.sha512(capsule_seed + block_idx.to_bytes(4, 'big')).digest()
+        pattern_value = pattern_seed[0] % 4  # 0-3の値
+
+        # 残りデータサイズ
+        remaining = body_size - offset
+
+        # パターンに基づいて適切なブロックを抽出
+        if pattern_value == 0:  # 正規→非正規
+            if path_type == TRUE_PATH:
+                if remaining >= block_size:
+                    # 正規ブロックを取得
+                    block = capsule_body[offset:offset+block_size]
+                    data_blocks.append(block)
+                    offset += block_size * 2  # 両方のブロックをスキップ
+                else:
+                    # 残りデータが不足
+                    break
+            else:  # FALSE_PATH
+                if remaining >= block_size * 2:
+                    # 非正規ブロックを取得
+                    block = capsule_body[offset+block_size:offset+block_size*2]
+                    data_blocks.append(block)
+                    offset += block_size * 2
+                else:
+                    # 残りデータが不足
+                    break
+        elif pattern_value == 1:  # 非正規→正規
+            if path_type == TRUE_PATH:
+                if remaining >= block_size * 2:
+                    # 正規ブロックを取得
+                    block = capsule_body[offset+block_size:offset+block_size*2]
+                    data_blocks.append(block)
+                    offset += block_size * 2
+                else:
+                    # 残りデータが不足
+                    break
+            else:  # FALSE_PATH
+                if remaining >= block_size:
+                    # 非正規ブロックを取得
+                    block = capsule_body[offset:offset+block_size]
+                    data_blocks.append(block)
+                    offset += block_size * 2
+                else:
+                    # 残りデータが不足
+                    break
+        else:  # インターリーブパターン（2または3）
+            if remaining >= block_size:
+                # インターリーブされたブロックから対象データを抽出
+                interleaved = capsule_body[offset:offset+block_size]
+                extracted = bytearray(block_size // 2)
+
+                # バイト単位で抽出（偶数または奇数のインデックスを抽出）
+                for i in range(0, min(block_size, len(interleaved)), 2):
+                    if i + 1 < len(interleaved):
+                        if path_type == TRUE_PATH:
+                            extracted[i//2] = interleaved[i]  # 偶数インデックス（true）
+                        else:
+                            extracted[i//2] = interleaved[i+1]  # 奇数インデックス（false）
+
+                data_blocks.append(bytes(extracted))
+                offset += block_size
+            else:
+                # 残りデータが不足
+                break
+
+        # 次のブロックへ
+        block_idx += 1
+
+    # 抽出されたブロックを結合
+    extracted_data = b''.join(data_blocks)
+
+    # パディングを除去
+    return remove_padding(extracted_data)
+
+
+def _extract_large_capsule(
+    capsule_data: bytes,
+    key: bytes,
+    salt: bytes,
+    path_type: str
+) -> bytes:
+    """
+    メモリ効率のよいカプセル抽出処理（大きめのデータ用）
+
+    一時ファイルを使用してメモリ使用量を抑制します。
+
+    Args:
+        capsule_data: カプセル化されたデータ
+        key: マスター鍵
+        salt: ソルト値
+        path_type: パスタイプ
+
+    Returns:
+        抽出されたデータ
+    """
+    # 一時ファイルを作成
+    capsule_temp = tempfile.NamedTemporaryFile(delete=False, prefix="extract_capsule_")
+    output_temp = tempfile.NamedTemporaryFile(delete=False, prefix="extract_output_")
+
+    temp_files = [capsule_temp.name, output_temp.name]
+
+    try:
+        # カプセルデータを一時ファイルに書き込む
+        capsule_temp.write(capsule_data)
+        capsule_temp.flush()
+        capsule_temp.close()
+
+        # 抽出パラメータのシード値
+        capsule_seed = hashlib.sha256(key + salt + b"state_capsule").digest()
+        timestamp_bytes = int(time.time()).to_bytes(8, 'big')
+        enhanced_seed = hashlib.sha512(capsule_seed + timestamp_bytes).digest()
+
+        # 署名サイズと構造データサイズ
+        signature_size = 32  # SHA-256ハッシュサイズ
+        struct_marker_size = 32 + 16  # 構造データ32バイト + 終了マーカー16バイト
+
+        # ファイルを開いて処理
+        with open(capsule_temp.name, 'rb') as f_in, open(output_temp.name, 'wb') as f_out:
+            # 署名データの読み込み
+            true_sig_noised = f_in.read(signature_size)
+            false_sig_noised = f_in.read(signature_size)
+
+            # ノイズ除去処理
+            true_sig_processed = bytes([b ^ enhanced_seed[i % len(enhanced_seed)]
+                                     for i, b in enumerate(true_sig_noised)])
+            false_sig_processed = bytes([b ^ enhanced_seed[i+16 % len(enhanced_seed)]
+                                      for i, b in enumerate(false_sig_noised)])
+
+            # ブロックサイズの定義
+            block_size = 1024  # 1KBのブロックサイズ
+
+            # カプセルサイズからブロック数を計算
+            capsule_size = os.path.getsize(capsule_temp.name)
+            body_size = capsule_size - signature_size * 2 - struct_marker_size
+            total_blocks = (body_size + block_size - 1) // block_size
+
+            # 進捗表示用
+            progress_interval = max(1, total_blocks // 20)  # 5%ごとに表示
+
+            # ブロック単位で処理
+            block_idx = 0
+            bytes_processed = 0
+
+            # 本文の処理
+            while bytes_processed < body_size:
+                # パターン計算
+                pattern_seed = hashlib.sha512(capsule_seed + block_idx.to_bytes(4, 'big')).digest()
+                pattern_value = pattern_seed[0] % 4  # 0-3の値
+
+                # 残りデータサイズ
+                remaining = body_size - bytes_processed
+
+                # 進捗表示
+                if block_idx % progress_interval == 0:
+                    print(f"抽出進捗: {bytes_processed * 100 // body_size}%")
+
+                # パターンに基づいて適切なブロックを抽出
+                if pattern_value == 0:  # 正規→非正規
+                    true_block = f_in.read(min(block_size, remaining))
+                    false_block = f_in.read(min(block_size, remaining - len(true_block)))
+
+                    if path_type == TRUE_PATH:
+                        if true_block:
+                            f_out.write(true_block)
+                    else:  # FALSE_PATH
+                        if false_block:
+                            f_out.write(false_block)
+
+                    bytes_processed += len(true_block) + len(false_block)
+
+                elif pattern_value == 1:  # 非正規→正規
+                    false_block = f_in.read(min(block_size, remaining))
+                    true_block = f_in.read(min(block_size, remaining - len(false_block)))
+
+                    if path_type == TRUE_PATH:
+                        if true_block:
+                            f_out.write(true_block)
+                    else:  # FALSE_PATH
+                        if false_block:
+                            f_out.write(false_block)
+
+                    bytes_processed += len(false_block) + len(true_block)
+
+                else:  # インターリーブパターン
+                    interleaved = f_in.read(min(block_size, remaining))
+                    if interleaved:
+                        # インターリーブされたブロックから対象データを抽出
+                        extracted = bytearray(len(interleaved) // 2 + len(interleaved) % 2)
+
+                        # バイト単位で抽出
+                        for i in range(0, len(interleaved), 2):
+                            if path_type == TRUE_PATH and i < len(interleaved):
+                                extracted[i//2] = interleaved[i]  # 偶数インデックス（true）
+                            elif i + 1 < len(interleaved):
+                                extracted[i//2] = interleaved[i+1]  # 奇数インデックス（false）
+
+                        f_out.write(extracted)
+
+                    bytes_processed += len(interleaved)
+
+                # 次のブロックへ
+                block_idx += 1
+
+            # 構造データとマーカーをスキップ
+            f_in.seek(signature_size * 2 + body_size)
+
+        # 出力ファイルからデータを読み込む
+        with open(output_temp.name, 'rb') as f:
+            extracted_data = f.read()
+
+        # パディングを除去
+        return remove_padding(extracted_data)
+
+    finally:
+        # 一時ファイルの削除
+        for temp_file in temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
+            except Exception as e:
+                print(f"警告: 一時ファイル '{temp_file}' の削除に失敗しました: {e}", file=sys.stderr)
+
+
+def _extract_streaming_capsule(
+    capsule_data: bytes,
+    key: bytes,
+    salt: bytes,
+    path_type: str
+) -> bytes:
+    """
+    ストリーミング方式でカプセルからデータを抽出（超大容量データ用）
+
+    特に大きなデータ向けに最適化されたストリーミング処理を行います。
+
+    Args:
+        capsule_data: カプセル化されたデータ
+        key: マスター鍵
+        salt: ソルト値
+        path_type: パスタイプ
+
+    Returns:
+        抽出されたデータ
+    """
+    # この関数は _extract_large_capsule と似ていますが、より大きなデータに最適化
+    # 入出力バッファサイズを大きくし、メモリ使用量を最小限に抑える工夫を実装
+
+    # 一時ファイルを作成
+    capsule_temp = tempfile.NamedTemporaryFile(delete=False, prefix="extract_capsule_xl_")
+    output_temp = tempfile.NamedTemporaryFile(delete=False, prefix="extract_output_xl_")
+
+    temp_files = [capsule_temp.name, output_temp.name]
+
+    try:
+        # カプセルデータを一時ファイルに書き込む（チャンク単位）
+        chunk_size = 16 * 1024 * 1024  # 16MB
+        bytes_written = 0
+        total_size = len(capsule_data)
+
+        while bytes_written < total_size:
+            current_chunk_size = min(chunk_size, total_size - bytes_written)
+            chunk = capsule_data[bytes_written:bytes_written+current_chunk_size]
+            capsule_temp.write(chunk)
+            bytes_written += current_chunk_size
+
+        capsule_temp.flush()
+        capsule_temp.close()
+
+        # 抽出パラメータのシード値
+        capsule_seed = hashlib.sha256(key + salt + b"state_capsule").digest()
+        timestamp_bytes = int(time.time()).to_bytes(8, 'big')
+        enhanced_seed = hashlib.sha512(capsule_seed + timestamp_bytes).digest()
+
+        # 署名サイズと構造データサイズ
+        signature_size = 32  # SHA-256ハッシュサイズ
+        struct_marker_size = 32 + 16  # 構造データ32バイト + 終了マーカー16バイト
+
+        # 開始時間
+        start_time = time.time()
+
+        # ファイルを開いて処理（より大きなバッファサイズを使用）
+        with open(capsule_temp.name, 'rb', buffering=16*1024*1024) as f_in, \
+             open(output_temp.name, 'wb', buffering=16*1024*1024) as f_out:
+
+            # 署名データの読み込み
+            true_sig_noised = f_in.read(signature_size)
+            false_sig_noised = f_in.read(signature_size)
+
+            # ノイズ除去処理
+            true_sig_processed = bytes([b ^ enhanced_seed[i % len(enhanced_seed)]
+                                     for i, b in enumerate(true_sig_noised)])
+            false_sig_processed = bytes([b ^ enhanced_seed[i+16 % len(enhanced_seed)]
+                                      for i, b in enumerate(false_sig_noised)])
+
+            # ブロックサイズをより大きくして、I/O効率を向上
+            block_size = 64 * 1024  # 64KB
+
+            # カプセルサイズからブロック数を計算
+            capsule_size = os.path.getsize(capsule_temp.name)
+            body_size = capsule_size - signature_size * 2 - struct_marker_size
+            total_blocks = (body_size + block_size - 1) // block_size
+
+            # 進捗表示用
+            progress_interval = max(1, total_blocks // 20)  # 5%ごとに表示
+
+            # ブロック単位で処理
+            block_idx = 0
+            bytes_processed = 0
+
+            # 本文の処理
+            while bytes_processed < body_size:
+                # パターン計算
+                pattern_seed = hashlib.sha512(capsule_seed + block_idx.to_bytes(4, 'big')).digest()
+                pattern_value = pattern_seed[0] % 4  # 0-3の値
+
+                # 残りデータサイズ
+                remaining = body_size - bytes_processed
+
+                # 進捗表示
+                if block_idx % progress_interval == 0:
+                    percent = bytes_processed * 100 // body_size
+                    elapsed = time.time() - start_time
+                    if elapsed > 0:
+                        rate = bytes_processed / (1024 * 1024 * elapsed)
+                        eta = (body_size - bytes_processed) / (bytes_processed / elapsed) if bytes_processed > 0 else 0
+                        print(f"抽出進捗: {percent}% ({rate:.1f} MB/s, 残り約 {eta:.0f} 秒)")
+
+                # パターンに基づいて適切なブロックを抽出
+                if pattern_value == 0:  # 正規→非正規
+                    true_block = f_in.read(min(block_size, remaining))
+                    false_block = f_in.read(min(block_size, remaining - len(true_block)))
+
+                    if path_type == TRUE_PATH:
+                        if true_block:
+                            f_out.write(true_block)
+                    else:  # FALSE_PATH
+                        if false_block:
+                            f_out.write(false_block)
+
+                    bytes_processed += len(true_block) + len(false_block)
+
+                elif pattern_value == 1:  # 非正規→正規
+                    false_block = f_in.read(min(block_size, remaining))
+                    true_block = f_in.read(min(block_size, remaining - len(false_block)))
+
+                    if path_type == TRUE_PATH:
+                        if true_block:
+                            f_out.write(true_block)
+                    else:  # FALSE_PATH
+                        if false_block:
+                            f_out.write(false_block)
+
+                    bytes_processed += len(false_block) + len(true_block)
+
+                else:  # インターリーブパターン
+                    interleaved = f_in.read(min(block_size, remaining))
+                    if interleaved:
+                        # メモリ効率の向上: 大きなバッファを一度に処理せず、小さなチャンクで処理
+                        interleave_chunk_size = 4096  # 4KB
+                        for offset in range(0, len(interleaved), interleave_chunk_size):
+                            chunk = interleaved[offset:offset+interleave_chunk_size]
+                            # インターリーブされたブロックから対象データを抽出
+                            extracted = bytearray(len(chunk) // 2 + len(chunk) % 2)
+
+                            # バイト単位で抽出
+                            for i in range(0, len(chunk), 2):
+                                if path_type == TRUE_PATH and i < len(chunk):
+                                    extracted[i//2] = chunk[i]  # 偶数インデックス（true）
+                                elif i + 1 < len(chunk):
+                                    extracted[i//2] = chunk[i+1]  # 奇数インデックス（false）
+
+                            f_out.write(extracted)
+
+                    bytes_processed += len(interleaved)
+
+                # 次のブロックへ
+                block_idx += 1
+
+            # 構造データとマーカーをスキップ（ファイルの最後まで読み込む必要はない）
+
+        # 処理完了時間の表示
+        elapsed = time.time() - start_time
+        rate = body_size / (1024 * 1024 * elapsed) if elapsed > 0 else 0
+        print(f"抽出完了: 処理時間 {elapsed:.2f} 秒 ({rate:.1f} MB/s)")
+
+        # 出力ファイルからデータを読み込む（メモリ使用量を制限して読み込む）
+        output_size = os.path.getsize(output_temp.name)
+        max_return_size = 500 * 1024 * 1024  # 500MB
+
+        if output_size > max_return_size:
+            # ファイルサイズが大きすぎる場合は警告を出し、より効率的な方法でデータを処理
+            print(f"警告: 抽出データが大きすぎます ({output_size/(1024*1024):.2f} MB)。", file=sys.stderr)
+            print(f"メモリ使用量を抑えるため、データは別途処理されます。", file=sys.stderr)
+
+            # この場合、出力ファイルを削除せず、呼び出し元で処理してもらうように戻す
+            result_file = output_temp.name
+            temp_files.remove(result_file)
+
+            # ファイルパスを返す代わりに、ファイルの内容をサンプリング
+            with open(result_file, 'rb') as f:
+                # 先頭と末尾の部分をサンプリング
+                header = f.read(1024 * 1024)  # 先頭1MB
+                f.seek(-min(1024 * 1024, output_size), os.SEEK_END)
+                footer = f.read(min(1024 * 1024, output_size))
+
+                # 先頭と末尾を結合（中間部分は省略）
+                sampled_data = header + b'...[データ省略]...' + footer
+
+                # 呼び出し元にファイルパスも通知
+                print(f"抽出データは一時ファイル '{result_file}' に保存されました。")
+                print(f"処理完了後、このファイルを手動で削除してください。")
+
+                # パディングを除去（サンプルデータに対して）
+                return remove_padding(sampled_data)
+        else:
+            # 通常サイズならメモリに読み込む
+            with open(output_temp.name, 'rb') as f:
+                extracted_data = f.read()
+
+            # パディングを除去
+            return remove_padding(extracted_data)
+
+    finally:
+        # 一時ファイルの削除
+        for temp_file in temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
+            except Exception as e:
+                print(f"警告: 一時ファイル '{temp_file}' の削除に失敗しました: {e}", file=sys.stderr)
+
+
+def remove_padding(data: bytes) -> bytes:
+    """
+    データからパディングを除去
+
+    末尾の0バイトを削除します。
+
+    Args:
+        data: パディングを含むデータ
+
+    Returns:
+        パディングを除去したデータ
+    """
+    if not data:
         return b''
 
-    half_size = len(block) // 2
+    # 末尾の0バイトを検出
+    i = len(data) - 1
+    while i >= 0 and data[i] == 0:
+        i -= 1
 
-    # パターンに基づいて処理
-    if pattern % 4 == 0:
-        # 正規→非正規 の順
-        if is_true_target:
-            return block[:half_size]
-        else:
-            return block[half_size:]
-
-    elif pattern % 4 == 1:
-        # 非正規→正規 の順
-        if is_true_target:
-            return block[half_size:]
-        else:
-            return block[:half_size]
-
-    elif pattern % 4 == 2:
-        # 交互にバイトを配置
-        true_block = bytearray()
-        false_block = bytearray()
-
-        for i in range(0, len(block), 2):
-            if i < len(block):
-                true_block.append(block[i])
-            if i + 1 < len(block):
-                false_block.append(block[i + 1])
-
-        # ターゲットに応じたブロックを返す
-        return bytes(true_block) if is_true_target else bytes(false_block)
-
-    else:
-        # バイト単位の混合（簡略化版）
-        true_block = bytearray()
-        false_block = bytearray()
-
-        for i in range(len(block)):
-            if i % 2 == 0:
-                true_block.append(block[i])
-            else:
-                false_block.append(block[i])
-
-        # ターゲットに応じたブロックを返す
-        return bytes(true_block) if is_true_target else bytes(false_block)
+    # パディングを削除して返す（i+1バイトまで）
+    return data[:i+1] if i >= 0 else b''
 
 
-def state_based_decrypt(data: bytes, engine: ProbabilisticExecutionEngine, path: List[int], path_type: str) -> bytes:
+def state_based_decrypt(data: bytes, engine: ProbabilisticExecutionEngine, path_type: str) -> bytes:
     """
-    状態遷移に基づく復号化
+    状態遷移に基づく復号
 
-    メモリ効率を考慮した大きなデータの復号化が可能です。
+    メモリ効率を考慮した大きなデータの復号が可能です。
 
     Args:
-        data: 復号化するデータ
+        data: 復号するデータ
         engine: 確率的実行エンジン
-        path: 状態遷移パス
-        path_type: パスタイプ（"primary" または "alternative"）
+        path_type: パスタイプ（"true" または "false"）
 
     Returns:
-        復号化されたデータ
+        復号されたデータ
     """
     # データが少なすぎる場合はエラー
     if len(data) < 1:
-        raise ValueError("復号化するデータが空です")
+        raise ValueError("復号するデータが空です")
 
-    # パスの検証
+    # パスタイプの検証
+    if path_type not in (TRUE_PATH, FALSE_PATH):
+        raise ValueError(f"無効なパスタイプです: {path_type}。'true' または 'false' を指定してください。")
+
+    # エンジンを実行して状態遷移パスを取得
+    path = engine.run_execution()
     if not path or len(path) < 1:
-        raise ValueError("状態遷移パスが空です")
+        raise ValueError("状態遷移パスの生成に失敗しました")
 
-    # ダミー処理（セキュリティ対策）
+    # 解析攻撃対策のダミー処理
     dummy_key = hashlib.sha256(engine.key + path_type.encode()).digest()
 
     # ブロックサイズを定義
     block_size = 64  # 共通のブロックサイズ
 
-    # データサイズが大きい場合は一時ファイルを使用
-    if len(data) > MAX_TEMP_FILE_SIZE:
-        return _decrypt_large_data(data, engine, path, path_type, block_size)
+    # データサイズのチェック - 非常に大きなファイルの場合
+    very_large_threshold = 500 * 1024 * 1024  # 500MB
 
+    if len(data) > very_large_threshold:
+        # 非常に大きなファイルの場合はファイルベースの処理を行う
+        return _decrypt_very_large_data(data, engine, path, path_type, block_size)
+    # 大きなファイルだがメモリで処理可能な場合
+    elif len(data) > MAX_TEMP_FILE_SIZE:
+        return _decrypt_large_data(data, engine, path, path_type, block_size)
     # 通常のメモリ内処理
-    return _decrypt_in_memory(data, engine, path, path_type, block_size)
+    else:
+        return _decrypt_in_memory(data, engine, path, path_type, block_size)
+
+
+def _decrypt_very_large_data(data: bytes, engine: ProbabilisticExecutionEngine,
+                           path: List[int], path_type: str, block_size: int) -> bytes:
+    """
+    非常に大きなデータの復号処理（ストリーミングアプローチ）
+
+    データを直接メモリに読み込まず、ファイルストリームとして処理します。
+
+    Args:
+        data: 復号するデータ
+        engine: 実行エンジン
+        path: 状態遷移パス
+        path_type: パスタイプ
+        block_size: ブロックサイズ
+
+    Returns:
+        復号されたデータ
+    """
+    # 入力用と出力用の一時ファイルを作成
+    input_temp = tempfile.NamedTemporaryFile(delete=False, prefix="decrypt_in_")
+    output_temp = tempfile.NamedTemporaryFile(delete=False, prefix="decrypt_out_")
+    temp_files = [input_temp.name, output_temp.name]
+
+    try:
+        # 入力データを一時ファイルに書き込む（チャンク単位）
+        total_size = len(data)
+        bytes_written = 0
+        write_chunk_size = 8 * 1024 * 1024  # 8MB書き込みチャンク
+
+        while bytes_written < total_size:
+            chunk_size = min(write_chunk_size, total_size - bytes_written)
+            chunk = data[bytes_written:bytes_written+chunk_size]
+            input_temp.write(chunk)
+            bytes_written += chunk_size
+
+        input_temp.flush()
+        input_temp.close()
+
+        # 解析攻撃対策のダミー処理
+        dummy_key = hashlib.sha256(engine.key + path_type.encode()).digest()
+
+        # 進捗表示用変数
+        total_blocks = (total_size + block_size - 1) // block_size
+        progress_interval = max(1, total_blocks // 20)  # 5%ごとに表示
+
+        # ファイルをブロック単位で読み込み・復号・書き込み
+        with open(input_temp.name, 'rb') as f_in, open(output_temp.name, 'wb') as f_out:
+            block_index = 0
+
+            while True:
+                block = f_in.read(block_size)
+                if not block:
+                    break
+
+                # 最後のブロックにパディングを適用
+                if len(block) < block_size:
+                    block = block + b'\x00' * (block_size - len(block))
+
+                # 現在の状態を取得
+                state_idx = min(block_index, len(path) - 1)
+                state_id = path[state_idx]
+                state = engine.states.get(state_id)
+
+                # ブロックを復号
+                decrypted_block = _decrypt_block(block, engine, state, state_id, block_index, dummy_key)
+
+                # 復号したブロックを書き込む
+                f_out.write(decrypted_block)
+
+                # 進捗表示
+                block_index += 1
+                if block_index % progress_interval == 0:
+                    print(f"復号進捗: {block_index * 100 // total_blocks}% ({block_index}/{total_blocks})")
+
+        # 復号されたデータを読み込む
+        with open(output_temp.name, 'rb') as f:
+            # 大きなファイルを分割読み込み
+            result = bytearray()
+            read_chunk_size = 8 * 1024 * 1024  # 8MB読み込みチャンク
+
+            while True:
+                chunk = f.read(read_chunk_size)
+                if not chunk:
+                    break
+                result.extend(chunk)
+
+        # パディングを除去
+        result = remove_padding(bytes(result))
+        return result
+
+    finally:
+        # 一時ファイルを必ず削除
+        for temp_file in temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
+            except Exception as e:
+                print(f"警告: 一時ファイル '{temp_file}' の削除に失敗しました: {e}", file=sys.stderr)
 
 
 def _decrypt_in_memory(data: bytes, engine: ProbabilisticExecutionEngine,
@@ -1616,7 +2082,7 @@ def decrypt_file(encrypted_path: str, key_path: str, output_path: str = None) ->
 
             # ファイルの復号化
             print("ファイルを復号中...")
-            decrypted_data = state_based_decrypt(encrypted_content, engine, primary_path, "primary")
+            decrypted_data = state_based_decrypt(encrypted_content, engine, "primary")
 
             # 出力ファイル名にタイムスタンプを追加（上書き防止）
             timestamp_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")

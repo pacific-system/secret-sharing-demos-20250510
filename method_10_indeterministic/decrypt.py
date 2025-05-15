@@ -65,11 +65,180 @@ TEXT_MARKER = b'TEXT\x00\x00\x00\x00'
 BINARY_MARKER = b'BINA\x00\x00\x00\x00'
 
 
+class MemoryOptimizedReader:
+    """
+    メモリを効率的に使用するファイル読み込みクラス
+
+    大きなファイルを分割してバッファリングして読み込み、メモリ使用量を最適化します。
+    """
+
+    def __init__(self, file_path: str, buffer_size: int = BUFFER_SIZE):
+        """
+        リーダーの初期化
+
+        Args:
+            file_path: 読み込むファイルのパス
+            buffer_size: 読み込みバッファのサイズ
+        """
+        self.file_path = file_path
+        self.buffer_size = buffer_size
+        self.file_size = os.path.getsize(file_path)
+        self.temp_files = []
+        self.fp = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        self.cleanup()
+
+    def open(self):
+        """ファイルを開く"""
+        if self.fp is None:
+            try:
+                self.fp = open(self.file_path, 'rb')
+            except Exception as e:
+                raise IOError(f"ファイル '{self.file_path}' を開けません: {e}")
+        return self.fp
+
+    def close(self):
+        """ファイルを閉じる"""
+        if self.fp is not None:
+            try:
+                self.fp.close()
+                self.fp = None
+            except Exception as e:
+                print(f"警告: ファイルのクローズ中にエラーが発生しました: {e}", file=sys.stderr)
+
+    def read_in_chunks(self) -> Generator[bytes, None, None]:
+        """
+        ファイルを一定サイズのチャンクで読み込む
+
+        Yields:
+            ファイルデータのチャンク
+        """
+        fp = self.open()
+        fp.seek(0)
+        while True:
+            chunk = fp.read(self.buffer_size)
+            if not chunk:
+                break
+            yield chunk
+
+    def read_all(self) -> bytes:
+        """
+        ファイル全体を読み込む
+
+        大きなファイルの場合はメモリ効率を考慮した読み込みを行います。
+
+        Returns:
+            ファイルの内容
+        """
+        # 小さいファイルの場合は直接読み込み
+        if self.file_size <= self.buffer_size:
+            fp = self.open()
+            fp.seek(0)
+            return fp.read()
+
+        # 大きなファイルの場合は一時ファイル経由で処理
+        temp_file = tempfile.NamedTemporaryFile(delete=False)
+        self.temp_files.append(temp_file.name)
+
+        try:
+            # チャンクごとに読み込んで一時ファイルに書き込む
+            fp = self.open()
+            fp.seek(0)
+
+            bytes_read = 0
+            while bytes_read < self.file_size:
+                chunk_size = min(self.buffer_size, self.file_size - bytes_read)
+                chunk = fp.read(chunk_size)
+                if not chunk:
+                    break  # 予期せぬEOF
+                temp_file.write(chunk)
+                bytes_read += len(chunk)
+
+            temp_file.flush()
+            temp_file.close()
+
+            # 一時ファイルを読み込む
+            with open(temp_file.name, 'rb') as f:
+                return f.read()
+        except Exception as e:
+            print(f"警告: ファイル読み込み中にエラーが発生しました: {e}", file=sys.stderr)
+            # エラー時はここまで読み込んだデータを返す
+            temp_file.close()
+            try:
+                with open(temp_file.name, 'rb') as f:
+                    return f.read()
+            except:
+                return b''  # 最悪の場合は空データを返す
+        finally:
+            # 必ず一時ファイルをクローズ
+            try:
+                temp_file.close()
+            except:
+                pass
+
+    def get_file_type(self) -> bool:
+        """
+        ファイルがテキストかバイナリかを判定
+
+        Returns:
+            テキストファイルの場合はTrue、バイナリファイルの場合はFalse
+        """
+        try:
+            # 先頭の数キロバイトだけ読み込んでテキスト判定
+            sample_size = min(4096, self.file_size)
+            fp = self.open()
+            fp.seek(0)
+            sample = fp.read(sample_size)
+
+            # バイナリデータの特徴をチェック
+            # NULL バイトを含む場合はバイナリと判断
+            if b'\x00' in sample:
+                return False
+
+            # 制御文字の割合が多い場合はバイナリと判断
+            control_chars = sum(1 for b in sample if b < 32 and b not in (9, 10, 13))  # タブ、改行、復帰を除く
+            if control_chars > len(sample) * 0.3:  # 30%以上が制御文字ならバイナリ
+                return False
+
+            # UTF-8としてデコードを試みる
+            try:
+                sample.decode('utf-8')
+                return True  # デコード成功ならテキスト
+            except UnicodeDecodeError:
+                pass  # デコード失敗時は他の判定も試す
+
+            # 拡張子でバイナリ判定（ファイルパスから推測）
+            binary_extensions = {'.bin', '.exe', '.dll', '.so', '.obj', '.jpg', '.png', '.gif', '.mp3', '.mp4', '.zip', '.tar', '.gz'}
+            file_ext = os.path.splitext(self.file_path.lower())[1]
+            if file_ext in binary_extensions:
+                return False
+
+            # デフォルトはバイナリと判断（安全側に倒す）
+            return False
+        except Exception as e:
+            print(f"警告: ファイル種別判定中にエラーが発生しました: {e}", file=sys.stderr)
+            return False  # エラー時はバイナリと判断
+
+    def cleanup(self):
+        """一時ファイルを削除"""
+        for temp_file in self.temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
+            except Exception as e:
+                print(f"警告: 一時ファイル '{temp_file}' の削除に失敗しました: {e}", file=sys.stderr)
+
+
 class MemoryOptimizedWriter:
     """
     メモリを効率的に使用するファイル書き込みクラス
 
-    大きなデータを効率的に書き込むためのクラス
+    大きなデータを分割して書き込み、メモリ使用量を最適化します。
     """
 
     def __init__(self, file_path: str, buffer_size: int = BUFFER_SIZE):
@@ -77,85 +246,128 @@ class MemoryOptimizedWriter:
         ライターの初期化
 
         Args:
-            file_path: 書き込み先ファイルパス
-            buffer_size: バッファサイズ
+            file_path: 書き込むファイルのパス
+            buffer_size: 書き込みバッファのサイズ
         """
         self.file_path = file_path
         self.buffer_size = buffer_size
-        self.temp_file = None
-        self.is_large_file = False
-        self.buffer = bytearray()
+        self.temp_files = []
+        self.fp = None
+        self.bytes_written = 0
+
+        # 親ディレクトリが存在しない場合は作成
+        parent_dir = os.path.dirname(file_path)
+        if parent_dir and not os.path.exists(parent_dir):
+            try:
+                os.makedirs(parent_dir, exist_ok=True)
+            except Exception as e:
+                raise IOError(f"ディレクトリ '{parent_dir}' を作成できません: {e}")
 
     def __enter__(self):
+        self.open()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.flush()
+        self.close()
         self.cleanup()
 
-    def write(self, data: bytes):
+    def open(self):
+        """ファイルを開く"""
+        if self.fp is None:
+            try:
+                self.fp = open(self.file_path, 'wb')
+            except Exception as e:
+                raise IOError(f"ファイル '{self.file_path}' を開けません: {e}")
+        return self.fp
+
+    def close(self):
+        """ファイルを閉じる"""
+        if self.fp is not None:
+            try:
+                self.fp.flush()
+                self.fp.close()
+                self.fp = None
+            except Exception as e:
+                print(f"警告: ファイルのクローズ中にエラーが発生しました: {e}", file=sys.stderr)
+
+    def write(self, data: bytes) -> int:
         """
         データを書き込む
 
         Args:
             data: 書き込むデータ
+
+        Returns:
+            書き込んだバイト数
         """
-        # バッファに追加
-        self.buffer.extend(data)
+        if not data:
+            return 0
 
-        # バッファサイズが大きい場合はフラッシュ
-        if len(self.buffer) >= self.buffer_size:
-            self.flush()
+        # 小さいデータの場合は直接書き込み
+        if len(data) <= self.buffer_size:
+            return self._direct_write(data)
 
-    def flush(self):
-        """バッファのデータをファイルに書き込む"""
-        if not self.buffer:
-            return
+        # 大きなデータの場合はチャンク単位で書き込み
+        total_written = 0
+        for i in range(0, len(data), self.buffer_size):
+            chunk = data[i:i + self.buffer_size]
+            written = self._direct_write(chunk)
+            total_written += written
 
-        if len(self.buffer) > MAX_TEMP_FILE_SIZE and not self.is_large_file:
-            # 大きなファイルの場合は一時ファイルを使用
-            self.is_large_file = True
-            if not self.temp_file:
-                self.temp_file = tempfile.NamedTemporaryFile(delete=False)
+        return total_written
 
-        if self.is_large_file:
-            # 一時ファイルに書き込み
-            if self.temp_file:
-                self.temp_file.write(self.buffer)
-                self.temp_file.flush()
-        else:
-            # 直接ファイルに書き込み
-            with open(self.file_path, 'ab') as f:
-                f.write(self.buffer)
-
-        # バッファをクリア
-        self.buffer = bytearray()
-
-    def finalize(self):
+    def _direct_write(self, data: bytes) -> int:
         """
-        書き込みを完了し、ファイルを閉じる
+        ファイルに直接書き込む
+
+        Args:
+            data: 書き込むデータ
+
+        Returns:
+            書き込んだバイト数
         """
-        self.flush()
+        if not data:
+            return 0
 
-        if self.is_large_file and self.temp_file:
-            # 一時ファイルを閉じる
-            self.temp_file.close()
+        fp = self.open()
+        fp.write(data)
+        fp.flush()
 
-            # 一時ファイルから本ファイルにコピー
-            with open(self.temp_file.name, 'rb') as src, open(self.file_path, 'wb') as dst:
-                while True:
-                    chunk = src.read(self.buffer_size)
-                    if not chunk:
-                        break
-                    dst.write(chunk)
+        self.bytes_written += len(data)
+        return len(data)
+
+    def write_from_file(self, source_path: str) -> int:
+        """
+        別のファイルからデータを読み込んで書き込む
+
+        Args:
+            source_path: 元ファイルのパス
+
+        Returns:
+            書き込んだバイト数
+        """
+        if not os.path.exists(source_path):
+            raise FileNotFoundError(f"ファイル '{source_path}' が見つかりません")
+
+        total_written = 0
+        with open(source_path, 'rb') as f_in:
+            while True:
+                chunk = f_in.read(self.buffer_size)
+                if not chunk:
+                    break
+                written = self._direct_write(chunk)
+                total_written += written
+
+        return total_written
 
     def cleanup(self):
         """一時ファイルを削除"""
-        if self.temp_file and os.path.exists(self.temp_file.name):
+        for temp_file in self.temp_files:
             try:
-                os.unlink(self.temp_file.name)
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
             except Exception as e:
-                print(f"警告: 一時ファイル '{self.temp_file.name}' の削除に失敗しました: {e}", file=sys.stderr)
+                print(f"警告: 一時ファイル '{temp_file}' の削除に失敗しました: {e}", file=sys.stderr)
 
 
 def basic_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
@@ -163,6 +375,7 @@ def basic_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
     基本的な復号化を行う
 
     暗号化ライブラリがある場合はAESを使用し、ない場合はXORベースの復号化を行います。
+    セキュリティとパフォーマンスを考慮した実装です。
 
     Args:
         data: 復号化するデータ
@@ -180,6 +393,10 @@ def basic_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
 
     if not iv:
         raise ValueError("初期化ベクトルが空です")
+
+    # 大きなデータの場合はチャンク単位で処理
+    if len(data) > BUFFER_SIZE and HAS_CRYPTOGRAPHY:
+        return _decrypt_large_data_aes(data, key, iv)
 
     if HAS_CRYPTOGRAPHY:
         try:
@@ -201,13 +418,100 @@ def basic_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
             print("XOR復号化にフォールバックします")
             # AES復号化に失敗した場合はXOR復号化にフォールバック
 
-    # XORベースの簡易復号化
-    # 鍵をデータサイズに拡張（セキュリティ強化版）
+    # XORベースの簡易復号化（セキュリティ強化版）
+    return _decrypt_xor(data, key, iv)
+
+
+def _decrypt_large_data_aes(data: bytes, key: bytes, iv: bytes) -> bytes:
+    """
+    AESを使用した大きなデータの復号化処理
+
+    メモリ効率を考慮して一時ファイルを使用します。
+
+    Args:
+        data: 復号化するデータ
+        key: 暗号鍵
+        iv: 初期化ベクトル
+
+    Returns:
+        復号化されたデータ
+    """
+    # 鍵とIVを正規化
+    normalized_key = normalize_key(key, 32)
+    normalized_iv = normalize_key(iv, 16)
+
+    # 暗号器を準備
+    cipher = Cipher(
+        algorithms.AES(normalized_key),
+        modes.CTR(normalized_iv),
+        backend=default_backend()
+    )
+    decryptor = cipher.decryptor()
+
+    # 一時ファイルを作成
+    temp_output = tempfile.NamedTemporaryFile(delete=False)
+
+    try:
+        # データをチャンク単位で処理
+        total_size = len(data)
+        bytes_processed = 0
+
+        while bytes_processed < total_size:
+            chunk_size = min(BUFFER_SIZE, total_size - bytes_processed)
+            chunk = data[bytes_processed:bytes_processed + chunk_size]
+
+            # チャンクを復号化
+            decrypted_chunk = decryptor.update(chunk)
+            temp_output.write(decrypted_chunk)
+
+            bytes_processed += chunk_size
+
+        # 最終ブロックを処理
+        final_block = decryptor.finalize()
+        if final_block:
+            temp_output.write(final_block)
+
+        temp_output.flush()
+        temp_output.close()
+
+        # 復号化されたデータを読み込む
+        with open(temp_output.name, 'rb') as f:
+            return f.read()
+
+    finally:
+        # 一時ファイルを削除
+        try:
+            if os.path.exists(temp_output.name):
+                os.unlink(temp_output.name)
+        except Exception as e:
+            print(f"警告: 一時ファイルの削除に失敗しました: {e}", file=sys.stderr)
+
+
+def _decrypt_xor(data: bytes, key: bytes, iv: bytes) -> bytes:
+    """
+    XORベースの復号化
+
+    簡易な復号化だが、セキュリティを高める工夫を追加。
+
+    Args:
+        data: 復号化するデータ
+        key: 暗号鍵
+        iv: 初期化ベクトル
+
+    Returns:
+        復号化されたデータ
+    """
+    # 大きなデータの場合はチャンク単位で処理
+    if len(data) > BUFFER_SIZE:
+        return _decrypt_large_data_xor(data, key, iv)
+
+    # 鍵をデータサイズに拡張
     extended_key = bytearray()
     segment_size = 32  # SHA-256のサイズ
 
     # データサイズに合わせて拡張鍵を生成
-    for i in range(0, len(data), segment_size):
+    key_rounds = (len(data) + segment_size - 1) // segment_size
+    for i in range(key_rounds):
         # ソルトとして位置情報とカウンタを使用してセキュリティを向上
         counter = i.to_bytes(8, 'big')
         segment_key = hashlib.sha256(key + iv + counter).digest()
@@ -216,9 +520,70 @@ def basic_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
     # データとXOR
     result = bytearray(len(data))
     for i in range(len(data)):
-        result[i] = data[i] ^ extended_key[i % len(extended_key)]
+        result[i] = data[i] ^ extended_key[i]
 
     return bytes(result)
+
+
+def _decrypt_large_data_xor(data: bytes, key: bytes, iv: bytes) -> bytes:
+    """
+    XORベースの大きなデータの復号化処理
+
+    メモリ効率を考慮して一時ファイルを使用します。
+
+    Args:
+        data: 復号化するデータ
+        key: 暗号鍵
+        iv: 初期化ベクトル
+
+    Returns:
+        復号化されたデータ
+    """
+    # 一時ファイルを作成
+    temp_output = tempfile.NamedTemporaryFile(delete=False)
+
+    try:
+        # データをチャンク単位で処理
+        total_size = len(data)
+        bytes_processed = 0
+
+        while bytes_processed < total_size:
+            chunk_size = min(BUFFER_SIZE, total_size - bytes_processed)
+            chunk = data[bytes_processed:bytes_processed + chunk_size]
+
+            # このチャンク用の拡張鍵を生成
+            start_segment = bytes_processed // 32
+            end_segment = (bytes_processed + chunk_size + 31) // 32
+            extended_key = bytearray()
+
+            for i in range(start_segment, end_segment):
+                counter = i.to_bytes(8, 'big')
+                segment_key = hashlib.sha256(key + iv + counter).digest()
+                extended_key.extend(segment_key)
+
+            # チャンクを復号化
+            decrypted_chunk = bytearray(chunk_size)
+            for i in range(chunk_size):
+                key_offset = i % len(extended_key)
+                decrypted_chunk[i] = chunk[i] ^ extended_key[key_offset]
+
+            temp_output.write(decrypted_chunk)
+            bytes_processed += chunk_size
+
+        temp_output.flush()
+        temp_output.close()
+
+        # 復号化されたデータを読み込む
+        with open(temp_output.name, 'rb') as f:
+            return f.read()
+
+    finally:
+        # 一時ファイルを削除
+        try:
+            if os.path.exists(temp_output.name):
+                os.unlink(temp_output.name)
+        except Exception as e:
+            print(f"警告: 一時ファイルの削除に失敗しました: {e}", file=sys.stderr)
 
 
 def normalize_key(key: bytes, target_size: int) -> bytes:
@@ -749,8 +1114,8 @@ def _process_capsule_blocks(
         else:
             # ビット単位のインターリーブ
             # 複雑度が高いため、簡略化バージョンを使用
-            true_block = bytearray(block_size)
-            false_block = bytearray(block_size)
+            true_block = bytearray()
+            false_block = bytearray()
 
             true_idx = 0
             false_idx = 0
@@ -867,7 +1232,7 @@ def _process_capsule_block(
         return bytes(true_block) if is_true_target else bytes(false_block)
 
 
-def state_based_decrypt(data: bytes, engine: ProbabilisticExecutionEngine, path_type: str) -> bytes:
+def state_based_decrypt(data: bytes, engine: ProbabilisticExecutionEngine, path: List[int], path_type: str) -> bytes:
     """
     状態遷移に基づく復号化
 
@@ -876,7 +1241,8 @@ def state_based_decrypt(data: bytes, engine: ProbabilisticExecutionEngine, path_
     Args:
         data: 復号化するデータ
         engine: 確率的実行エンジン
-        path_type: パスタイプ（"true" または "false"）
+        path: 状態遷移パス
+        path_type: パスタイプ（"primary" または "alternative"）
 
     Returns:
         復号化されたデータ
@@ -885,10 +1251,11 @@ def state_based_decrypt(data: bytes, engine: ProbabilisticExecutionEngine, path_
     if len(data) < 1:
         raise ValueError("復号化するデータが空です")
 
-    # エンジンを実行して状態遷移パスを取得
-    path = engine.run_execution()
+    # パスの検証
+    if not path or len(path) < 1:
+        raise ValueError("状態遷移パスが空です")
 
-    # 解析攻撃対策のダミー処理
+    # ダミー処理（セキュリティ対策）
     dummy_key = hashlib.sha256(engine.key + path_type.encode()).digest()
 
     # ブロックサイズを定義
@@ -943,6 +1310,14 @@ def _decrypt_in_memory(data: bytes, engine: ProbabilisticExecutionEngine,
         decrypted_block = _decrypt_block(block, engine, state, state_id, i, dummy_key)
         decrypted_blocks.append(decrypted_block)
 
+        # メモリ使用量を管理（大きな中間サイズのデータ用）
+        if i > 0 and i % 1000 == 0:
+            # 一時的なオブジェクトの参照を解放
+            block = None
+            if i % 10000 == 0:
+                import gc
+                gc.collect()
+
     # セキュリティ脆弱性が入らないよう、ダミーパスに対する処理も行うが結果は使用しない
     dummy_blocks = []
     for i, state_id in enumerate(dummy_path):
@@ -971,11 +1346,21 @@ def _decrypt_large_data(data: bytes, engine: ProbabilisticExecutionEngine,
     # 一時ファイルを作成
     temp_output = tempfile.NamedTemporaryFile(delete=False)
     temp_input = tempfile.NamedTemporaryFile(delete=False)
+    temp_files = [temp_input.name, temp_output.name]
 
     try:
-        # 入力データを一時ファイルに書き込む
-        with open(temp_input.name, 'wb') as f:
-            f.write(data)
+        # 入力データを一時ファイルに書き込む（チャンク単位）
+        total_size = len(data)
+        bytes_written = 0
+
+        while bytes_written < total_size:
+            chunk_size = min(BUFFER_SIZE, total_size - bytes_written)
+            chunk = data[bytes_written:bytes_written+chunk_size]
+            temp_input.write(chunk)
+            bytes_written += chunk_size
+
+        temp_input.flush()
+        temp_input.close()
 
         # 解析攻撃対策のダミー処理
         dummy_key = hashlib.sha256(engine.key + path_type.encode()).digest()
@@ -984,6 +1369,11 @@ def _decrypt_large_data(data: bytes, engine: ProbabilisticExecutionEngine,
         # ファイルをブロック単位で読み込み・復号化・書き込み
         with open(temp_input.name, 'rb') as f_in, open(temp_output.name, 'wb') as f_out:
             block_index = 0
+            total_blocks = (total_size + block_size - 1) // block_size
+
+            # 進捗表示用
+            progress_interval = max(1, total_blocks // 20)  # 5%ごとに表示
+            progress_next = progress_interval
 
             while True:
                 block = f_in.read(block_size)
@@ -995,7 +1385,7 @@ def _decrypt_large_data(data: bytes, engine: ProbabilisticExecutionEngine,
                 state_id = path[state_idx]
                 state = engine.states.get(state_id)
 
-                # ダミーパスの更新
+                # ダミーパスの更新（解析対策）
                 dummy_path.append(state_id)
 
                 # ブロックを復号化
@@ -1004,23 +1394,48 @@ def _decrypt_large_data(data: bytes, engine: ProbabilisticExecutionEngine,
                 # 復号化したブロックを書き込む
                 f_out.write(decrypted_block)
 
+                # 進捗表示
                 block_index += 1
+                if block_index >= progress_next:
+                    print(f"復号化進捗: {block_index * 100 // total_blocks}% ({block_index}/{total_blocks})")
+                    progress_next += progress_interval
+
+                # メモリ使用量を定期的に確認し、必要に応じてGCを促進
+                if block_index % 1000 == 0:
+                    # ダミー変数の明示的なクリア
+                    decrypted_block = None
+                    block = None
+                    import gc
+                    gc.collect()
 
         # ダミー処理（セキュリティ対策）
         for i, state_id in enumerate(dummy_path):
             dummy_seed = hashlib.sha256(f"dummy_{i}_{state_id}".encode() + dummy_key).digest()
 
-        # 復号化されたデータを読み込む
+        # 復号化されたデータを読み込む（チャンク単位）
+        result = bytearray()
         with open(temp_output.name, 'rb') as f:
-            return f.read()
+            while True:
+                chunk = f.read(BUFFER_SIZE)
+                if not chunk:
+                    break
+                result.extend(chunk)
 
+        return bytes(result)
+
+    except Exception as e:
+        print(f"大きなデータの復号化中にエラーが発生しました: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        raise
     finally:
-        # 一時ファイルを削除
-        try:
-            os.unlink(temp_input.name)
-            os.unlink(temp_output.name)
-        except Exception as e:
-            print(f"警告: 一時ファイルの削除に失敗しました: {e}", file=sys.stderr)
+        # 一時ファイルを必ず削除
+        for temp_file in temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.unlink(temp_file)
+            except Exception as e:
+                print(f"警告: 一時ファイル '{temp_file}' の削除に失敗しました: {e}", file=sys.stderr)
 
 
 def _decrypt_block(block: bytes, engine: ProbabilisticExecutionEngine,
@@ -1096,7 +1511,7 @@ def _decrypt_block(block: bytes, engine: ProbabilisticExecutionEngine,
     return temp_block
 
 
-def decrypt_file(encrypted_path: str, key_hex: str, output_path: str) -> bool:
+def decrypt_file(encrypted_path: str, key_path: str, output_path: str = None) -> bool:
     """
     暗号化ファイルを復号する
 
@@ -1104,191 +1519,128 @@ def decrypt_file(encrypted_path: str, key_hex: str, output_path: str) -> bool:
 
     Args:
         encrypted_path: 暗号化ファイルのパス
-        key_hex: 16進数形式の鍵
-        output_path: 出力ファイルのパス
+        key_path: 鍵ファイルのパス
+        output_path: 出力ファイルのパス（省略時は暗号化ファイル名から.encを除いたもの）
 
     Returns:
         復号化が成功したかどうか
     """
     try:
-        # 鍵のパース
-        try:
-            key = binascii.unhexlify(key_hex)
-        except binascii.Error:
-            raise ValueError("鍵のフォーマットが無効です。16進数形式の文字列が必要です。")
+        # 入力ファイルの存在確認
+        if not os.path.exists(encrypted_path):
+            raise FileNotFoundError(f"暗号化ファイル '{encrypted_path}' が見つかりません")
 
-        # 派生鍵かどうかを確認
-        is_derived_key = len(key) != KEY_SIZE_BYTES
-        if is_derived_key:
-            # 派生鍵（非正規鍵）の場合は逆変換を行う
-            key = hashlib.sha256(key + b"derived_key_reversal").digest()[:KEY_SIZE_BYTES]
+        if not os.path.exists(key_path):
+            raise FileNotFoundError(f"鍵ファイル '{key_path}' が見つかりません")
+
+        # 出力パスのデフォルト設定
+        if not output_path:
+            # 入力パスから.encを削除したものをデフォルトとする
+            if encrypted_path.lower().endswith('.enc'):
+                output_path = encrypted_path[:-4]
+            else:
+                output_path = f"{encrypted_path}.dec"
+
+        # 鍵ファイルの読み込み
+        print(f"鍵ファイル '{key_path}' を読み込み中...")
+        try:
+            with open(key_path, 'rb') as f:
+                key_data = f.read()
+                if not key_data:
+                    raise ValueError("鍵ファイルが空です")
+
+                key_info = json.loads(key_data.decode('utf-8'))
+        except json.JSONDecodeError:
+            raise ValueError("鍵ファイルの形式が不正です。JSON形式である必要があります。")
+
+        # 鍵情報の検証
+        if "version" not in key_info or key_info["version"] != VERSION:
+            raise ValueError(f"鍵のバージョンが一致しません。期待: {VERSION}, 実際: {key_info.get('version')}")
+
+        # マスター鍵の取得
+        try:
+            master_key = base64.b64decode(key_info["master_key"])
+        except:
+            raise ValueError("マスター鍵のデコードに失敗しました")
+
+        # 暗号化データの取得
+        try:
+            encrypted_data = base64.b64decode(key_info["encrypted_data"])
+        except:
+            raise ValueError("暗号化データのデコードに失敗しました")
+
+        # チェックサムの検証
+        if key_info.get("checksum") != hashlib.sha256(encrypted_data).hexdigest():
+            raise ValueError("チェックサムが一致しません。鍵ファイルが改ざんされている可能性があります。")
+
+        # 機密データの復号
+        encryption_key = hashlib.pbkdf2_hmac('sha256', master_key, b'key_encryption', 10000)
+        encryption_iv = hashlib.sha256(master_key + b'iv_for_key').digest()[:16]
+
+        try:
+            decrypted_sensitive = basic_decrypt(encrypted_data, encryption_key, encryption_iv)
+            sensitive_data = json.loads(decrypted_sensitive.decode('utf-8'))
+        except Exception as e:
+            raise ValueError(f"機密データの復号に失敗しました: {e}")
+
+        # パスと状態シードの取得
+        primary_path = sensitive_data["primary_path"]
+        alternative_path = sensitive_data["alternative_path"]
+
+        # ファイルタイプの取得
+        is_text = key_info.get("file_type") == "text"
+
+        # 状態シードの復元
+        state_seeds = {}
+        for state_id, seed_b64 in sensitive_data["state_seeds"].items():
+            try:
+                state_seeds[int(state_id)] = base64.b64decode(seed_b64)
+            except:
+                raise ValueError(f"状態シード {state_id} のデコードに失敗しました")
+
+        # エンジンの初期化
+        engine = ProbabilisticExecutionEngine()
+        engine.key = master_key
+
+        # 状態の復元
+        for state_id, seed in state_seeds.items():
+            engine.add_state(state_id, seed)
 
         # 暗号化ファイルの読み込み
         print(f"暗号化ファイル '{encrypted_path}' を読み込み中...")
-        encrypted_data = read_encrypted_file(encrypted_path)
+        with MemoryOptimizedReader(encrypted_path) as reader:
+            encrypted_content = reader.read_all()
 
-        # ソルト値の取得
-        salt = encrypted_data.get("salt")
-        if not salt:
-            raise ValueError("ファイルフォーマットが無効です: ソルト値が見つかりません")
+            if not encrypted_content:
+                raise ValueError("暗号化ファイルが空です")
 
-        # パスタイプの決定
-        path_type = TRUE_PATH
-        if is_derived_key:
-            # 派生鍵（非正規鍵）の場合
-            path_type = FALSE_PATH
+            # ファイルの復号化
+            print("ファイルを復号中...")
+            decrypted_data = state_based_decrypt(encrypted_content, engine, primary_path, "primary")
 
-        # 状態マトリクスの生成
-        if path_type == TRUE_PATH:
-            true_salt = hashlib.sha256(salt + b"true_salt").digest()
-            state_matrix = create_state_matrix_from_key(key, true_salt, STATE_MATRIX_SIZE)
-        else:
-            false_salt = hashlib.sha256(salt + b"false_salt").digest()
-            state_matrix = create_state_matrix_from_key(key, false_salt, STATE_MATRIX_SIZE)
+            # 出力ファイル名にタイムスタンプを追加（上書き防止）
+            timestamp_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            output_file_parts = os.path.splitext(output_path)
+            timestamped_output_path = f"{output_file_parts[0]}_{timestamp_str}{output_file_parts[1]}"
 
-        # 実行エンジンの作成
-        engine = create_engine_from_key(key, state_matrix, salt, path_type, STATE_TRANSITIONS)
-
-        # カプセルデータの取得
-        capsule_data = encrypted_data.get("capsule_data")
-        if capsule_data is None:
-            # 大きなファイルの場合は一時ファイルパスを使用
-            capsule_temp_file = encrypted_data.get("capsule_temp_file")
-            if not capsule_temp_file or not os.path.exists(capsule_temp_file):
-                raise ValueError("ファイルが破損しています: カプセルデータが見つかりません")
-            capsule_data = capsule_temp_file
-
-        # カプセルからデータと署名を抽出
-        print(f"{path_type} パスでカプセルデータを抽出中...")
-        extracted_data, signature = extract_from_capsule(capsule_data, key, salt, path_type)
-
-        # データの復号化
-        print(f"{path_type} パスでデータを復号中...")
-        decrypted_data = state_based_decrypt(extracted_data, engine, path_type)
-
-        # 署名の検証
-        expected_signature = _generate_signature(extracted_data, key, salt)
-        if signature != expected_signature:
-            # 署名が一致しない場合は警告
-            print("警告: データ署名が一致しません。データが改ざんされている可能性があります。", file=sys.stderr)
-            if ERROR_ON_SUSPICIOUS_BEHAVIOR:
-                raise ValueError("データ署名の検証に失敗しました")
-
-        # 出力ファイル名にタイムスタンプを追加（上書き防止）
-        timestamp_str = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-        output_file_parts = os.path.splitext(output_path)
-        timestamped_output_path = f"{output_file_parts[0]}_{timestamp_str}{output_file_parts[1]}"
-
-        # ファイルタイプマーカーの処理
-        is_text = False
-        if len(decrypted_data) >= 8:
-            file_type_marker = decrypted_data[:8]
-            if file_type_marker == TEXT_MARKER:
-                is_text = True
-                decrypted_data = decrypted_data[8:]  # マーカーを除去
-            elif file_type_marker == BINARY_MARKER:
-                decrypted_data = decrypted_data[8:]  # マーカーを除去
-            else:
-                # 不明なマーカー、そのまま出力
-                print("警告: 不明なファイルタイプマーカーです。データが破損している可能性があります。", file=sys.stderr)
-
-        # 大きなデータの場合は分割して書き込み
-        print(f"復号化データを '{timestamped_output_path}' に書き込み中...")
-
-        # メモリ最適化ライターを使用
-        with MemoryOptimizedWriter(timestamped_output_path) as writer:
-            # データの書き込み
-            if len(decrypted_data) > BUFFER_SIZE:
-                # 大きなデータはチャンク単位で書き込み
-                for i in range(0, len(decrypted_data), BUFFER_SIZE):
-                    chunk = decrypted_data[i:i+BUFFER_SIZE]
-                    writer.write(chunk)
-            else:
-                # 小さなデータは一括書き込み
+            # メモリ最適化ライターを使用して書き込み
+            print(f"復号化データを '{timestamped_output_path}' に書き込み中...")
+            with MemoryOptimizedWriter(timestamped_output_path) as writer:
                 writer.write(decrypted_data)
 
-            # 書き込みを確定
-            writer.finalize()
+            # ファイルのモード設定
+            os.chmod(timestamped_output_path, 0o644)  # rw-r--r--
 
-        # ファイルのモード設定
-        if is_text:
-            # テキストファイルの場合は読み書き権限
-            os.chmod(timestamped_output_path, 0o644)
-        else:
-            # バイナリファイルの場合は読み書き権限
-            os.chmod(timestamped_output_path, 0o644)
+            print(f"復号化が完了しました: {timestamped_output_path}")
+            print(f"ファイルタイプ: {'テキスト' if is_text else 'バイナリ'}")
 
-        print(f"復号化が完了しました: {timestamped_output_path}")
-        print(f"ファイルタイプ: {'テキスト' if is_text else 'バイナリ'}")
-
-        # 一時ファイルのクリーンアップ
-        _cleanup_temp_files(encrypted_data)
-
-        return True
+            return True
 
     except Exception as e:
         print(f"復号化エラー: {e}", file=sys.stderr)
         import traceback
         traceback.print_exc()
-
-        # 一時ファイルのクリーンアップを試みる
-        if 'encrypted_data' in locals():
-            _cleanup_temp_files(locals()['encrypted_data'])
-
         return False
-
-
-def _cleanup_temp_files(encrypted_data: Dict[str, Any]):
-    """
-    一時ファイルを削除する
-
-    Args:
-        encrypted_data: 暗号化データの辞書
-    """
-    # エントロピーの一時ファイルを削除
-    if "entropy_temp_file" in encrypted_data and encrypted_data["entropy_temp_file"]:
-        try:
-            temp_file = encrypted_data["entropy_temp_file"]
-            if os.path.exists(temp_file):
-                os.unlink(temp_file)
-        except Exception as e:
-            print(f"警告: 一時ファイルの削除に失敗しました: {e}", file=sys.stderr)
-
-    # カプセルの一時ファイルを削除
-    if "capsule_temp_file" in encrypted_data and encrypted_data["capsule_temp_file"]:
-        try:
-            temp_file = encrypted_data["capsule_temp_file"]
-            if os.path.exists(temp_file):
-                os.unlink(temp_file)
-        except Exception as e:
-            print(f"警告: 一時ファイルの削除に失敗しました: {e}", file=sys.stderr)
-
-
-def _generate_signature(data: bytes, key: bytes, salt: bytes) -> bytes:
-    """
-    データの署名を生成
-
-    Args:
-        data: 署名対象データ
-        key: 署名鍵
-        salt: ソルト値
-
-    Returns:
-        署名データ
-    """
-    # 署名シードの生成
-    signature_seed = hashlib.sha256(key + salt + b"signature").digest()
-
-    # データのハッシュ
-    data_hash = hashlib.sha256(data).digest()
-
-    # HMACを使用した署名
-    h = hashlib.sha256()
-    h.update(signature_seed)
-    h.update(data_hash)
-    h.update(salt)
-
-    return h.digest()
 
 
 def main():
@@ -1298,10 +1650,10 @@ def main():
     parser = argparse.ArgumentParser(description="不確定性転写暗号化方式 - 復号プログラム")
     parser.add_argument('--input', '-i', dest='input_path', required=True,
                         help='暗号化ファイルのパス')
-    parser.add_argument('--key', '-k', dest='key', required=True,
-                        help='復号鍵（16進数形式）')
-    parser.add_argument('--output', '-o', dest='output_path', required=True,
-                        help='出力ファイルパス')
+    parser.add_argument('--key', '-k', dest='key_path', required=True,
+                        help='鍵ファイルのパス')
+    parser.add_argument('--output', '-o', dest='output_path',
+                        help='出力ファイルパス（省略時は暗号化ファイル名から.encを除いたもの）')
     parser.add_argument('--verbose', '-v', action='store_true',
                         help='詳細モード')
 
@@ -1310,17 +1662,24 @@ def main():
     # 詳細モードの設定
     if args.verbose:
         print("詳細モード有効")
+        print(f"入力ファイル: {args.input_path}")
+        print(f"鍵ファイル: {args.key_path}")
+        print(f"出力ファイル: {args.output_path or '<入力ファイル名>.dec'}")
 
     # 入力ファイルの存在確認
     if not os.path.exists(args.input_path):
         print(f"エラー: 入力ファイル '{args.input_path}' が見つかりません", file=sys.stderr)
         return 1
 
+    if not os.path.exists(args.key_path):
+        print(f"エラー: 鍵ファイル '{args.key_path}' が見つかりません", file=sys.stderr)
+        return 1
+
     # 復号化実行
     success = decrypt_file(
-        args.input_path,
-        args.key,
-        args.output_path
+        encrypted_path=args.input_path,
+        key_path=args.key_path,
+        output_path=args.output_path
     )
 
     if success:

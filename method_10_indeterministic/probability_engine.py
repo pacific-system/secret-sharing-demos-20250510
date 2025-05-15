@@ -857,6 +857,11 @@ def obfuscate_execution_path(engine: ProbabilisticExecutionEngine) -> None:
     Args:
         engine: 確率的実行エンジン
     """
+    # engineがNoneの場合は早期リターン
+    if engine is None:
+        return
+
+    # エンジンの型チェック
     if not isinstance(engine, ProbabilisticExecutionEngine):
         raise TypeError("engine はProbabilisticExecutionEngineのインスタンスである必要があります")
 

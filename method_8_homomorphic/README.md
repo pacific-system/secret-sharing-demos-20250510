@@ -2,84 +2,85 @@
 
 ## 概要
 
-準同型暗号マスキング方式は、暗号文のまま演算可能な準同型暗号の特性を活用し、同一の暗号文から異なる 2 つの平文を復元できる機能を実現した暗号化システムです。
+このモジュールは、準同型暗号を用いたファイルのマスキング方式を実装しています。主要な特徴は以下の通りです：
 
-### 特徴
+1. **準同型性**: Paillier 暗号方式を用いて加法準同型性を提供します
+2. **区別不能性**: 真・偽の 2 種類のファイルを暗号化し、暗号文からはどちらが真のファイルか区別できないようにします
+3. **マスク変換**: 複雑なマスク関数を適用して、さらに識別困難性を高めています
+4. **多様なデータ対応**: テキスト、JSON、CSV、バイナリなど様々なデータ形式に対応しています
 
-- **準同型性質の活用**: 暗号文のまま演算可能な特性を利用したマスキング処理
-- **加法・乗法準同型性**: Paillier 暗号（加法準同型）と ElGamal 暗号（乗法準同型）を組み合わせたハイブリッド方式
-- **差分不可能性**: 計算量理論に基づく識別不可能性（Indistinguishability）を保証
-- **多項式時間攻撃耐性**: どんな多項式時間アルゴリズムでも真偽判別確率は 1/2+ε に制限
+## 主要コンポーネント
 
-## ファイル構成
-
-```
-method_8_homomorphic/
-├── __init__.py                # Pythonパッケージ化
-├── config.py                  # 設定ファイル
-├── homomorphic.py             # 準同型暗号の基本実装
-├── crypto_mask.py             # マスク生成と適用処理
-├── encrypt.py                 # 暗号化メインプログラム
-├── decrypt.py                 # 復号メインプログラム
-├── indistinguishable.py       # 識別不能性保証機能
-└── tests/                     # テストディレクトリ
-    ├── __init__.py            # テストパッケージ化
-    ├── test_homomorphic.py    # 準同型暗号テスト
-    ├── test_encrypt_decrypt.py # 暗号化・復号テスト
-    └── test_indistinguishability.py # 識別不能性テスト
-```
+- **encrypt.py**: ファイル暗号化機能を提供します
+- **decrypt.py**: ファイル復号機能を提供します
+- **homomorphic.py**: 準同型暗号の実装（Paillier 暗号システム）
+- **indistinguishable.py**: 区別不能性機能の実装
+- **crypto_mask.py**: マスク関数の実装
+- **crypto_adapters.py**: 様々なデータ形式に対応するためのアダプター
+- **key_analyzer.py**: 鍵の種類分析機能
+- **test_verification.py**: 検証テスト用スクリプト
 
 ## 使用方法
 
 ### 暗号化
 
 ```bash
-# 基本的な暗号化（デフォルト設定）
-python -m method_8_homomorphic.encrypt
-
-# パスを指定した暗号化
-python -m method_8_homomorphic.encrypt --true-file path/to/true.text --false-file path/to/false.text --output output.hmc
-
-# アルゴリズム指定
-python -m method_8_homomorphic.encrypt --algorithm paillier  # 加法準同型のみ
+python encrypt.py <true_file> <false_file> -o <output_file> [options]
 ```
+
+オプション:
+
+- `--verbose`: 詳細情報を表示
+- `--key <key>`: 暗号化に使用する鍵（指定しない場合は自動生成）
+- `--password <password>`: 鍵の代わりにパスワードを使用
+- `--force-data-type <type>`: データ形式を指定 (text, json, csv, binary, auto)
+- `--indistinguishable`: 識別不能性機能を有効化
+- `--advanced-mask`: 高度なマスク関数を使用
+- `--save-keys`: 生成された鍵を保存
 
 ### 復号
 
 ```bash
-# 暗号文の復号
-python -m method_8_homomorphic.decrypt encrypted.hmc --key your_key_here
-
-# 出力先指定
-python -m method_8_homomorphic.decrypt encrypted.hmc --key your_key_here --output decrypted.txt
+python decrypt.py <input_file> -o <output_file> [options]
 ```
 
-## 実装詳細
+オプション:
 
-準同型暗号マスキング方式は以下の技術要素で構成されています：
+- `--verbose`: 詳細情報を表示
+- `--key <key>`: 復号に使用する鍵
+- `--key-type <type>`: 鍵の種類を指定 (true, false, auto)
+- `--data-type <type>`: データ形式を指定 (text, json, csv, binary, auto)
+- `--use-enhanced-security`: 拡張セキュリティ機能を使用
 
-1. **準同型暗号化コア**:
+## テスト
 
-   - Paillier 暗号: 加法準同型性を持つ公開鍵暗号方式
-   - ElGamal 暗号: 乗法準同型性を持つ公開鍵暗号方式
+```bash
+python test_verification.py
+```
 
-2. **マスク関数生成**:
+このスクリプトは、UTF-8、JSON、CSV の各形式でのテストを実行し、結果をレポートとして出力します。
 
-   - 復号経路により異なるマスク関数を数学的に生成
-   - マスクの検出が計算論的に困難な設計
+## 技術仕様
 
-3. **識別不能性保証**:
-   - 同一の暗号文から異なる平文を導出する機構
-   - 暗号文解析から経路特定を不可能にする数学的仕組み
+### 暗号方式
 
-## 技術的背景
+Paillier 準同型暗号システムを使用しています。これは加法準同型性を持つ暗号方式で、暗号化されたデータに対して特定の演算が可能です。
 
-準同型暗号は、暗号文のまま特定の演算（加算や乗算など）を行える特性を持ちます。
-この特性を活用することで、暗号文に対して特定のマスク（変換）を適用し、
-復号時に鍵の種類に応じて異なる平文を復元する機能を実現しています。
+### 区別不能性メカニズム
 
-## 参考資料
+1. 統計的ノイズの追加
+2. 冗長性の導入
+3. 暗号文のランダム化
+4. マスク関数による変換
 
-- [Paillier 暗号の解説](https://en.wikipedia.org/wiki/Paillier_cryptosystem)
-- [ElGamal 暗号の解説](https://en.wikipedia.org/wiki/ElGamal_encryption)
-- [準同型暗号の活用例](https://homomorphicencryption.org/)
+これらの技術を組み合わせることで、攻撃者がプログラムを全て入手しても、復号されるファイルの真偽を判別できないようにしています。
+
+## 注意事項
+
+- 現在の実装では、特に日本語を含むテキストデータの完全な復元に課題があります
+- 準同型暗号の性質上、処理データの肥大化が発生します
+- 復号処理において、最終行のデータが欠損する可能性があります
+
+## ライセンス
+
+Copyright (c) 2025 暗号化方式研究

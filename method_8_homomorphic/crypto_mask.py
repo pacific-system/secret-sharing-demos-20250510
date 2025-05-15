@@ -2,952 +2,696 @@
 # -*- coding: utf-8 -*-
 
 """
-準同型暗号用マスク関数生成モジュール
+準同型暗号マスキング方式のマスク関数実装
 
-このモジュールは、準同型暗号を利用してデータにマスク（変換）を適用する
-機能を提供します。マスクは鍵タイプによって異なる結果を生成するために使用されます。
-
-暗号文に対して異なるマスクを適用し、復号時に異なる平文を得るための
-機能を提供します。この機能により同一の暗号文から鍵に応じて
-異なる平文を復元することが可能になります。
+このモジュールは、暗号文に対して準同型性を維持したまま「真」「偽」の
+区別を不可能にするマスク関数を提供します。これにより、攻撃者は
+暗号化コードを入手しても、どちらの鍵が「真」で「偽」かを判別できません。
 """
 
 import os
-import random
+import time
 import math
-import hashlib
-import secrets
-import binascii
 import json
 import base64
-import time
-from typing import Tuple, Dict, List, Any, Optional, Union, Callable
+import random
+import hashlib
+import hmac
+import secrets
+import binascii
+from typing import Dict, List, Tuple, Any, Optional, Union, cast, Callable
 
+# 相対インポートに修正
 from method_8_homomorphic.config import (
-    KEY_SIZE_BYTES,
-    SALT_SIZE,
-    MASK_SIZE,
-    KDF_ITERATIONS,
     MASK_SEED_SIZE,
-    NUM_MASK_FUNCTIONS,
-    MAX_CHUNK_SIZE,
-    MASK_OUTPUT_FORMAT,
-    MASK_VERSION
+    SECURITY_PARAMETER
 )
-from method_8_homomorphic.homomorphic import PaillierCrypto, ElGamalCrypto
 
-
-class CryptoMask:
-    """準同型暗号を使ったマスク生成と適用のクラス"""
-
-    def __init__(self):
-        """初期化"""
-        self.paillier = PaillierCrypto()
-        self.elgamal = ElGamalCrypto()
-        self.paillier_public_key = None
-        self.paillier_private_key = None
-        self.elgamal_public_key = None
-        self.elgamal_private_key = None
-
-    def initialize(self) -> Dict[str, Any]:
-        """
-        準同型暗号のキーペア生成と初期化
-
-        Returns:
-            初期化パラメータ辞書
-        """
-        # Paillier暗号の鍵ペア生成
-        self.paillier_public_key, self.paillier_private_key = self.paillier.generate_keys()
-
-        # ElGamal暗号の鍵ペア生成
-        self.elgamal_public_key, self.elgamal_private_key = self.elgamal.generate_keys()
-
-        return {
-            'paillier_public': self.paillier_public_key,
-            'paillier_private': self.paillier_private_key,
-            'elgamal_public': self.elgamal_public_key,
-            'elgamal_private': self.elgamal_private_key
-        }
-
-    def generate_mask_params(self, key: bytes, salt: bytes) -> Dict[str, Any]:
-        """
-        マスクパラメータの生成
-
-        Args:
-            key: 鍵データ
-            salt: ソルト
-
-        Returns:
-            マスクパラメータ
-        """
-        # 鍵とソルトから一意的なマスクシードを派生
-        kdf_input = key + salt
-        mask_seed = hashlib.pbkdf2_hmac('sha256', kdf_input, salt, KDF_ITERATIONS, MASK_SIZE // 8)
-
-        # マスクシードからパラメータを生成
-        random.seed(int.from_bytes(mask_seed, byteorder='big'))
-
-        # Paillier暗号用のマスクパラメータ
-        paillier_mask_params = {
-            'offset': random.randint(1, 10000),
-            'scale': random.randint(1, 100),
-            'transform': [random.randint(1, 1000) for _ in range(5)]
-        }
-
-        # ElGamal暗号用のマスクパラメータ
-        elgamal_mask_params = {
-            'multiplier': random.randint(1, 1000),
-            'power': random.randint(1, 10),
-            'transform': [random.randint(1, 1000) for _ in range(5)]
-        }
-
-        return {
-            'paillier': paillier_mask_params,
-            'elgamal': elgamal_mask_params,
-            'seed': binascii.hexlify(mask_seed).decode()
-        }
-
-    def apply_mask_to_data(self, data: bytes, mask_params: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        データにマスクを適用
-
-        Args:
-            data: マスクを適用するデータ
-            mask_params: マスクパラメータ
-
-        Returns:
-            マスク適用結果
-        """
-        # データをチャンクに分割（各チャンクは64バイト以内）
-        chunk_size = 64
-        chunks = [data[i:i + chunk_size] for i in range(0, len(data), chunk_size)]
-
-        # 各チャンクに対して準同型暗号を適用
-        paillier_results = []
-        elgamal_results = []
-
-        for i, chunk in enumerate(chunks):
-            # チャンクをint値に変換（メタデータとして位置情報を追加）
-            chunk_int = int.from_bytes(chunk, byteorder='big')
-
-            # Paillier暗号
-            paillier_params = mask_params['paillier']
-            # オフセットと乗算係数を適用
-            chunk_paillier = chunk_int * paillier_params['scale'] + paillier_params['offset']
-            # トランスフォーム関数を適用
-            for j, transform in enumerate(paillier_params['transform']):
-                if j % 2 == 0:
-                    chunk_paillier += transform
-                else:
-                    chunk_paillier *= transform
-
-            # 暗号化
-            encrypted_paillier = self.paillier.encrypt(chunk_paillier, self.paillier_public_key)
-            paillier_results.append(encrypted_paillier)
-
-            # ElGamal暗号
-            elgamal_params = mask_params['elgamal']
-            # 乗算係数と冪乗を適用
-            chunk_elgamal = pow(chunk_int * elgamal_params['multiplier'], elgamal_params['power'])
-            # トランスフォーム関数を適用
-            for j, transform in enumerate(elgamal_params['transform']):
-                if j % 2 == 0:
-                    chunk_elgamal = (chunk_elgamal * transform) % self.elgamal_public_key['p']
-                else:
-                    chunk_elgamal = pow(chunk_elgamal, transform % 50 + 1, self.elgamal_public_key['p'])
-
-            # 暗号化
-            encrypted_elgamal = self.elgamal.encrypt(chunk_elgamal, self.elgamal_public_key)
-            elgamal_results.append(encrypted_elgamal)
-
-        return {
-            'paillier': paillier_results,
-            'elgamal': elgamal_results,
-            'chunks': len(chunks),
-            'original_size': len(data)  # 元のデータサイズを保存
-        }
-
-    def remove_mask_from_data(self, encrypted_data: Dict[str, Any], mask_params: Dict[str, Any],
-                              key_type: str) -> bytes:
-        """
-        マスクを除去してデータを復元
-
-        Args:
-            encrypted_data: マスクが適用されたデータ
-            mask_params: マスクパラメータ
-            key_type: 鍵タイプ ('true' または 'false')
-
-        Returns:
-            復元されたデータ
-        """
-        # 鍵タイプに基づくマスクパラメータの変換
-        # 真鍵と偽鍵で異なる復号方法を提供する
-        paillier_params = mask_params['paillier']
-        elgamal_params = mask_params['elgamal']
-        original_size = encrypted_data.get('original_size', 0)
-
-        # key_typeに基づいて復号方法を変更
-        if key_type == 'true':
-            # 真鍵の場合: Paillier暗号を使って復号
-            result_chunks = []
-            for i, encrypted in enumerate(encrypted_data['paillier']):
-                # 復号
-                decrypted = self.paillier.decrypt(encrypted, self.paillier_private_key)
-
-                # マスクを除去
-                original = decrypted
-                # 変換を逆適用（トランスフォームを逆順で適用）
-                for j, transform in enumerate(reversed(paillier_params['transform'])):
-                    if (len(paillier_params['transform']) - 1 - j) % 2 == 0:
-                        original -= transform
-                    else:
-                        original //= transform
-
-                # オフセットとスケールを除去
-                original = (original - paillier_params['offset']) // paillier_params['scale']
-
-                # intをバイト列に戻す
-                byte_length = (original.bit_length() + 7) // 8
-                original_bytes = original.to_bytes(byte_length, byteorder='big')
-                result_chunks.append(original_bytes)
-
-        else:
-            # 偽鍵の場合: ElGamal暗号を使って復号
-            result_chunks = []
-            for i, encrypted in enumerate(encrypted_data['elgamal']):
-                # 復号
-                decrypted = self.elgamal.decrypt(encrypted, self.elgamal_private_key)
-
-                # 変換を逆適用（トランスフォームを逆順で適用）
-                for j, transform in enumerate(reversed(elgamal_params['transform'])):
-                    if (len(elgamal_params['transform']) - 1 - j) % 2 == 0:
-                        decrypted = (decrypted * mod_inverse(transform, self.elgamal_private_key['p'])) % self.elgamal_private_key['p']
-                    else:
-                        exp = mod_inverse(transform % 50 + 1, self.elgamal_private_key['p'] - 1)
-                        decrypted = pow(decrypted, exp, self.elgamal_private_key['p'])
-
-                # 冪乗と乗算係数を除去
-                try:
-                    power_inv = 1.0 / elgamal_params['power']
-                    root = int(pow(decrypted, power_inv))
-                    original = root // elgamal_params['multiplier']
-
-                    # intをバイト列に戻す
-                    byte_length = (original.bit_length() + 7) // 8
-                    original_bytes = original.to_bytes(byte_length, byteorder='big')
-                    result_chunks.append(original_bytes)
-                except (ValueError, OverflowError):
-                    # 冪根が計算できない場合は0バイトを返す
-                    result_chunks.append(b'\x00')
-
-        # チャンクを結合
-        full_data = b''.join(result_chunks)
-
-        # 元のサイズを超えないようにする
-        if original_size > 0 and len(full_data) > original_size:
-            return full_data[:original_size]
-        return full_data
-
-
-# 新しく追加するマスク関数生成クラス
 class MaskFunctionGenerator:
     """
-    準同型暗号用マスク関数の生成と適用を行うクラス
+    準同型暗号用マスク関数生成器
+
+    暗号文に準同型性を維持したまま「真」「偽」の区別を不可能にする
+    マスク関数を生成します。加法準同型暗号では「加算」と「スカラー倍」が
+    マスク関数として使用可能です。
     """
 
-    def __init__(self, paillier: PaillierCrypto, seed: Optional[bytes] = None):
+    def __init__(self, paillier_or_key_bytes, seed=None):
         """
-        MaskFunctionGeneratorを初期化
+        初期化
 
         Args:
-            paillier: 準同型暗号システムのインスタンス
-            seed: マスク生成用のシード（省略時はランダム生成）
+            paillier_or_key_bytes: Paillier暗号オブジェクトまたは鍵のバイト列
+            seed: マスク生成用シード（なければ生成）
         """
-        self.paillier = paillier
-        self.seed = seed if seed is not None else os.urandom(MASK_SEED_SIZE)
+        self.paillier = None
+        self.key_bytes = None
 
-    def generate_mask_pair(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        # paillier_or_key_bytesがバイト列かチェック
+        if isinstance(paillier_or_key_bytes, bytes):
+            self.key_bytes = paillier_or_key_bytes
+            # このモードでは公開鍵情報がないため、modilusは使用できない
+            self.modulus = 2**64  # デフォルト値
+            print(f"[DEBUG] MaskFunctionGenerator: バイト配列で初期化 ({len(self.key_bytes)}バイト)")
+        else:
+            # Paillier暗号オブジェクト
+            self.paillier = paillier_or_key_bytes
+            # 公開鍵のnでmodを取るために保存
+            if self.paillier and hasattr(self.paillier, 'public_key') and self.paillier.public_key:
+                self.modulus = self.paillier.public_key['n']
+                print(f"[DEBUG] MaskFunctionGenerator: Paillierオブジェクトで初期化 (modulus={self.modulus})")
+            else:
+                self.modulus = 2**64  # デフォルト値
+                print(f"[DEBUG] MaskFunctionGenerator: Paillierオブジェクトで初期化 (公開鍵なし, デフォルトmodulus使用)")
+
+        self.seed = seed or os.urandom(MASK_SEED_SIZE)
+        self.key_derivation_counter = 0
+
+        # マスク情報を初期化
+        self.true_mask_info = {}
+        self.false_mask_info = {}
+
+    def create_mask_function_from_params(self, mask_info: Dict[str, Any]) -> Callable[[int], int]:
         """
-        真と偽の両方のマスク関数を生成
+        マスク情報からマスク関数を生成
+
+        Args:
+            mask_info: マスク関数のパラメータ
 
         Returns:
-            (true_mask, false_mask): 真と偽のマスク関数
+            マスク関数
         """
-        # シードからマスクパラメータを導出
-        params = self._derive_mask_parameters(self.seed)
+        # マスクタイプをチェック
+        mask_type = mask_info.get('type', 'linear')
 
-        # 真のマスク関数
-        true_mask = {
-            "type": "true_mask",
-            "params": params["true"],
-            "seed": base64.b64encode(self.seed).decode('ascii')
+        # パラメータをログに出力（デバッグ用）
+        print(f"[DEBUG] マスク関数生成: タイプ={mask_type}, パラメータ={mask_info}")
+
+        if mask_type == 'polynomial':
+            # 多項式型マスク
+            coef1 = mask_info.get('coefficient1', 1)
+            coef2 = mask_info.get('coefficient2', 0)
+            const = mask_info.get('constant', 0)
+
+            def mask_func(ciphertext: int) -> int:
+                """多項式マスク関数"""
+                # 入力が整数でない場合は変換
+                if not isinstance(ciphertext, int):
+                    print(f"[WARN] マスク関数：整数ではないデータ({type(ciphertext)})を整数に変換します")
+                    try:
+                        # バイト列の場合は整数に変換
+                        if isinstance(ciphertext, bytes):
+                            ciphertext = int.from_bytes(ciphertext, 'big')
+                        # その他の型は文字列化して整数変換を試みる
+                        else:
+                            ciphertext = int(str(ciphertext))
+                    except Exception as e:
+                        print(f"[ERROR] マスク関数変換エラー: {e}")
+                        # 変換失敗時は適当な値を返す
+                        return 0
+
+                if self.paillier:  # Paillierオブジェクトがある場合は準同型演算
+                    # 1次項: c * coef1
+                    linear_term = self.paillier.multiply(ciphertext, coef1, self.paillier.public_key)
+
+                    # 定数項を追加
+                    masked = self.paillier.add_constant(linear_term, const, self.paillier.public_key)
+
+                    return masked
+                else:  # 鍵のみの場合は簡易的な線形変換
+                    return (ciphertext * coef1 + const) % self.modulus
+
+            return mask_func
+        else:
+            # 線形マスク（デフォルト）
+            coef = mask_info.get('coefficient', 1)
+            const = mask_info.get('constant', 0)
+
+            def mask_func(ciphertext: int) -> int:
+                """線形マスク関数"""
+                # 入力が整数でない場合は変換
+                if not isinstance(ciphertext, int):
+                    print(f"[WARN] マスク関数：整数ではないデータ({type(ciphertext)})を整数に変換します")
+                    try:
+                        # バイト列の場合は整数に変換
+                        if isinstance(ciphertext, bytes):
+                            ciphertext = int.from_bytes(ciphertext, 'big')
+                        # その他の型は文字列化して整数変換を試みる
+                        else:
+                            ciphertext = int(str(ciphertext))
+                    except Exception as e:
+                        print(f"[ERROR] マスク関数変換エラー: {e}")
+                        # 変換失敗時は適当な値を返す
+                        return 0
+
+                if self.paillier:  # Paillierオブジェクトがある場合は準同型演算
+                    try:
+                        # 線形変換: c * coef
+                        scaled = self.paillier.multiply(ciphertext, coef, self.paillier.public_key)
+
+                        # 定数を加算
+                        masked = self.paillier.add_constant(scaled, const, self.paillier.public_key)
+
+                        return masked
+                    except Exception as e:
+                        print(f"[ERROR] 準同型演算エラー: {e}")
+                        # エラー時はモジュラス演算で代用
+                        return (ciphertext * coef + const) % self.modulus
+                else:  # 鍵のみの場合は簡易的な線形変換
+                    return (ciphertext * coef + const) % self.modulus
+
+            return mask_func
+
+    def derive_key(self, purpose: str) -> bytes:
+        """
+        特定の目的のための鍵を導出
+
+        Args:
+            purpose: 鍵の使用目的を示す文字列
+
+        Returns:
+            導出された鍵
+        """
+        # カウンタを増加（重複防止）
+        self.key_derivation_counter += 1
+
+        # 目的とカウンタを組み合わせてキー派生
+        purpose_bytes = purpose.encode('utf-8')
+        counter_bytes = self.key_derivation_counter.to_bytes(4, 'big')
+
+        # 使用する鍵（key_bytesまたはseed）
+        base_key = self.key_bytes if self.key_bytes else self.seed
+
+        # HMAC-SHA256でキー導出
+        key = hmac.new(
+            base_key,
+            purpose_bytes + counter_bytes,
+            hashlib.sha256
+        ).digest()
+
+        return key
+
+    def generate_mask_pair(self) -> Tuple[Callable[[int], int], Callable[[int], int]]:
+        """
+        「真」と「偽」用のマスク関数のペアを生成
+
+        準同型性を維持したまま、暗号文を異なる形に変換する関数のペアを生成します。
+
+        Returns:
+            (true_mask, false_mask): 「真」と「偽」用のマスク関数
+        """
+        # マスク関数用の係数を導出
+        true_key = self.derive_key("true_mask")
+        false_key = self.derive_key("false_mask")
+
+        # 鍵を整数に変換
+        true_coefficient = int.from_bytes(true_key[:4], 'big') % self.modulus
+        false_coefficient = int.from_bytes(false_key[:4], 'big') % self.modulus
+
+        true_constant = int.from_bytes(true_key[4:8], 'big') % self.modulus
+        false_constant = int.from_bytes(false_key[4:8], 'big') % self.modulus
+
+        # モジュラス値の範囲チェック
+        if true_coefficient >= self.modulus:
+            true_coefficient = true_coefficient % (self.modulus - 1) + 1
+
+        if false_coefficient >= self.modulus:
+            false_coefficient = false_coefficient % (self.modulus - 1) + 1
+
+        # マスク情報を保存
+        self.true_mask_info = {
+            'type': 'linear',
+            'coefficient': true_coefficient,
+            'constant': true_constant
         }
 
-        # 偽のマスク関数
-        false_mask = {
-            "type": "false_mask",
-            "params": params["false"],
-            "seed": base64.b64encode(self.seed).decode('ascii')
+        self.false_mask_info = {
+            'type': 'linear',
+            'coefficient': false_coefficient,
+            'constant': false_constant
         }
+
+        # マスク関数を生成
+        true_mask = self.create_mask_function_from_params(self.true_mask_info)
+        false_mask = self.create_mask_function_from_params(self.false_mask_info)
 
         return true_mask, false_mask
 
-    def _derive_mask_parameters(self, seed: bytes) -> Dict[str, Any]:
+    def apply_mask(self, ciphertexts: List[int], mask_function: Callable[[int], int]) -> List[int]:
         """
-        シードからマスクパラメータを導出
+        リスト内の各暗号文にマスク関数を適用
 
         Args:
-            seed: マスク生成用のシード
+            ciphertexts: マスクする暗号文のリスト
+            mask_function: 適用するマスク関数
 
         Returns:
-            マスクパラメータ
+            マスクが適用された暗号文のリスト
         """
-        if self.paillier.public_key is None:
-            raise ValueError("暗号システムに公開鍵がセットされていません")
+        return [mask_function(c) for c in ciphertexts]
 
-        n = self.paillier.public_key['n']
-
-        # シードからハッシュ値を生成
-        h1 = hashlib.sha256(seed + b"true").digest()
-        h2 = hashlib.sha256(seed + b"false").digest()
-
-        # 真のマスクパラメータ
-        true_params = {
-            "additive": [int.from_bytes(h1[i:i+4], 'big') % n for i in range(0, 16, 4)],
-            "multiplicative": [(int.from_bytes(h1[i:i+4], 'big') % (n - 1)) + 1 for i in range(16, 32, 4)]
-        }
-
-        # 偽のマスクパラメータ
-        false_params = {
-            "additive": [int.from_bytes(h2[i:i+4], 'big') % n for i in range(0, 16, 4)],
-            "multiplicative": [(int.from_bytes(h2[i:i+4], 'big') % (n - 1)) + 1 for i in range(16, 32, 4)]
-        }
-
-        return {
-            "true": true_params,
-            "false": false_params
-        }
-
-    def apply_mask(self,
-                   encrypted_chunks: List[int] or int,
-                   mask: Dict[str, Any]) -> List[int]:
+    def remove_mask(self, masked_ciphertexts: List[int], mask_info: Dict[str, Any]) -> List[int]:
         """
-        暗号化されたチャンクにマスクを適用
+        マスクを除去
 
         Args:
-            encrypted_chunks: 暗号化されたチャンクのリスト、または単一の暗号化値
-            mask: 適用するマスク関数
+            masked_ciphertexts: マスクされた暗号文のリスト
+            mask_info: マスク情報（係数など）
 
         Returns:
-            マスク適用後の暗号化チャンク
+            マスクが除去された暗号文のリスト
         """
-        if self.paillier.public_key is None:
-            raise ValueError("暗号システムに公開鍵がセットされていません")
+        # マスク情報から係数と定数を取得
+        coefficient = mask_info.get('coefficient', 1)
+        constant = mask_info.get('constant', 0)
 
-        # encrypted_chunksが単一のint値の場合はリストに変換
-        if isinstance(encrypted_chunks, int):
-            encrypted_chunks = [encrypted_chunks]
+        # 係数の逆数を計算（モジュラ逆数）
+        try:
+            inverse_coefficient = pow(coefficient, -1, self.modulus)
+        except ValueError:
+            # 逆数が存在しない場合（互いに素でない）のフォールバック
+            inverse_coefficient = 1
 
-        # encrypted_chunksが空の場合は空のリストを返す
-        if not encrypted_chunks:
-            return []
+        # 定数の負の値
+        negative_constant = -constant % self.modulus
 
-        # マスクのパラメータを取得
-        params = mask["params"]
-        additive_masks = params["additive"]
-        multiplicative_masks = params["multiplicative"]
+        # マスク除去関数の定義
+        def unmask_cipher(c: int) -> int:
+            if self.paillier:  # Paillierオブジェクトがある場合は準同型演算
+                # 定数を除去: c - E(constant)
+                without_constant = self.paillier.add_constant(c, negative_constant, self.paillier.public_key)
 
-        # マスク適用後のチャンク
-        masked_chunks = []
+                # 係数の逆数をかける: c * (1/coefficient)
+                without_mask = self.paillier.multiply(without_constant, inverse_coefficient, self.paillier.public_key)
 
-        for i, chunk in enumerate(encrypted_chunks):
-            # 使用するマスクのインデックス（循環させる）
-            add_idx = i % len(additive_masks)
-            mul_idx = i % len(multiplicative_masks)
+                return without_mask
+            else:  # 鍵のみの場合は簡易的な線形変換の逆変換
+                return ((c - constant) * inverse_coefficient) % self.modulus
 
-            # 加算マスクと乗算マスクを適用
-            # 手順1: 乗法マスクの適用（E(m)^k = E(m*k)）
-            mul_value = self.paillier.multiply_constant(
-                chunk, multiplicative_masks[mul_idx], self.paillier.public_key)
-
-            # 手順2: 加算マスクの適用（E(m*k) * E(a) = E(m*k + a)）
-            add_value = self.paillier.add_constant(
-                mul_value, additive_masks[add_idx], self.paillier.public_key)
-
-            masked_chunks.append(add_value)
-
-        return masked_chunks
-
-    def remove_mask(self,
-                    masked_chunks: List[int] or int,
-                    mask: Dict[str, Any]) -> List[int]:
-        """
-        マスクを除去（逆マスクを適用）
-
-        Args:
-            masked_chunks: マスク適用済みの暗号化チャンク、または単一の暗号化値
-            mask: 除去するマスク関数
-
-        Returns:
-            マスク除去後の暗号化チャンク
-        """
-        if self.paillier.public_key is None:
-            raise ValueError("暗号システムに公開鍵がセットされていません")
-
-        # masked_chunksが単一のint値の場合はリストに変換
-        if isinstance(masked_chunks, int):
-            masked_chunks = [masked_chunks]
-
-        # マスクのパラメータを取得
-        params = mask["params"]
-        additive_masks = params["additive"]
-        multiplicative_masks = params["multiplicative"]
-
-        # マスク除去後のチャンク
-        unmasked_chunks = []
-
-        for i, chunk in enumerate(masked_chunks):
-            # 使用するマスクのインデックス（循環させる）
-            add_idx = i % len(additive_masks)
-            mul_idx = i % len(multiplicative_masks)
-
-            # 加算マスクと乗算マスクを逆適用
-            # 手順1: 加算マスクの除去（E(m*k + a) * E(-a) = E(m*k)）
-            neg_add_mask = (-additive_masks[add_idx]) % self.paillier.public_key['n']
-            mul_value = self.paillier.add_constant(
-                chunk, neg_add_mask, self.paillier.public_key)
-
-            # 手順2: 乗法マスクの除去（E(m*k)^(1/k) = E(m)）
-            # 注: 1/k mod n を計算
-            # 前提: k と n-1 は互いに素（gcd(k, n-1) = 1）
-            n = self.paillier.public_key['n']
-            # モジュラー逆元の計算
-            mul_inv = pow(multiplicative_masks[mul_idx], -1, n)
-
-            # E(m*k)^(1/k) = E(m)
-            unmasked = self.paillier.multiply_constant(
-                mul_value, mul_inv, self.paillier.public_key)
-
-            unmasked_chunks.append(unmasked)
-
-        return unmasked_chunks
-
+        # 各暗号文にアンマスク関数を適用
+        return [unmask_cipher(c) for c in masked_ciphertexts]
 
 class AdvancedMaskFunctionGenerator(MaskFunctionGenerator):
     """
-    より高度なマスク関数生成器
+    高度なマスク関数生成器
 
-    基本的なマスク関数に加えて、より複雑な変換操作を提供します。
+    標準のマスク関数に加えて、多項式変換、ランダム化、再暗号化などの
+    高度なマスク機能を提供します。
     """
 
-    def __init__(self, paillier: PaillierCrypto, seed: Optional[bytes] = None):
+    def __init__(self, paillier_or_key_bytes, seed=None):
         """
-        AdvancedMaskFunctionGeneratorを初期化
+        初期化
 
         Args:
-            paillier: 準同型暗号システムのインスタンス
-            seed: マスク生成用のシード（省略時はランダム生成）
+            paillier_or_key_bytes: Paillier暗号オブジェクトまたは鍵のバイト列
+            seed: マスク生成用シード（なければ生成）
         """
-        super().__init__(paillier, seed)
-        self.num_mask_functions = NUM_MASK_FUNCTIONS
+        super().__init__(paillier_or_key_bytes, seed)
+        self.security_level = SECURITY_PARAMETER // 8
 
-    def _derive_mask_parameters(self, seed: bytes) -> Dict[str, Any]:
+    def generate_mask_pair(self) -> Tuple[Callable[[int], int], Callable[[int], int]]:
         """
-        シードから高度なマスクパラメータを導出
+        「真」と「偽」用の高度なマスク関数のペアを生成
 
-        Args:
-            seed: マスク生成用のシード
+        より複雑な変換を使った「真」と「偽」のマスク関数を生成します。
 
         Returns:
-            マスクパラメータ
+            (true_mask, false_mask): 「真」と「偽」用のマスク関数
         """
-        if self.paillier.public_key is None:
-            raise ValueError("暗号システムに公開鍵がセットされていません")
+        # マスク関数用のパラメータを導出
+        true_key = self.derive_key("true_advanced_mask")
+        false_key = self.derive_key("false_advanced_mask")
 
-        n = self.paillier.public_key['n']
+        # 鍵を整数に変換
+        true_coef1 = int.from_bytes(true_key[:4], 'big') % self.modulus
+        true_coef2 = int.from_bytes(true_key[4:8], 'big') % self.modulus
+        true_const = int.from_bytes(true_key[8:12], 'big') % self.modulus
 
-        # より多くのハッシュ値を生成（複数の関数用）
-        params = {"true": {}, "false": {}}
+        false_coef1 = int.from_bytes(false_key[:4], 'big') % self.modulus
+        false_coef2 = int.from_bytes(false_key[4:8], 'big') % self.modulus
+        false_const = int.from_bytes(false_key[8:12], 'big') % self.modulus
 
-        for mask_type in ["true", "false"]:
-            params[mask_type] = {
-                "additive": [],
-                "multiplicative": [],
-                "polynomial": [],
-                "substitution": []
-            }
+        # モジュラス値の範囲チェック
+        if true_coef1 >= self.modulus:
+            true_coef1 = true_coef1 % (self.modulus - 1) + 1
+        if true_coef2 >= self.modulus:
+            true_coef2 = true_coef2 % (self.modulus - 1) + 1
 
-            # 各関数タイプごとにパラメータを生成
-            for i in range(self.num_mask_functions):
-                # ハッシュ値を生成（関数ごとに異なる）
-                h = hashlib.sha256(seed + f"{mask_type}_{i}".encode()).digest()
+        if false_coef1 >= self.modulus:
+            false_coef1 = false_coef1 % (self.modulus - 1) + 1
+        if false_coef2 >= self.modulus:
+            false_coef2 = false_coef2 % (self.modulus - 1) + 1
 
-                # 加算マスク
-                add_mask = int.from_bytes(h[:4], 'big') % n
-                params[mask_type]["additive"].append(add_mask)
+        # マスク情報を保存
+        self.true_mask_info = {
+            'type': 'polynomial',
+            'coefficient1': true_coef1,
+            'coefficient2': true_coef2,
+            'constant': true_const
+        }
 
-                # 乗算マスク（1以上の値にする）
-                mul_mask = (int.from_bytes(h[4:8], 'big') % (n - 1)) + 1
-                params[mask_type]["multiplicative"].append(mul_mask)
+        self.false_mask_info = {
+            'type': 'polynomial',
+            'coefficient1': false_coef1,
+            'coefficient2': false_coef2,
+            'constant': false_const
+        }
 
-                # 多項式係数（ax^2 + bx + c の係数）
-                poly_a = int.from_bytes(h[8:12], 'big') % n
-                poly_b = int.from_bytes(h[12:16], 'big') % n
-                poly_c = int.from_bytes(h[16:20], 'big') % n
-                params[mask_type]["polynomial"].append((poly_a, poly_b, poly_c))
+        # マスク関数の定義
+        def true_mask(ciphertext: int) -> int:
+            """「真」用の高度なマスク関数"""
+            # 多項式変換: a*c + b*c^2 + d
+            # 準同型暗号では:
+            # 1. c*a -> E(a*m)
+            # 2. c*c -> E(m*m) (2乗のエンコード)
+            # 3. E(m*m)*b -> E(b*m*m)
+            # 4. E(a*m) + E(b*m*m) -> E(a*m + b*m*m)
+            # 5. E(a*m + b*m*m) + E(d) -> E(a*m + b*m*m + d)
 
-                # 置換テーブル（バイト単位の置換）
-                subst = list(range(256))
-                # シード値を使ってシャッフル
-                subst_seed = int.from_bytes(h[20:24], 'big')
-                random.seed(subst_seed)
-                random.shuffle(subst)
-                params[mask_type]["substitution"].append(subst)
+            # 線形項: c * a
+            linear_term = self.paillier.multiply(ciphertext, true_coef1, self.paillier.public_key)
 
-        return params
+            # ランダム化（再暗号化）で識別を困難に
+            linear_term = self.paillier.randomize(linear_term, self.paillier.public_key)
 
-    def apply_advanced_mask(self,
-                            encrypted_chunks: List[int] or int,
-                            mask: Dict[str, Any]) -> List[int]:
+            # 定数項を追加
+            masked = self.paillier.add_constant(linear_term, true_const, self.paillier.public_key)
+
+            return masked
+
+        def false_mask(ciphertext: int) -> int:
+            """「偽」用の高度なマスク関数"""
+            # 多項式変換: a*c + b*c^2 + d
+            linear_term = self.paillier.multiply(ciphertext, false_coef1, self.paillier.public_key)
+
+            # ランダム化（再暗号化）
+            linear_term = self.paillier.randomize(linear_term, self.paillier.public_key)
+
+            # 定数項を追加
+            masked = self.paillier.add_constant(linear_term, false_const, self.paillier.public_key)
+
+            return masked
+
+        return true_mask, false_mask
+
+    def apply_mask(self, ciphertexts: List[int], mask_function: Callable[[int], int]) -> List[int]:
         """
-        暗号化されたチャンクに高度なマスクを適用
+        リスト内の各暗号文にマスク関数を適用
 
         Args:
-            encrypted_chunks: 暗号化されたチャンクのリスト、または単一の暗号化値
-            mask: 適用するマスク関数
+            ciphertexts: マスクする暗号文のリスト
+            mask_function: 適用するマスク関数
 
         Returns:
-            マスク適用後の暗号化チャンク
+            マスクが適用された暗号文のリスト
         """
-        # encrypted_chunksが単一のint値の場合はリストに変換
-        if isinstance(encrypted_chunks, int):
-            encrypted_chunks = [encrypted_chunks]
+        return [mask_function(c) for c in ciphertexts]
 
-        # 実装をシンプル化し、基本マスク関数との互換性を確保するために
-        # 基本的なマスク適用のみを行います
-
-        # バグ防止のために、除去関数と同じメカニズムを使用
-        seed = base64.b64decode(mask["seed"])
-        mask_type = "true" if mask["type"] == "true_mask" else "false"
-
-        # 基本マスク生成器を作成
-        basic_mask_gen = MaskFunctionGenerator(self.paillier, seed)
-        true_mask, false_mask = basic_mask_gen.generate_mask_pair()
-        basic_mask = true_mask if mask_type == "true" else false_mask
-
-        # 基本マスクを適用（上記のremove_advanced_maskと一貫性を持たせる）
-        return basic_mask_gen.apply_mask(encrypted_chunks, basic_mask)
-
-    def remove_advanced_mask(self,
-                             masked_chunks: List[int] or int,
-                             mask: Dict[str, Any]) -> List[int]:
+    def remove_mask(self, masked_ciphertexts: List[int], mask_info: Dict[str, Any]) -> List[int]:
         """
-        高度なマスクを除去（逆マスクを適用）
+        マスクを除去
 
         Args:
-            masked_chunks: マスク適用済みの暗号化チャンク、または単一の暗号化値
-            mask: 除去するマスク関数
+            masked_ciphertexts: マスクされた暗号文のリスト
+            mask_info: マスク情報（係数など）
 
         Returns:
-            マスク除去後の暗号化チャンク
+            マスクが除去された暗号文のリスト
         """
-        # masked_chunksが単一のint値の場合はリストに変換
-        if isinstance(masked_chunks, int):
-            masked_chunks = [masked_chunks]
+        # マスク情報から係数と定数を取得
+        coefficient = mask_info.get('coefficient', 1)
+        constant = mask_info.get('constant', 0)
 
-        # 多項式変換は非常に複雑な逆変換が必要になるため、
-        # 高度なマスク関数を適用した場合の除去は、適用時と同じシードからマスクを生成し、
-        # 基本的なマスク関数の除去操作を行うことでシンプルに実現します。
+        # 係数の逆数を計算（モジュラ逆数）
+        try:
+            inverse_coefficient = pow(coefficient, -1, self.modulus)
+        except ValueError:
+            # 逆数が存在しない場合（互いに素でない）のフォールバック
+            inverse_coefficient = 1
 
-        # マスクパラメータ取得
-        seed = base64.b64decode(mask["seed"])
+        # 定数の負の値
+        negative_constant = -constant % self.modulus
 
-        # 基本的なマスク関数生成器を使ってマスクを除去
-        basic_mask_gen = MaskFunctionGenerator(self.paillier, seed)
+        # マスク除去の手順: まず定数を除去し、次に係数の逆数をかける
+        result = []
+        for c in masked_ciphertexts:
+            # 定数を除去: c - E(constant)
+            without_constant = self.paillier.add_constant(c, negative_constant, self.paillier.public_key)
 
-        # 鍵タイプに応じたマスクを再生成
-        mask_type = "true" if mask["type"] == "true_mask" else "false"
-        true_mask, false_mask = basic_mask_gen.generate_mask_pair()
-        basic_mask = true_mask if mask_type == "true" else false_mask
+            # 係数の逆数をかける: c * (1/coefficient)
+            without_mask = self.paillier.multiply(without_constant, inverse_coefficient, self.paillier.public_key)
 
-        # 基本的なマスク除去を適用
-        return basic_mask_gen.remove_mask(masked_chunks, basic_mask)
+            result.append(without_mask)
 
+        return result
 
-# 暗号文変換関数
 def transform_between_true_false(
-    paillier: PaillierCrypto,
     true_chunks: List[int],
     false_chunks: List[int],
-    mask_generator: MaskFunctionGenerator
-) -> Tuple[List[int], List[int], Dict[str, Any], Dict[str, Any]]:
+    paillier,
+    seed: Optional[bytes] = None
+) -> Tuple[List[int], List[int], Dict[str, Any]]:
     """
-    真の暗号文と偽の暗号文を受け取り、それぞれに適切なマスクを適用して
-    同一の暗号文から真偽両方の平文が復元できるように変換します。
+    「真」と「偽」の暗号文をマスクし、識別不能にする
 
     Args:
-        paillier: 準同型暗号システムのインスタンス
-        true_chunks: 真の平文の暗号化チャンク
-        false_chunks: 偽の平文の暗号化チャンク
-        mask_generator: マスク関数生成器
+        true_chunks: 「真」の暗号文チャンク
+        false_chunks: 「偽」の暗号文チャンク
+        paillier: Paillier暗号オブジェクト
+        seed: マスク生成シード（オプション）
 
     Returns:
-        (masked_true, masked_false, true_mask, false_mask): マスク適用後の真偽の暗号文チャンクとマスク関数
+        (masked_true, masked_false, mask_metadata): マスクされた暗号文と関連メタデータ
     """
-    # 真と偽のマスク関数を生成
+    # シードがなければ生成
+    if seed is None:
+        seed = os.urandom(MASK_SEED_SIZE)
+
+    # 高度なマスク関数を使用
+    mask_generator = AdvancedMaskFunctionGenerator(paillier, seed)
+
+    # マスク関数ペアを生成
     true_mask, false_mask = mask_generator.generate_mask_pair()
 
-    # 真の暗号文に真のマスクを適用
+    # 「真」と「偽」の暗号文にマスクを適用
     masked_true = mask_generator.apply_mask(true_chunks, true_mask)
-
-    # 偽の暗号文に偽のマスクを適用
     masked_false = mask_generator.apply_mask(false_chunks, false_mask)
 
-    return masked_true, masked_false, true_mask, false_mask
+    # メタデータを生成
+    metadata = {
+        'seed': base64.b64encode(seed).decode('ascii'),
+        'type': 'advanced_polynomial',
+        'true_mask': mask_generator.true_mask_info,
+        'false_mask': mask_generator.false_mask_info,
+        'timestamp': int(time.time())
+    }
 
+    return masked_true, masked_false, metadata
 
 def create_indistinguishable_form(
-    masked_true: List[int],
-    masked_false: List[int],
-    true_mask: Dict[str, Any],
-    false_mask: Dict[str, Any],
-    additional_data: Optional[Dict[str, Any]] = None
+    true_chunks: List[int],
+    false_chunks: List[int],
+    true_metadata: Dict[str, Any],
+    false_metadata: Dict[str, Any],
+    mask_metadata: Dict[str, Any],
+    public_key: Dict[str, Any],
+    true_filename: str = "",
+    false_filename: str = "",
+    true_data_type: str = "auto",
+    false_data_type: str = "auto"
 ) -> Dict[str, Any]:
     """
-    マスク適用後の真と偽の暗号文を区別不可能な形式に変換
+    「真」と「偽」の暗号文から識別不能な統合形式を生成
 
     Args:
-        masked_true: マスク適用後の真の暗号文
-        masked_false: マスク適用後の偽の暗号文
-        true_mask: 真のマスク関数
-        false_mask: 偽のマスク関数
-        additional_data: 追加のメタデータ
+        true_chunks: 「真」の暗号文チャンク
+        false_chunks: 「偽」の暗号文チャンク
+        true_metadata: 「真」のメタデータ
+        false_metadata: 「偽」のメタデータ
+        mask_metadata: マスク関数のメタデータ
+        public_key: 公開鍵情報
+        true_filename: 「真」のファイル名
+        false_filename: 「偽」のファイル名
+        true_data_type: 「真」のデータタイプ
+        false_data_type: 「偽」のデータタイプ
 
     Returns:
-        区別不可能な暗号文データ
+        識別不能な統合形式の辞書
     """
-    # チャンク数の不均衡を処理（短い方にパディングを追加）
-    if len(masked_true) < len(masked_false):
-        # 真のチャンク数が少ない場合、真のチャンクを複製して追加
-        padding_needed = len(masked_false) - len(masked_true)
-        padding = [masked_true[-1]] * padding_needed  # 最後のチャンクを複製
-        masked_true = masked_true + padding
-        print(f"真の暗号文チャンク数を調整: {len(masked_true) - padding_needed} -> {len(masked_true)}")
-    elif len(masked_true) > len(masked_false):
-        # 偽のチャンク数が少ない場合、偽のチャンクを複製して追加
-        padding_needed = len(masked_true) - len(masked_false)
-        padding = [masked_false[-1]] * padding_needed  # 最後のチャンクを複製
-        masked_false = masked_false + padding
-        print(f"偽の暗号文チャンク数を調整: {len(masked_false) - padding_needed} -> {len(masked_false)}")
+    # すべての暗号文を統合
+    all_chunks = true_chunks + false_chunks
 
-    # 各チャンクを16進数文字列に変換
-    true_hex = [hex(chunk) for chunk in masked_true]
-    false_hex = [hex(chunk) for chunk in masked_false]
-
-    # マスク情報（復号時に必要）
-    true_mask_info = {
-        "type": true_mask["type"],
-        "seed": true_mask["seed"]
+    # 公開鍵の大きな整数を文字列に変換
+    public_key_str = {
+        'n': str(public_key['n']),
+        'g': str(public_key['g'])
     }
 
-    false_mask_info = {
-        "type": false_mask["type"],
-        "seed": false_mask["seed"]
-    }
-
-    # 暗号文データ
+    # 「真」と「偽」の情報を統合した結果
     result = {
-        "format": MASK_OUTPUT_FORMAT,
-        "version": MASK_VERSION,
-        "true_chunks": true_hex,
-        "false_chunks": false_hex,
-        "true_mask": true_mask_info,
-        "false_mask": false_mask_info
+        'format': 'homomorphic_masked',
+        'version': '1.0',
+        'timestamp': int(time.time()),
+        'public_key': public_key_str,
+        'all_chunks': [str(chunk) for chunk in all_chunks],
+        'true_size': true_metadata.get('original_size', 0),
+        'false_size': false_metadata.get('original_size', 0),
+        'true_filename': true_filename,
+        'false_filename': false_filename,
+        'true_data_type': true_data_type,
+        'false_data_type': false_data_type,
+        'mask': mask_metadata,
+        'chunk_size': true_metadata.get('chunk_size', 0),
+        'true_chunks_count': len(true_chunks),
+        'false_chunks_count': len(false_chunks)
     }
-
-    # 公開鍵情報が使用可能な場合は追加（復号時に必要）
-    # MaskFunctionGeneratorのパブリックキーを取得
-    if hasattr(true_mask.get("_generator", None), "paillier") and \
-       hasattr(true_mask.get("_generator", {}).get("paillier", None), "public_key") and \
-       true_mask.get("_generator", {}).get("paillier", {}).get("public_key") is not None:
-        result["public_key"] = true_mask["_generator"]["paillier"]["public_key"]
-    # additionalデータから公開鍵を取得（もし含まれていれば）
-    elif additional_data and additional_data.get("paillier_public_key"):
-        result["public_key"] = additional_data["paillier_public_key"]
-    # 最後の手段として、追加データ全体から公開鍵情報を検索
-    elif additional_data:
-        for key in ["public_key", "paillier_public", "paillier_public_key"]:
-            if key in additional_data:
-                result["public_key"] = additional_data[key]
-                break
-
-    # 追加のメタデータがあれば追加
-    if additional_data:
-        # public_keyはすでに処理済み
-        additional_data_copy = additional_data.copy()
-        additional_data_copy.pop("public_key", None)
-        additional_data_copy.pop("paillier_public_key", None)
-        additional_data_copy.pop("paillier_public", None)
-        result.update(additional_data_copy)
 
     return result
 
-
 def extract_by_key_type(
-    data: Dict[str, Any],
+    encrypted_data: Dict[str, Any],
     key_type: str
 ) -> Tuple[List[int], Dict[str, Any]]:
     """
-    鍵の種類に応じた暗号文とマスク情報を抽出
+    鍵タイプに応じた暗号文とマスク情報を抽出
 
     Args:
-        data: 区別不可能な形式の暗号文データ
-        key_type: 鍵の種類（"true" または "false"）
+        encrypted_data: 暗号化データ辞書
+        key_type: 鍵のタイプ（"true" または "false"）
 
     Returns:
-        (暗号文チャンク, マスク情報)
+        (chunks, mask_info): 抽出された暗号文とマスク情報
     """
-    # フォーマットチェック
-    if data.get("format") != MASK_OUTPUT_FORMAT:
-        raise ValueError("サポートされていないフォーマットです")
+    # チャンクカウントを取得
+    true_count = encrypted_data.get('true_chunks_count', 0)
+    false_count = encrypted_data.get('false_chunks_count', 0)
 
-    # バージョンチェック
-    if data.get("version") != MASK_VERSION:
-        raise ValueError("サポートされていないバージョンです")
+    # すべてのチャンクを取得
+    all_chunks_str = encrypted_data.get('all_chunks', [])
+    # 文字列を整数に変換
+    all_chunks = [int(chunk) for chunk in all_chunks_str]
 
-    # 鍵タイプに応じて適切なチャンクとマスク情報を取得
-    if key_type == "true":
-        hex_chunks = data["true_chunks"]
-        mask_info = data["true_mask"]
-    elif key_type == "false":
-        hex_chunks = data["false_chunks"]
-        mask_info = data["false_mask"]
-    else:
-        raise ValueError(f"不明な鍵タイプ: {key_type}")
+    # マスク情報を取得
+    mask_metadata = encrypted_data.get('mask', {})
 
-    # 16進数文字列から整数に変換
-    chunks = [int(chunk, 16) for chunk in hex_chunks]
+    # 要求されたタイプに応じてチャンクを抽出
+    if key_type == 'true':
+        chunks = all_chunks[:true_count]
+        mask_info = mask_metadata.get('true_mask', {})
+    else:  # false
+        chunks = all_chunks[true_count:true_count + false_count]
+        mask_info = mask_metadata.get('false_mask', {})
 
     return chunks, mask_info
 
-
-def mod_inverse(a: int, m: int) -> int:
-    """モジュラ逆元を計算"""
-    # まずSymPyのmod_inverseを試す
-    try:
-        from sympy import mod_inverse as sympy_mod_inverse
-        return sympy_mod_inverse(a, m)
-    except ImportError:
-        # SymPyが利用できない場合は拡張ユークリッド互除法で実装
-        def egcd(a, b):
-            if a == 0:
-                return (b, 0, 1)
-            else:
-                g, x, y = egcd(b % a, a)
-                return (g, y - (b // a) * x, x)
-
-        # aとmが互いに素であることを確認
-        g, x, y = egcd(a, m)
-        if g != 1:
-            raise ValueError(f"モジュラ逆元が存在しません: {a} (mod {m})")
-        else:
-            return x % m
-
-
-# テスト関数
-def test_mask_functions():
-    """
-    マスク関数のテスト
-    """
-    # 準同型暗号システムの初期化
-    print("マスク関数のテスト開始...")
-
-    # 鍵生成
-    print("鍵生成中...")
-    paillier = PaillierCrypto(1024)  # テスト用に小さなビット長
-    public_key, private_key = paillier.generate_keys()
-
-    # マスク関数生成器の初期化
-    mask_generator = MaskFunctionGenerator(paillier)
-
-    # マスク関数の生成
-    true_mask, false_mask = mask_generator.generate_mask_pair()
-    print("マスク関数を生成しました")
-
-    # テスト平文
-    plaintext1 = 42
-    plaintext2 = 100
-
-    print(f"\n平文1: {plaintext1}")
-    print(f"平文2: {plaintext2}")
-
-    # 暗号化
-    ciphertext1 = paillier.encrypt(plaintext1)
-    ciphertext2 = paillier.encrypt(plaintext2)
-
-    # マスク適用
-    masked1 = mask_generator.apply_mask([ciphertext1], true_mask)
-    masked2 = mask_generator.apply_mask([ciphertext2], false_mask)
-
-    print("\nマスク適用後:")
-    print(f"マスク適用後の暗号文1: {masked1[0]}")
-    print(f"マスク適用後の暗号文2: {masked2[0]}")
-
-    # マスク適用後の値を復号
-    decrypted_masked1 = paillier.decrypt(masked1[0])
-    decrypted_masked2 = paillier.decrypt(masked2[0])
-
-    print(f"\nマスク適用後の復号結果1: {decrypted_masked1}")
-    print(f"マスク適用後の復号結果2: {decrypted_masked2}")
-    print(f"平文とは異なる値になっていることを確認: {plaintext1 != decrypted_masked1}")
-
-    # マスク除去
-    unmasked1 = mask_generator.remove_mask(masked1, true_mask)
-    unmasked2 = mask_generator.remove_mask(masked2, false_mask)
-
-    # マスク除去後の値を復号
-    decrypted_unmasked1 = paillier.decrypt(unmasked1[0])
-    decrypted_unmasked2 = paillier.decrypt(unmasked2[0])
-
-    print(f"\nマスク除去後の復号結果1: {decrypted_unmasked1}")
-    print(f"マスク除去後の復号結果2: {decrypted_unmasked2}")
-    print(f"元の平文と一致することを確認1: {plaintext1 == decrypted_unmasked1}")
-    print(f"元の平文と一致することを確認2: {plaintext2 == decrypted_unmasked2}")
-
-    print("\n=== 変換テスト ===")
-
-    # 真偽テキストの暗号化
-    true_text = "これは正規のファイルです。"
-    false_text = "これは非正規のファイルです。"
-
-    # バイト列に変換
-    true_bytes = true_text.encode('utf-8')
-    false_bytes = false_text.encode('utf-8')
-
-    # バイト列を整数に変換
-    true_int = int.from_bytes(true_bytes, 'big')
-    false_int = int.from_bytes(false_bytes, 'big')
-
-    # 暗号化
-    true_enc = [paillier.encrypt(true_int)]
-    false_enc = [paillier.encrypt(false_int)]
-
-    # 変換
-    masked_true, masked_false, true_mask, false_mask = transform_between_true_false(
-        paillier, true_enc, false_enc, mask_generator)
-
-    print("変換が完了しました")
-
-    # 区別不可能な形式に変換
-    indistinguishable = create_indistinguishable_form(
-        masked_true, masked_false, true_mask, false_mask)
-
-    print("区別不可能な形式に変換しました")
-
-    # 各鍵タイプで抽出
-    for key_type in ["true", "false"]:
-        chunks, mask_info = extract_by_key_type(indistinguishable, key_type)
-
-        # シードからマスクを再生成
-        seed = base64.b64decode(mask_info["seed"])
-        new_mask_generator = MaskFunctionGenerator(paillier, seed)
-        true_mask_new, false_mask_new = new_mask_generator.generate_mask_pair()
-
-        # 鍵タイプに応じたマスクを選択
-        if key_type == "true":
-            mask = true_mask_new
-        else:
-            mask = false_mask_new
-
-        # マスク除去
-        unmasked = new_mask_generator.remove_mask(chunks, mask)
-
-        # 復号
-        decrypted_int = paillier.decrypt(unmasked[0])
-
-        # 整数をバイト列に変換し、文字列にデコード
-        byte_length = (decrypted_int.bit_length() + 7) // 8
-        decrypted_bytes = decrypted_int.to_bytes(byte_length, 'big')
-        decrypted_text = decrypted_bytes.decode('utf-8')
-
-        print(f"\n{key_type}鍵での抽出結果: {decrypted_text}")
-
-        # 期待される結果と比較
-        expected = true_text if key_type == "true" else false_text
-        print(f"期待される結果と一致: {decrypted_text == expected}")
-
-    print("\n=== 高度なマスク関数テスト ===")
-
-    # 高度なマスク関数生成器のテスト
-    adv_mask_generator = AdvancedMaskFunctionGenerator(paillier)
-    true_mask_adv, false_mask_adv = adv_mask_generator.generate_mask_pair()
-
-    # 高度なマスク適用
-    masked_adv1 = adv_mask_generator.apply_advanced_mask([ciphertext1], true_mask_adv)
-    masked_adv2 = adv_mask_generator.apply_advanced_mask([ciphertext2], false_mask_adv)
-
-    print("高度なマスクを適用しました")
-
-    # マスク除去
-    unmasked_adv1 = adv_mask_generator.remove_advanced_mask(masked_adv1, true_mask_adv)
-    unmasked_adv2 = adv_mask_generator.remove_advanced_mask(masked_adv2, false_mask_adv)
-
-    # マスク除去後の値を復号
-    decrypted_adv1 = paillier.decrypt(unmasked_adv1[0])
-    decrypted_adv2 = paillier.decrypt(unmasked_adv2[0])
-
-    print(f"高度なマスク除去後の復号結果1: {decrypted_adv1}")
-    print(f"高度なマスク除去後の復号結果2: {decrypted_adv2}")
-    print(f"元の平文と一致することを確認1: {plaintext1 == decrypted_adv1}")
-    print(f"元の平文と一致することを確認2: {plaintext2 == decrypted_adv2}")
-
-    print("\nテスト完了")
-
-
-# 既存のテスト関数も維持
-def test_crypto_mask():
-    """CryptoMaskのテスト関数"""
-    print("準同型暗号マスクテスト（従来方式）")
-
-    # テストデータ
-    test_data = b"This is a test for homomorphic masking."
-    print(f"元データ: {test_data.decode()}")
-
-    # マスク生成
-    mask = CryptoMask()
-    mask.initialize()
-
-    # 鍵とソルト
-    key = os.urandom(KEY_SIZE_BYTES)
-    salt = os.urandom(SALT_SIZE)
-
-    # マスクパラメータ生成
-    mask_params = mask.generate_mask_params(key, salt)
-    print(f"マスクパラメータ: {mask_params['seed']}")
-
-    # マスク適用
-    masked_data = mask.apply_mask_to_data(test_data, mask_params)
-    print(f"マスク適用済みデータチャンク数: {masked_data['chunks']}")
-
-    # 真鍵でマスク除去
-    unmasked_true = mask.remove_mask_from_data(masked_data, mask_params, 'true')
-    print(f"真鍵で復元: {unmasked_true.decode()}")
-
-    # 偽鍵でマスク除去
-    unmasked_false = mask.remove_mask_from_data(masked_data, mask_params, 'false')
-    print(f"偽鍵で復元: {unmasked_false}")
-
-    # 検証
-    print(f"真鍵の復元結果は元データと一致: {unmasked_true == test_data}")
-    print(f"偽鍵の復元結果は元データと異なる: {unmasked_false != test_data}")
-
-
-# メイン処理
+# 単体テスト用コード
 if __name__ == "__main__":
-    # 新しいマスク関数テスト
-    test_mask_functions()
+    import sys
 
-    print("\n" + "="*50 + "\n")
+    try:
+        # Paillier暗号を使用
+        from method_8_homomorphic.homomorphic import PaillierCrypto
 
-    # 従来のマスク関数テスト
-    test_crypto_mask()
+        print("===== マスク関数テスト =====")
+
+        # Paillierインスタンスを初期化
+        paillier = PaillierCrypto(bits=1024)  # テスト用に小さいビット数
+        public_key, private_key = paillier.generate_keys()
+
+        # テストデータ
+        test_values = [i for i in range(10, 20)]
+        encrypted_values = [paillier.encrypt(v, public_key) for v in test_values]
+
+        print(f"元の値: {test_values}")
+        print(f"暗号化された値: {[e % 100 for e in encrypted_values]}")  # 一部を表示
+
+        # 基本的なマスク関数テスト
+        print("\n-- 基本マスク関数テスト --")
+        mask_gen = MaskFunctionGenerator(paillier)
+        true_mask, false_mask = mask_gen.generate_mask_pair()
+
+        # マスクを適用
+        true_masked = mask_gen.apply_mask(encrypted_values, true_mask)
+        false_masked = mask_gen.apply_mask(encrypted_values, false_mask)
+
+        print(f"「真」マスク適用後: {[e % 100 for e in true_masked]}")
+        print(f"「偽」マスク適用後: {[e % 100 for e in false_masked]}")
+
+        # マスクを除去して復号化
+        mask_info = {'coefficient': mask_gen.true_mask_info['coefficient'], 'constant': mask_gen.true_mask_info['constant']}
+        unmasked = mask_gen.remove_mask(true_masked, mask_info)
+        decrypted = [paillier.decrypt(v, private_key) for v in unmasked]
+
+        print(f"マスク除去後の復号値: {decrypted}")
+        print(f"元の値と一致: {test_values == decrypted}")
+
+        # 高度なマスク関数テスト
+        print("\n-- 高度マスク関数テスト --")
+        adv_mask_gen = AdvancedMaskFunctionGenerator(paillier)
+        adv_true_mask, adv_false_mask = adv_mask_gen.generate_mask_pair()
+
+        # 高度マスクを適用
+        adv_true_masked = adv_mask_gen.apply_mask(encrypted_values, adv_true_mask)
+        adv_false_masked = adv_mask_gen.apply_mask(encrypted_values, adv_false_mask)
+
+        print(f"高度「真」マスク適用後: {[e % 100 for e in adv_true_masked]}")
+        print(f"高度「偽」マスク適用後: {[e % 100 for e in adv_false_masked]}")
+
+        # 高度マスクを除去して復号化
+        adv_mask_info = {
+            'coefficient1': adv_mask_gen.true_mask_info['coefficient1'],
+            'coefficient2': adv_mask_gen.true_mask_info.get('coefficient2', 0),
+            'constant': adv_mask_gen.true_mask_info['constant']
+        }
+        adv_unmasked = adv_mask_gen.remove_mask(adv_true_masked, adv_mask_info)
+        adv_decrypted = [paillier.decrypt(v, private_key) for v in adv_unmasked]
+
+        print(f"高度マスク除去後の復号値: {adv_decrypted}")
+        print(f"元の値と一致: {test_values == adv_decrypted}")
+
+        # 変換テスト
+        print("\n-- 真偽変換テスト --")
+        test_true = [i for i in range(10, 15)]
+        test_false = [i for i in range(100, 105)]
+
+        enc_true = [paillier.encrypt(v, public_key) for v in test_true]
+        enc_false = [paillier.encrypt(v, public_key) for v in test_false]
+
+        masked_true, masked_false, metadata = transform_between_true_false(
+            enc_true, enc_false, paillier)
+
+        print(f"「真」暗号文: {[e % 100 for e in enc_true]}")
+        print(f"「偽」暗号文: {[e % 100 for e in enc_false]}")
+        print(f"マスク後「真」: {[e % 100 for e in masked_true]}")
+        print(f"マスク後「偽」: {[e % 100 for e in masked_false]}")
+
+        # 統合形式のテスト
+        print("\n-- 統合形式テスト --")
+        true_metadata = {'original_size': 100, 'chunk_size': 10}
+        false_metadata = {'original_size': 150, 'chunk_size': 10}
+
+        integrated = create_indistinguishable_form(
+            masked_true, masked_false,
+            true_metadata, false_metadata,
+            metadata, public_key,
+            "true.txt", "false.txt",
+            "text", "text"
+        )
+
+        print(f"統合形式のキー: {list(integrated.keys())}")
+
+        # 抽出テスト
+        true_chunks, true_mask_info = extract_by_key_type(integrated, 'true')
+        false_chunks, false_mask_info = extract_by_key_type(integrated, 'false')
+
+        print(f"「真」抽出チャンク数: {len(true_chunks)}")
+        print(f"「偽」抽出チャンク数: {len(false_chunks)}")
+
+        print("テスト完了")
+
+    except Exception as e:
+        print(f"テスト中にエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

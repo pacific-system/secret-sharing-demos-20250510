@@ -40,10 +40,16 @@ import secrets
 import math
 from typing import Dict, Any, Tuple, List, Optional, Union, Set
 
-# 親ディレクトリをインポートパスに追加
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# インポートエラー回避のためパスを追加
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
 
-from method_8_homomorphic.config import (
+# 同じディレクトリ内のモジュールをインポート
+from config import (
     TRUE_TEXT_PATH,
     FALSE_TEXT_PATH,
     KEY_SIZE_BYTES,
@@ -58,28 +64,25 @@ from method_8_homomorphic.config import (
     KDF_ITERATIONS,
     SECURITY_PARAMETER
 )
-from method_8_homomorphic.homomorphic import (
+from homomorphic import (
     PaillierCrypto, ElGamalCrypto,
     derive_key_from_password, save_keys, load_keys,
     serialize_encrypted_data, deserialize_encrypted_data
 )
-from method_8_homomorphic.crypto_mask import (
+from crypto_mask import (
     MaskFunctionGenerator, AdvancedMaskFunctionGenerator,
     transform_between_true_false, create_indistinguishable_form, extract_by_key_type
 )
-from method_8_homomorphic.crypto_adapters import (
+from crypto_adapters import (
     process_data_for_encryption, process_data_after_decryption,
     DataAdapter
 )
-from method_8_homomorphic.key_analyzer import (
+from key_analyzer import (
     analyze_key_type, extract_seed_from_key
 )
 
-# 循環インポートを避けるため、indistinguishable.py の代わりに indistinguishable_ext.py から必要な関数をインポート
-from method_8_homomorphic.indistinguishable_ext import (
-    analyze_key_type_enhanced,
-    remove_comprehensive_indistinguishability_enhanced,
-    IndistinguishableWrapper,
+# 拡張モジュールからの必要な関数をインポート
+from indistinguishable_ext import (
     safe_log10,
     randomize_ciphertext,
     batch_randomize_ciphertexts,
@@ -87,285 +90,148 @@ from method_8_homomorphic.indistinguishable_ext import (
     add_redundancy
 )
 
+# 循環参照を回避するための条件付きインポート
+# インポートできない場合は後で必要な時にインポートする
+_IndistinguishableWrapper = None
+_analyze_key_type_enhanced = None
+
+def _lazy_import_indistinguishable():
+    """必要な時だけindistinguishableモジュールをインポートする関数"""
+    global _IndistinguishableWrapper, _analyze_key_type_enhanced
+    if _IndistinguishableWrapper is None or _analyze_key_type_enhanced is None:
+        try:
+            from indistinguishable import IndistinguishableWrapper, analyze_key_type_enhanced
+            _IndistinguishableWrapper = IndistinguishableWrapper
+            _analyze_key_type_enhanced = analyze_key_type_enhanced
+        except ImportError:
+            print("警告: indistinguishableモジュールのインポートに失敗しました")
+            _IndistinguishableWrapper = object  # ダミークラス
+            _analyze_key_type_enhanced = lambda key: "unknown"
+
 def interleave_ciphertexts(true_chunks, false_chunks, shuffle_seed=None):
-    """真と偽の暗号文を交互に配置してシャッフル"""
-    # シャッフルのシード値を設定
-    if shuffle_seed:
-        random.seed(int.from_bytes(shuffle_seed, 'big'))
+    """
+    真偽の暗号文を交互に配置し、必要に応じてシャッフルする
+
+    Args:
+        true_chunks: 真のチャンクリスト
+        false_chunks: 偽のチャンクリスト
+        shuffle_seed: シャッフル用シード
+
+    Returns:
+        交互配置されたチャンクリスト
+    """
+    print("暗号文を交互配置してシャッフル中...")
+
+    # チャンク数を同じにする
+    max_chunks = max(len(true_chunks), len(false_chunks))
+    true_chunks_padded = true_chunks + [true_chunks[-1]] * (max_chunks - len(true_chunks))
+    false_chunks_padded = false_chunks + [false_chunks[-1]] * (max_chunks - len(false_chunks))
+
+    # 交互に配置
+    interleaved = []
+    for t, f in zip(true_chunks_padded, false_chunks_padded):
+        interleaved.extend([t, f])
+
+    # シャッフル（オプション）
+    if shuffle_seed is not None:
+        random.seed(shuffle_seed)
+        random.shuffle(interleaved)
+
+    return interleaved
+
+def randomize_ciphertexts(chunks, key, noise_intensity=0.05, redundancy_factor=1):
+    """
+    暗号文にランダム性を追加
+
+    Args:
+        chunks: 暗号文チャンク
+        key: シード用の鍵
+        noise_intensity: ノイズの強さ（0.0～1.0）
+        redundancy_factor: 冗長性の程度（1.0以上）
+
+    Returns:
+        ランダム化された暗号文チャンク
+    """
+    print("暗号文をランダム化中...")
+
+    # 鍵からシードを生成
+    if isinstance(key, bytes):
+        seed = int.from_bytes(key, byteorder='big')
     else:
-        random.seed(time.time_ns())
+        seed = int(key)
+    random.seed(seed)
 
-    # インデックスリストの準備
-    true_indices = list(range(len(true_chunks)))
-    false_indices = list(range(len(false_chunks)))
+    # 統計的ノイズの追加
+    if noise_intensity > 0:
+        print(f"統計的ノイズを追加中 (強度: {noise_intensity})...")
+        randomized = []
+        for chunk in chunks:
+            # ノイズの範囲を暗号文の大きさに基づいて決定
+            chunk_mag = len(str(chunk))
+            noise_range = int(chunk_mag * noise_intensity * 10)
 
-    # シャッフル
-    random.shuffle(true_indices)
-    random.shuffle(false_indices)
+            # ノイズを生成して加算（加法準同型性を利用）
+            noise = random.randint(-noise_range, noise_range)
+            randomized_chunk = chunk + noise
+            randomized.append(randomized_chunk)
+        chunks = randomized
 
-    # 交互配置用の統合インデックスリスト
-    interleaved_indices = []
-    for i in range(max(len(true_indices), len(false_indices))):
-        if i < len(true_indices):
-            interleaved_indices.append(("true", true_indices[i]))
-        if i < len(false_indices):
-            interleaved_indices.append(("false", false_indices[i]))
+    # 冗長性の追加（同じ情報を複数回含める）
+    if redundancy_factor > 1:
+        print(f"冗長性を追加中 (係数: {redundancy_factor})...")
+        redundant = []
+        for chunk in chunks:
+            redundant.append(chunk)
+            # 冗長コピーを追加
+            for _ in range(int(redundancy_factor) - 1):
+                # わずかなノイズを加えて完全な重複を避ける
+                noise = random.randint(-10, 10)
+                redundant.append(chunk + noise)
+        chunks = redundant
 
-    # 最終的なシャッフル
-    random.shuffle(interleaved_indices)
+    return chunks
 
-    # 交互配置の実行
-    interleaved_ciphertexts = []
-    mapping = []
+def create_mask_functions(paillier: 'PaillierCrypto', true_key: bytes, false_key: bytes, use_enhanced: bool = True):
+    """
+    マスク関数を生成する
 
-    for idx, (chunk_type, orig_idx) in enumerate(interleaved_indices):
-        if chunk_type == "true" and orig_idx < len(true_chunks):
-            interleaved_ciphertexts.append(true_chunks[orig_idx])
-        elif chunk_type == "false" and orig_idx < len(false_chunks):
-            interleaved_ciphertexts.append(false_chunks[orig_idx])
+    Args:
+        paillier: 準同型暗号インスタンス
+        true_key: 真の鍵
+        false_key: 偽の鍵
+        use_enhanced: 高度なマスク関数を使用するか
 
-        mapping.append({
-            "index": idx,
-            "type": chunk_type,
-            "original_index": orig_idx
-        })
+    Returns:
+        (真マスク関数, 偽マスク関数, マスク関数のメタデータ)
+    """
+    print("マスク関数を適用し、真偽両方の状態を区別不可能な形式に変換中...")
+    print("この処理により、暗号文だけではどちらが「正規」ファイルか判別できなくなります")
 
-    # メタデータ
-    metadata = {
-        "true_indices": true_indices,
-        "false_indices": false_indices,
-        "mapping": mapping,
-        "shuffle_seed": shuffle_seed.hex() if shuffle_seed else None,
-        "true_length": len(true_chunks),
-        "false_length": len(false_chunks)
+    # マスク関数生成器を初期化
+    if use_enhanced:
+        print("高度なマスク関数を使用します（多項式変換など）")
+        true_mask_gen = AdvancedMaskFunctionGenerator(true_key)
+        false_mask_gen = AdvancedMaskFunctionGenerator(false_key)
+    else:
+        print("基本的なマスク関数を使用します（線形変換など）")
+        true_mask_gen = MaskFunctionGenerator(true_key)
+        false_mask_gen = MaskFunctionGenerator(false_key)
+
+    # マスク関数を生成
+    true_mask, false_mask = true_mask_gen.generate_mask_pair()
+    false_mask, true_mask = false_mask_gen.generate_mask_pair()
+
+    # メタデータを取得
+    true_metadata = true_mask_gen.true_mask_info
+    false_metadata = false_mask_gen.false_mask_info
+
+    # メタデータをJSON互換形式に変換
+    mask_metadata = {
+        "true_mask": true_metadata,
+        "false_mask": false_metadata
     }
 
-    return interleaved_ciphertexts, metadata
-
-def apply_comprehensive_indistinguishability(
-    true_ciphertexts, false_ciphertexts, paillier,
-    noise_intensity=0.05, redundancy_factor=1
-):
-    """総合的な識別不能性の適用"""
-    try:
-        # 1. 暗号文のランダム化
-        print("暗号文をランダム化中...")
-        randomized_true = batch_randomize_ciphertexts(paillier, true_ciphertexts)
-        randomized_false = batch_randomize_ciphertexts(paillier, false_ciphertexts)
-
-        # 2. 統計的ノイズの追加
-        print(f"統計的ノイズを追加中 (強度: {noise_intensity})...")
-        noisy_true, true_noise_values = add_statistical_noise(randomized_true, noise_intensity, paillier)
-        noisy_false, false_noise_values = add_statistical_noise(randomized_false, noise_intensity, paillier)
-
-        # 3. 冗長性の追加
-        print(f"冗長性を追加中 (係数: {redundancy_factor})...")
-        redundant_true, true_redundancy_metadata = add_redundancy(noisy_true, redundancy_factor, paillier)
-        redundant_false, false_redundancy_metadata = add_redundancy(noisy_false, redundancy_factor, paillier)
-
-        # 4. 交互配置とシャッフル
-        print("暗号文を交互配置してシャッフル中...")
-        shuffle_seed = secrets.token_bytes(16)
-        interleaved_ciphertexts, interleave_metadata = interleave_ciphertexts(
-            redundant_true, redundant_false, shuffle_seed)
-
-        # メタデータの集約
-        metadata = {
-            "interleave": interleave_metadata,
-            "true_redundancy": true_redundancy_metadata,
-            "false_redundancy": false_redundancy_metadata,
-            "true_noise_values": true_noise_values,
-            "false_noise_values": false_noise_values,
-            "noise_intensity": noise_intensity,
-            "redundancy_factor": redundancy_factor,
-            "original_true_length": len(true_ciphertexts),
-            "original_false_length": len(false_ciphertexts)
-        }
-
-        return interleaved_ciphertexts, metadata
-    except Exception as e:
-        print(f"識別不能性適用中に問題が発生しました: {e}")
-        # 問題が発生した場合は、単純な交互配置を適用
-        interleaved = []
-        for i in range(max(len(true_ciphertexts), len(false_ciphertexts))):
-            if i < len(true_ciphertexts):
-                interleaved.append(true_ciphertexts[i])
-            if i < len(false_ciphertexts):
-                interleaved.append(false_ciphertexts[i])
-
-        basic_metadata = {
-            "true_length": len(true_ciphertexts),
-            "false_length": len(false_ciphertexts),
-            "simplified": True
-        }
-
-        return interleaved, basic_metadata
-
-
-def parse_arguments() -> argparse.Namespace:
-    """
-    コマンドライン引数の解析
-
-    Returns:
-        解析された引数
-    """
-    parser = argparse.ArgumentParser(
-        description='準同型暗号マスキング方式による暗号化ツール'
-    )
-
-    parser.add_argument(
-        '--true-file', '-t',
-        type=str,
-        default=TRUE_TEXT_PATH,
-        help='真のファイルパス (デフォルト: %(default)s)'
-    )
-
-    parser.add_argument(
-        '--false-file', '-f',
-        type=str,
-        default=FALSE_TEXT_PATH,
-        help='偽のファイルパス (デフォルト: %(default)s)'
-    )
-
-    parser.add_argument(
-        '--output', '-o',
-        type=str,
-        default=f'output{OUTPUT_EXTENSION}',
-        help=f'出力ファイル名 (デフォルト: %(default)s)'
-    )
-
-    parser.add_argument(
-        '--algorithm', '-a',
-        type=str,
-        choices=['paillier', 'elgamal', 'hybrid'],
-        default=CRYPTO_ALGORITHM,
-        help='使用する準同型暗号アルゴリズム (デフォルト: %(default)s)'
-    )
-
-    parser.add_argument(
-        '--key', '-k',
-        type=str,
-        help='使用する鍵（16進数文字列、省略時はランダム生成）'
-    )
-
-    parser.add_argument(
-        '--password', '-p',
-        type=str,
-        help='パスワードから鍵を導出（--keyよりも優先）'
-    )
-
-    parser.add_argument(
-        '--advanced-mask', '-am',
-        action='store_true',
-        help='高度なマスク関数を使用（多項式変換など）'
-    )
-
-    parser.add_argument(
-        '--key-bits', '-b',
-        type=int,
-        default=PAILLIER_KEY_BITS,
-        help=f'鍵のビット長 (デフォルト: %(default)s)'
-    )
-
-    parser.add_argument(
-        '--save-keys', '-s',
-        action='store_true',
-        help='生成した鍵をファイルに保存'
-    )
-
-    parser.add_argument(
-        '--keys-dir', '-d',
-        type=str,
-        default='keys',
-        help='鍵を保存するディレクトリ (--save-keysが指定された場合に使用)'
-    )
-
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='詳細な出力'
-    )
-
-    parser.add_argument(
-        '--force-data-type',
-        choices=['text', 'binary', 'json', 'base64', 'auto'],
-        default='auto',
-        help='入力データの形式を強制指定（デフォルト: 自動検出）'
-    )
-
-    # 識別不能性機能関連のオプション
-    parser.add_argument(
-        '--indistinguishable', '-i',
-        action='store_true',
-        help='識別不能性機能を適用する'
-    )
-
-    parser.add_argument(
-        '--noise-intensity',
-        type=float,
-        default=0.05,
-        help='統計的ノイズの強度（0.0～1.0）'
-    )
-
-    parser.add_argument(
-        '--redundancy-factor',
-        type=int,
-        default=1,
-        help='冗長性の係数（1以上の整数、1の場合は冗長性なし）'
-    )
-
-    parser.add_argument(
-        '--shuffle-seed',
-        type=str,
-        help='シャッフルのためのシード（16進数文字列、省略時はランダム生成）'
-    )
-
-    return parser.parse_args()
-
-
-def generate_key(provided_key: Optional[str] = None) -> bytes:
-    """
-    暗号化鍵を生成または変換
-
-    Args:
-        provided_key: 提供された鍵（16進数文字列）
-
-    Returns:
-        生成された鍵
-    """
-    if provided_key:
-        try:
-            # 16進数文字列から鍵を復元
-            key = binascii.unhexlify(provided_key)
-            # 鍵長を調整
-            if len(key) < KEY_SIZE_BYTES:
-                key = key.ljust(KEY_SIZE_BYTES, b'\0')
-            elif len(key) > KEY_SIZE_BYTES:
-                key = key[:KEY_SIZE_BYTES]
-            return key
-        except binascii.Error:
-            print(f"Error: 無効な鍵形式です。16進数文字列を指定してください。")
-            sys.exit(1)
-    else:
-        # ランダムな鍵を生成
-        return os.urandom(KEY_SIZE_BYTES)
-
-
-def ensure_directory(directory: str) -> None:
-    """
-    ディレクトリの存在を確認し、なければ作成
-
-    Args:
-        directory: 確認するディレクトリパス
-    """
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-        if os.path.exists(directory):
-            print(f"ディレクトリを作成しました: {directory}")
-        else:
-            print(f"Error: ディレクトリの作成に失敗しました: {directory}")
-            sys.exit(1)
-
+    return true_mask, false_mask, mask_metadata
 
 def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
     """
@@ -536,6 +402,21 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
                 print(f"真データ暗号化中: {i+1}/{len(true_chunks)} チャンク")
             # バイト列を整数に変換
             chunk_int = int.from_bytes(chunk, byteorder='big')
+
+            # デバッグ情報
+            if args.verbose and i == 0:
+                print(f"[DEBUG] 真データ 最初のチャンク: {chunk[:20]}...")
+                print(f"[DEBUG] チャンク整数値: {chunk_int}")
+                try:
+                    # 整数を再度バイトに戻す
+                    chunk_bytes = chunk_int.to_bytes(len(chunk), byteorder='big')
+                    print(f"[DEBUG] 整数→バイト変換の一致: {chunk == chunk_bytes}")
+                    if chunk != chunk_bytes:
+                        print(f"[DEBUG] 元のバイト: {chunk[:20]}")
+                        print(f"[DEBUG] 変換後バイト: {chunk_bytes[:20]}")
+                except Exception as e:
+                    print(f"[DEBUG] 変換エラー: {e}")
+
             # 暗号化
             encrypted = paillier_obj.encrypt(chunk_int, paillier_pub)
             true_encrypted.append(encrypted)
@@ -629,8 +510,8 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
             print("基本マスク関数を使用します")
 
         # マスク適用と真偽変換
-        masked_true, masked_false, true_mask, false_mask = transform_between_true_false(
-            paillier_obj, true_encrypted, false_encrypted, mask_generator
+        masked_true, masked_false, mask_metadata = transform_between_true_false(
+            true_encrypted, false_encrypted, paillier_obj, key
         )
 
         # データの元のフォーマット情報を保持（復号時に利用）
@@ -689,8 +570,24 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
 
         # 区別不可能な形式に変換
         print("暗号文を区別不可能な形式に変換中...")
+
+        # データの元のフォーマット情報を保持するためのメタデータ
+        true_metadata = {
+            "original_size": len(true_content),
+            "chunk_size": chunk_size
+        }
+
+        false_metadata = {
+            "original_size": len(false_content),
+            "chunk_size": chunk_size
+        }
+
         indistinguishable_data = create_indistinguishable_form(
-            masked_true, masked_false, true_mask, false_mask, metadata
+            masked_true, masked_false,
+            true_metadata, false_metadata,
+            mask_metadata, paillier_obj.public_key,
+            os.path.basename(args.true_file), os.path.basename(args.false_file),
+            true_final_type, false_final_type
         )
 
         # 出力ファイルに書き込み
@@ -734,6 +631,199 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
         print(f"暗号化中に問題が発生しました: {e}")
         return None, None
 
+def ensure_directory(directory: str) -> None:
+    """
+    ディレクトリの存在を確認し、なければ作成
+
+    Args:
+        directory: 確認するディレクトリパス
+    """
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory)
+        print(f"ディレクトリを作成しました: {directory}")
+
+def generate_key(key_input: Optional[str] = None) -> bytes:
+    """
+    鍵を生成、または指定された鍵を解析
+
+    Args:
+        key_input: 鍵入力（ファイルパス、16進数、Base64文字列など）
+
+    Returns:
+        鍵のバイト列
+    """
+    # 鍵が指定されていない場合は新規生成
+    if key_input is None:
+        # ランダムな鍵を生成
+        return secrets.token_bytes(KEY_SIZE_BYTES)
+
+    # ファイルからの読み込み
+    if os.path.exists(key_input):
+        try:
+            with open(key_input, 'rb') as f:
+                key_data = f.read()
+                if len(key_data) > 0:
+                    # 鍵長を調整
+                    if len(key_data) < KEY_SIZE_BYTES:
+                        key_data = key_data.ljust(KEY_SIZE_BYTES, b'\0')
+                    elif len(key_data) > KEY_SIZE_BYTES:
+                        key_data = key_data[:KEY_SIZE_BYTES]
+                    return key_data
+        except Exception as e:
+            print(f"警告: ファイルからの鍵読み込みに失敗しました: {e}", file=sys.stderr)
+            # ファイルの読み込みに失敗した場合は次の方法を試す
+
+    # Base64形式
+    try:
+        key_data = base64.b64decode(key_input)
+        # 鍵長を調整
+        if len(key_data) < KEY_SIZE_BYTES:
+            key_data = key_data.ljust(KEY_SIZE_BYTES, b'\0')
+        elif len(key_data) > KEY_SIZE_BYTES:
+            key_data = key_data[:KEY_SIZE_BYTES]
+        return key_data
+    except Exception as e:
+        print(f"警告: Base64からの鍵変換に失敗しました: {e}", file=sys.stderr)
+        # Base64デコードに失敗した場合は次の方法を試す
+
+    # 16進数形式
+    try:
+        if key_input.startswith('0x'):
+            key_input = key_input[2:]
+        key_data = binascii.unhexlify(key_input)
+        # 鍵長を調整
+        if len(key_data) < KEY_SIZE_BYTES:
+            key_data = key_data.ljust(KEY_SIZE_BYTES, b'\0')
+        elif len(key_data) > KEY_SIZE_BYTES:
+            key_data = key_data[:KEY_SIZE_BYTES]
+        return key_data
+    except Exception as e:
+        print(f"警告: 16進数からの鍵変換に失敗しました: {e}", file=sys.stderr)
+        # 16進数変換に失敗した場合は次の方法を試す
+
+    # その他の形式（パスワードとして使用）
+    try:
+        # パスワードとしてハッシュ化して鍵に変換
+        return hashlib.sha256(key_input.encode()).digest()
+    except Exception as e:
+        raise ValueError(f"サポートされていない鍵形式です: {e}")
+
+def parse_arguments() -> argparse.Namespace:
+    """
+    コマンドライン引数の解析
+
+    Returns:
+        解析された引数
+    """
+    parser = argparse.ArgumentParser(
+        description='準同型暗号マスキング方式による暗号化ツール'
+    )
+
+    # 入力ファイル（必須）
+    parser.add_argument(
+        'true_file',
+        type=str,
+        help='「真」として使用するファイルのパス'
+    )
+
+    parser.add_argument(
+        'false_file',
+        type=str,
+        help='「偽」として使用するファイルのパス'
+    )
+
+    # オプション
+    parser.add_argument(
+        '--output', '-o',
+        type=str,
+        help='出力ファイル名（省略時は自動生成）'
+    )
+
+    parser.add_argument(
+        '--key', '-k',
+        type=str,
+        help='暗号化鍵（16進数文字列、Base64文字列、またはファイルパス）'
+    )
+
+    parser.add_argument(
+        '--password', '-p',
+        type=str,
+        help='暗号化パスワード（鍵を生成するために使用）'
+    )
+
+    parser.add_argument(
+        '--algorithm',
+        choices=['paillier', 'elgamal'],
+        default='paillier',
+        help='準同型暗号アルゴリズム（デフォルト: paillier）'
+    )
+
+    parser.add_argument(
+        '--key-bits',
+        type=int,
+        default=PAILLIER_KEY_BITS,
+        help=f'鍵長（ビット数、デフォルト: {PAILLIER_KEY_BITS}）'
+    )
+
+    parser.add_argument(
+        '--save-keys',
+        action='store_true',
+        help='鍵をファイルに保存'
+    )
+
+    parser.add_argument(
+        '--keys-dir',
+        type=str,
+        default='keys',
+        help='鍵を保存するディレクトリ（デフォルト: keys）'
+    )
+
+    parser.add_argument(
+        '--force-data-type',
+        choices=['auto', 'text', 'binary', 'json', 'csv', 'base64'],
+        default='auto',
+        help='入力データの形式を強制指定（デフォルト: 自動検出）'
+    )
+
+    parser.add_argument(
+        '--advanced-mask',
+        action='store_true',
+        help='高度なマスク関数を使用'
+    )
+
+    parser.add_argument(
+        '--indistinguishable',
+        action='store_true',
+        help='識別不能性機能を適用（暗号文から真偽を推測困難にする）'
+    )
+
+    parser.add_argument(
+        '--shuffle-seed',
+        type=str,
+        help='シャッフル用のシード値（16進数文字列）'
+    )
+
+    parser.add_argument(
+        '--noise-intensity',
+        type=float,
+        default=0.05,
+        help='統計的ノイズの強度（0.0～1.0、デフォルト: 0.05）'
+    )
+
+    parser.add_argument(
+        '--redundancy-factor',
+        type=int,
+        default=1,
+        help='冗長性の係数（1以上、デフォルト: 1=冗長性なし）'
+    )
+
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='詳細な出力'
+    )
+
+    return parser.parse_args()
 
 def main():
     """メイン関数"""
@@ -749,7 +839,6 @@ def main():
         import traceback
         traceback.print_exc()
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

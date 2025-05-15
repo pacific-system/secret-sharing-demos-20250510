@@ -2,10 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-準同型暗号の基本実装
+準同型暗号システム - Homomorphic Encryption System
 
-このモジュールはPaillier暗号（加法準同型）とElGamal暗号（乗法準同型）の
-基本的な実装を提供します。
+このモジュールは、準同型性を持つ暗号化システムを実装します。主にPaillier暗号アルゴリズムに
+基づいており、暗号化されたデータに対して限定的な演算を可能にします。
+
+Paillier暗号システムは加法準同型性を持ち、暗号化された値同士の加算や、
+暗号化された値と平文値の乗算をサポートします。
 """
 
 import os
@@ -20,7 +23,7 @@ from typing import Tuple, Dict, Any, Union, List, Optional
 import sympy
 from sympy import mod_inverse
 
-from method_8_homomorphic.config import (
+from config import (
     PAILLIER_KEY_BITS,
     PAILLIER_PRECISION,
     ELGAMAL_KEY_BITS,
@@ -30,14 +33,20 @@ from method_8_homomorphic.config import (
 
 
 class PaillierCrypto:
-    """Paillier暗号の実装（加法準同型）"""
+    """
+    Paillier暗号システムの実装
 
-    def __init__(self, bits: int = PAILLIER_KEY_BITS):
+    加法準同型性を持つPaillier暗号アルゴリズムを実装します。
+    暗号化されたデータに対する加算演算と、暗号化されたデータと平文の乗算をサポートします。
+    """
+
+    def __init__(self, bits: int = PAILLIER_KEY_BITS, key_bytes: Optional[bytes] = None):
         """
-        Paillier暗号の初期化
+        初期化
 
         Args:
-            bits: 鍵のビット長
+            bits: 鍵長（ビット数）
+            key_bytes: 鍵のバイトデータ（省略可）
         """
         self.bits = bits
         self.precision = PAILLIER_PRECISION
@@ -47,6 +56,22 @@ class PaillierCrypto:
         self.mu = 0
         self.public_key = None
         self.private_key = None
+
+        # key_bytesが指定されている場合は鍵を導出
+        if key_bytes is not None:
+            # 鍵からシード値を生成
+            seed = hashlib.sha256(key_bytes).digest()
+            seed_int = int.from_bytes(seed, 'big')
+
+            # シードを基に鍵を生成
+            random.seed(seed_int)
+            try:
+                self.public_key, self.private_key = self.generate_keys()
+            except Exception as e:
+                print(f"鍵生成中にエラーが発生しました: {e}")
+                # エラー時はデフォルト鍵を生成
+                random.seed(0)  # 決定論的に生成
+                self.public_key, self.private_key = self.generate_keys()
 
     def generate_keys(self) -> Tuple[Dict[str, int], Dict[str, int]]:
         """
@@ -250,17 +275,17 @@ class PaillierCrypto:
         # c * g^k mod n^2
         return (c * g_k) % n_squared
 
-    def multiply_constant(self, c: int, k: int, public_key: Dict[str, int] = None) -> int:
+    def multiply(self, a: int, k: int, public_key: Optional[Dict[str, int]] = None) -> int:
         """
-        暗号文に定数を乗算（平文では m * k に相当）
+        暗号文と平文定数の乗算
 
         Args:
-            c: 暗号文
-            k: 乗算する定数
-            public_key: 公開鍵
+            a: 暗号文
+            k: 乗算する平文定数
+            public_key: 公開鍵（指定しない場合はself.public_keyを使用）
 
         Returns:
-            乗算結果の暗号文
+            a * k に対応する暗号文
         """
         if public_key is None:
             public_key = self.public_key
@@ -270,11 +295,22 @@ class PaillierCrypto:
 
         n_squared = public_key['n'] * public_key['n']
 
-        # 定数がnを超えないようにする
-        k = k % public_key['n']
+        # E(a)^k mod n^2
+        return pow(a, k, n_squared)
 
-        # c^k mod n^2
-        return pow(c, k, n_squared)
+    def multiply_constant(self, a: int, k: int, public_key: Optional[Dict[str, int]] = None) -> int:
+        """
+        暗号文と平文定数の乗算（multiplyのエイリアス）
+
+        Args:
+            a: 暗号文
+            k: 乗算する平文定数
+            public_key: 公開鍵（指定しない場合はself.public_keyを使用）
+
+        Returns:
+            a * k に対応する暗号文
+        """
+        return self.multiply(a, k, public_key)
 
     def encrypt_bytes(self, data: bytes, public_key: Dict[str, int] = None, chunk_size: int = 128) -> List[int]:
         """
@@ -309,7 +345,7 @@ class PaillierCrypto:
         return encrypted_chunks
 
     def decrypt_bytes(self, encrypted_chunks: List[int], original_size: int,
-                     private_key: Dict[str, int] = None, chunk_size: int = 128) -> bytes:
+                 private_key: Dict[str, int] = None, chunk_size: int = 128) -> bytes:
         """
         暗号化されたバイトデータを復号
 
@@ -328,29 +364,125 @@ class PaillierCrypto:
         if private_key is None:
             raise ValueError("秘密鍵が設定されていません")
 
+        # デバッグ情報
+        print(f"[DEBUG] decrypt_bytes: チャンク数={len(encrypted_chunks)}, 元サイズ={original_size}バイト")
+
         # 各チャンクを復号
         decrypted_data = bytearray()
         remaining_size = original_size
 
-        for chunk in encrypted_chunks:
-            # 暗号文を復号
-            int_value = self.decrypt(chunk, private_key)
+        for i, chunk in enumerate(encrypted_chunks):
+            try:
+                # 暗号文を復号
+                int_value = self.decrypt(chunk, private_key)
 
-            # 最後のチャンクは部分的かもしれない
-            bytes_in_chunk = min(chunk_size, remaining_size)
+                # 最初のチャンクのデバッグ情報
+                if i == 0:
+                    print(f"[DEBUG] 復号されたチャンク#{i}の整数値: {int_value}")
 
-            # 整数をバイト列に変換
-            # 注：サイズを超えないよう調整
-            bytes_value = int_value.to_bytes(
-                (int_value.bit_length() + 7) // 8, 'big')[-bytes_in_chunk:]
+                # 最後のチャンクは部分的かもしれない
+                bytes_in_chunk = min(chunk_size, remaining_size)
+
+                # 最初のチャンクのデバッグ情報
+                if i == 0:
+                    print(f"[DEBUG] チャンク#{i}のバイト数: {bytes_in_chunk}")
+
+                try:
+                    # 整数をバイト列に変換
+                    if int_value == 0:
+                        # 特殊ケース: 0はバイト変換で問題が発生するため個別処理
+                        bytes_value = b'\x00' * bytes_in_chunk
+                    else:
+                        # 必要なバイト数を計算（ビット長から）
+                        needed_bytes = max(1, (int_value.bit_length() + 7) // 8)
+
+                        # バイト変換の方法を改善
+                        try:
+                            # 十分な長さのバイト配列を確保
+                            buffer_size = max(needed_bytes, bytes_in_chunk)
+                            # 整数をバイト列に変換
+                            bytes_value = int_value.to_bytes(buffer_size, 'big')
+
+                            # バイト長調整（big-endianでは先頭に0パディングされる）
+                            # 必要なサイズだけを末尾から取得
+                            if len(bytes_value) > bytes_in_chunk:
+                                # 末尾のbytes_in_chunk分を取得
+                                bytes_value = bytes_value[-bytes_in_chunk:]
+                            elif len(bytes_value) < bytes_in_chunk:
+                                # 不足分を0パディング（右寄せ）
+                                bytes_value = bytes_value.rjust(bytes_in_chunk, b'\x00')
+                        except (OverflowError, ValueError):
+                            # より大きいバッファで再試行
+                            try:
+                                buffer_size = bytes_in_chunk * 2
+                                bytes_value = int_value.to_bytes(buffer_size, 'big')
+                                # 必要なサイズだけを末尾から取得
+                                bytes_value = bytes_value[-bytes_in_chunk:]
+                            except (OverflowError, ValueError) as err:
+                                print(f"[ERROR] バイト変換エラー（再試行）: {err}")
+                                # 最終手段：ビット長から計算
+                                bit_length = int_value.bit_length()
+                                buffer_size = (bit_length + 7) // 8
+                                try:
+                                    bytes_value = int_value.to_bytes(buffer_size, 'big')
+                                    # 必要なサイズに調整
+                                    if len(bytes_value) > bytes_in_chunk:
+                                        bytes_value = bytes_value[-bytes_in_chunk:]
+                                    elif len(bytes_value) < bytes_in_chunk:
+                                        bytes_value = bytes_value.rjust(bytes_in_chunk, b'\x00')
+                                except Exception as e:
+                                    print(f"[ERROR] 最終バイト変換エラー: {e}")
+                                    bytes_value = b'\x00' * bytes_in_chunk
+
+                    # デバッグログ
+                    if i == 0 and bytes_value:
+                        print(f"[DEBUG] 変換されたバイト先頭: {bytes_value[:min(20, len(bytes_value))]}")
+
+                except (ValueError, OverflowError) as e:
+                    print(f"[WARN] バイト変換エラー: {e}")
+                    # フォールバック: パディングされたゼロを返す
+                    bytes_value = b'\x00' * bytes_in_chunk
+
+            except Exception as e:
+                print(f"[ERROR] チャンク {i} の復号エラー: {e}")
+                import traceback
+                traceback.print_exc()
+                # エラー時はゼロパディング
+                bytes_value = b'\x00' * bytes_in_chunk
 
             # バイト配列に追加
             decrypted_data.extend(bytes_value)
 
             # 残りのサイズを更新
             remaining_size -= bytes_in_chunk
+            if remaining_size <= 0:
+                # 最後のチャンクを処理したので終了
+                break
 
-        return bytes(decrypted_data)
+        # バイト数を必ず元のサイズに合わせる
+        # original_sizeが0または不正な値の場合は、結果をそのまま返す
+        if original_size > 0:
+            # デバッグログ
+            if len(decrypted_data) != original_size:
+                print(f"[WARN] 復号データサイズ({len(decrypted_data)})が元のサイズ({original_size})と一致しません - 調整します")
+
+            # 元のサイズ分だけを取得（過不足があれば調整）
+            result = bytes(decrypted_data[:original_size])
+
+            # 足りない場合はパディング
+            if len(result) < original_size:
+                result = result + b'\x00' * (original_size - len(result))
+        else:
+            result = bytes(decrypted_data)
+            print(f"[WARN] 元のサイズが不正値({original_size})です - 復号結果をそのまま使用します({len(result)}バイト)")
+
+        print(f"[DEBUG] 復号結果: 長さ={len(result)}バイト（要求サイズ={original_size}バイト）")
+        if len(result) > 0:
+            print(f"[DEBUG] 復号データ先頭: {result[:min(20, len(result))]}")
+            if len(result) > 20:
+                print(f"[DEBUG] 復号データ末尾: {result[-min(20, len(result)):]}")
+
+        return result
 
     def save_keys(self, public_key_file: str, private_key_file: Optional[str] = None) -> None:
         """
@@ -391,629 +523,269 @@ class PaillierCrypto:
                     self.private_key = json.load(f)
             except FileNotFoundError:
                 self.private_key = None
+
+    def randomize(self, ciphertext: int, public_key: Optional[Dict[str, int]] = None) -> int:
+        """
+        暗号文を再ランダム化
+
+        同じ平文に対応する異なる暗号文を生成します。これによって暗号文の識別性を低下させます。
+
+        Args:
+            ciphertext: 再ランダム化する暗号文
+            public_key: 公開鍵（指定しない場合はself.public_keyを使用）
+
+        Returns:
+            再ランダム化された暗号文
+        """
+        if public_key is None:
+            public_key = self.public_key
+
+        if public_key is None:
+            raise ValueError("公開鍵が設定されていません")
+
+        n = public_key['n']
+        n_squared = n * n
+
+        # ランダムな r ∈ Z*_n を選択
+        r = random.randint(1, n - 1)
+        while math.gcd(r, n) != 1:
+            r = random.randint(1, n - 1)
+
+        # c * r^n mod n^2
+        randomized = (ciphertext * pow(r, n, n_squared)) % n_squared
+
+        return randomized
 
 
 class ElGamalCrypto:
-    """ElGamal暗号の実装（乗法準同型）"""
+    """
+    ElGamal暗号システム（乗法準同型）
 
-    def __init__(self, bits: int = ELGAMAL_KEY_BITS):
-        """
-        ElGamal暗号の初期化
-
-        Args:
-            bits: 鍵のビット長
-        """
+    このクラスは実装予定ですが、現在はスタブとして定義されています。
+    """
+    def __init__(self, bits=PAILLIER_KEY_BITS):
         self.bits = bits
-        self.p = 0
-        self.g = 0
-        self.y = 0
-        self.x = 0
         self.public_key = None
         self.private_key = None
 
-    def generate_keys(self) -> Tuple[Dict[str, int], Dict[str, int]]:
-        """
-        ElGamal暗号の鍵ペアを生成
+    def generate_keys(self):
+        """将来の実装のためのスタブ"""
+        return {}, {}
+
+    def encrypt(self, plaintext, public_key=None):
+        """将来の実装のためのスタブ"""
+        return 0
+
+    def decrypt(self, ciphertext, private_key=None):
+        """将来の実装のためのスタブ"""
+        return 0
+
+def derive_key_from_password(password: str, key_size: int = 32) -> bytes:
+    """
+    パスワードから暗号鍵を導出する関数
+
+    Args:
+        password: 元となるパスワード
+        key_size: 鍵のサイズ（バイト）
+
+    Returns:
+        導出された鍵
+    """
+    # パスワードをUTF-8でエンコード
+    password_bytes = password.encode('utf-8')
+
+    # PBKDF2を使用して鍵を導出
+    # ソルトが固定されていますが、これは単純化のためです
+    # 実際のアプリケーションではランダムなソルトを使用し、保存すべきです
+    salt = b'homomorphic_masking'
+    derived_key = hashlib.pbkdf2_hmac('sha256', password_bytes, salt, 100000, key_size)
+
+    return derived_key
+
+def save_keys(public_key: Dict[str, Any], private_key: Dict[str, Any],
+             public_key_file: str, private_key_file: str) -> bool:
+    """
+    鍵をJSONファイルに保存
+
+    Args:
+        public_key: 公開鍵辞書
+        private_key: 秘密鍵辞書
+        public_key_file: 公開鍵を保存するファイルパス
+        private_key_file: 秘密鍵を保存するファイルパス
+
+    Returns:
+        保存に成功した場合はTrue
+    """
+    try:
+        # 大きな整数も文字列化して保存
+        def int_dict_to_str(d):
+            return {k: str(v) if isinstance(v, int) else v for k, v in d.items()}
 
-        Returns:
-            (公開鍵, 秘密鍵)のタプル
-        """
-        # 大きな素数pを生成
-        self.p = sympy.randprime(2**(self.bits-1), 2**self.bits)
-
-        # 原始根gを見つける
-        while True:
-            self.g = random.randint(2, self.p - 1)
-            if pow(self.g, (self.p - 1) // 2, self.p) != 1:  # 原始根の簡易チェック
-                break
-
-        # 秘密鍵x (1 < x < p-1) を生成
-        self.x = random.randint(2, self.p - 2)
-
-        # 公開鍵y = g^x mod p を計算
-        self.y = pow(self.g, self.x, self.p)
-
-        # 公開鍵と秘密鍵を設定
-        public_key = {'p': self.p, 'g': self.g, 'y': self.y}
-        private_key = {'x': self.x, 'p': self.p}
-
-        self.public_key = public_key
-        self.private_key = private_key
-
-        return public_key, private_key
-
-    def encrypt(self, m: int, public_key: Dict[str, int] = None) -> Tuple[int, int]:
-        """
-        メッセージを暗号化
-
-        Args:
-            m: 暗号化する整数値 (1 < m < p-1)
-            public_key: 公開鍵
-
-        Returns:
-            (c1, c2)の暗号文ペア
-        """
-        if public_key is None:
-            public_key = self.public_key
-
-        if public_key is None:
-            raise ValueError("公開鍵が設定されていません")
-
-        p = public_key['p']
-        g = public_key['g']
-        y = public_key['y']
-
-        # メッセージが範囲内にあることを確認
-        if m <= 0 or m >= p:
-            m = m % (p - 1)
-            if m == 0:
-                m = 1
-
-        # 一時的な乱数k (1 < k < p-1) を生成
-        k = random.randint(2, p - 2)
-
-        # c1 = g^k mod p
-        c1 = pow(g, k, p)
-
-        # c2 = m * y^k mod p
-        y_k = pow(y, k, p)
-        c2 = (m * y_k) % p
-
-        return (c1, c2)
-
-    def decrypt(self, ciphertext: Tuple[int, int], private_key: Dict[str, int] = None) -> int:
-        """
-        暗号文を復号
-
-        Args:
-            ciphertext: (c1, c2)の暗号文ペア
-            private_key: 秘密鍵
-
-        Returns:
-            復号された整数値
-        """
-        if private_key is None:
-            private_key = self.private_key
-
-        if private_key is None:
-            raise ValueError("秘密鍵が設定されていません")
-
-        c1, c2 = ciphertext
-        x = private_key['x']
-        p = private_key['p']
-
-        # s = c1^x mod p
-        s = pow(c1, x, p)
-
-        # m = c2 * s^(-1) mod p
-        s_inv = mod_inverse(s, p)
-        m = (c2 * s_inv) % p
-
-        return m
-
-    def multiply(self, c1: Tuple[int, int], c2: Tuple[int, int], public_key: Dict[str, int] = None) -> Tuple[int, int]:
-        """
-        暗号文同士の乗算（平文では m1 * m2 に相当）
-
-        Args:
-            c1: 1つ目の暗号文ペア (a1, b1)
-            c2: 2つ目の暗号文ペア (a2, b2)
-            public_key: 公開鍵
-
-        Returns:
-            乗算結果の暗号文ペア
-        """
-        if public_key is None:
-            public_key = self.public_key
-
-        if public_key is None:
-            raise ValueError("公開鍵が設定されていません")
-
-        p = public_key['p']
-
-        # c1 = (a1, b1), c2 = (a2, b2)
-        a1, b1 = c1
-        a2, b2 = c2
-
-        # 暗号文の乗算: (a1*a2, b1*b2)
-        a_result = (a1 * a2) % p
-        b_result = (b1 * b2) % p
-
-        return (a_result, b_result)
-
-    def pow_constant(self, c: Tuple[int, int], k: int, public_key: Dict[str, int] = None) -> Tuple[int, int]:
-        """
-        暗号文の定数乗（平文では m^k に相当）
-
-        Args:
-            c: 暗号文ペア (a, b)
-            k: 指数
-            public_key: 公開鍵
-
-        Returns:
-            指数乗算結果の暗号文ペア
-        """
-        if public_key is None:
-            public_key = self.public_key
-
-        if public_key is None:
-            raise ValueError("公開鍵が設定されていません")
-
-        p = public_key['p']
-
-        a, b = c
-
-        # 暗号文の指数乗: (a^k, b^k)
-        a_result = pow(a, k, p)
-        b_result = pow(b, k, p)
-
-        return (a_result, b_result)
-
-    def encrypt_bytes(self, data: bytes, public_key: Dict[str, int] = None, chunk_size: int = 64) -> List[Tuple[int, int]]:
-        """
-        バイトデータを暗号化
-
-        Args:
-            data: 暗号化するバイトデータ
-            public_key: 公開鍵
-            chunk_size: チャンクサイズ（バイト）
-
-        Returns:
-            暗号化されたチャンクのリスト
-        """
-        if public_key is None:
-            public_key = self.public_key
-
-        if public_key is None:
-            raise ValueError("公開鍵が設定されていません")
-
-        # ElGamalで扱える数値の上限
-        p = public_key['p']
-        max_value = p - 1
-
-        # チャンクサイズを調整（p以下の整数となるように）
-        max_bytes = (max_value.bit_length() + 7) // 8 - 1
-        chunk_size = min(chunk_size, max_bytes)
-
-        # データをチャンクに分割
-        chunks = [data[i:i+chunk_size] for i in range(0, len(data), chunk_size)]
-
-        # 各チャンクを整数に変換して暗号化
-        encrypted_chunks = []
-        for chunk in chunks:
-            # バイト列を整数に変換
-            int_value = int.from_bytes(chunk, 'big')
-            # 値が範囲内にあることを確認
-            if int_value >= max_value:
-                int_value = int_value % max_value
-            if int_value == 0:
-                int_value = 1  # ElGamalでは0を暗号化できないため
-            # 暗号化
-            encrypted = self.encrypt(int_value, public_key)
-            encrypted_chunks.append(encrypted)
-
-        return encrypted_chunks
-
-    def decrypt_bytes(self, encrypted_chunks: List[Tuple[int, int]], original_size: int,
-                     private_key: Dict[str, int] = None, chunk_size: int = 64) -> bytes:
-        """
-        暗号化されたバイトデータを復号
-
-        Args:
-            encrypted_chunks: 暗号化されたチャンクのリスト
-            original_size: 元のデータサイズ
-            private_key: 秘密鍵
-            chunk_size: チャンクサイズ（バイト）
-
-        Returns:
-            復号されたバイトデータ
-        """
-        if private_key is None:
-            private_key = self.private_key
-
-        if private_key is None:
-            raise ValueError("秘密鍵が設定されていません")
-
-        # 各チャンクを復号
-        decrypted_data = bytearray()
-        remaining_size = original_size
-
-        for chunk in encrypted_chunks:
-            # 暗号文を復号
-            int_value = self.decrypt(chunk, private_key)
-
-            # 最後のチャンクは部分的かもしれない
-            bytes_in_chunk = min(chunk_size, remaining_size)
-
-            # 整数をバイト列に変換
-            bytes_value = int_value.to_bytes(
-                (int_value.bit_length() + 7) // 8, 'big')[-bytes_in_chunk:]
-
-            # バイト配列に追加
-            decrypted_data.extend(bytes_value)
-
-            # 残りのサイズを更新
-            remaining_size -= bytes_in_chunk
-
-        return bytes(decrypted_data)
-
-    def save_keys(self, public_key_file: str, private_key_file: Optional[str] = None) -> None:
-        """
-        鍵をファイルに保存
-
-        Args:
-            public_key_file: 公開鍵の保存先ファイルパス
-            private_key_file: 秘密鍵の保存先ファイルパス（省略可）
-        """
-        if self.public_key is None:
-            raise ValueError("公開鍵が設定されていません")
-
-        # 公開鍵の保存
         with open(public_key_file, 'w') as f:
-            json.dump(self.public_key, f)
+            json.dump(int_dict_to_str(public_key), f, indent=2)
 
-        # 秘密鍵の保存（指定されている場合）
-        if private_key_file is not None and self.private_key is not None:
-            with open(private_key_file, 'w') as f:
-                json.dump(self.private_key, f)
+        with open(private_key_file, 'w') as f:
+            json.dump(int_dict_to_str(private_key), f, indent=2)
 
-    def load_keys(self, public_key_file: str, private_key_file: Optional[str] = None) -> None:
-        """
-        ファイルから鍵を読み込み
+        return True
+    except Exception as e:
+        print(f"鍵の保存中にエラーが発生しました: {e}")
+        return False
 
-        Args:
-            public_key_file: 公開鍵ファイルのパス
-            private_key_file: 秘密鍵ファイルのパス（省略可）
-        """
-        # 公開鍵の読み込み
+def load_keys(public_key_file: str, private_key_file: Optional[str] = None) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    """
+    JSONファイルから鍵を読み込み
+
+    Args:
+        public_key_file: 公開鍵ファイルパス
+        private_key_file: 秘密鍵ファイルパス（オプション）
+
+    Returns:
+        (public_key, private_key): 公開鍵と秘密鍵（秘密鍵ファイルが指定されていない場合はNone）
+    """
+    try:
         with open(public_key_file, 'r') as f:
-            self.public_key = json.load(f)
+            public_key_str = json.load(f)
 
-        # 秘密鍵の読み込み（指定されている場合）
-        if private_key_file is not None:
+        # 文字列を整数に変換
+        public_key = {k: int(v) if isinstance(v, str) and v.isdigit() else v
+                      for k, v in public_key_str.items()}
+
+        private_key = None
+        if private_key_file:
             try:
                 with open(private_key_file, 'r') as f:
-                    self.private_key = json.load(f)
-            except FileNotFoundError:
-                self.private_key = None
+                    private_key_str = json.load(f)
 
+                # 文字列を整数に変換
+                private_key = {k: int(v) if isinstance(v, str) and v.isdigit() else v
+                               for k, v in private_key_str.items()}
+            except Exception as e:
+                print(f"秘密鍵の読み込み中にエラーが発生しました: {e}")
 
-# 鍵管理とシリアライズのユーティリティ関数
-def save_keys(public_key: Dict[str, int], private_key: Dict[str, int],
-             public_key_file: str, private_key_file: str) -> None:
+        return public_key, private_key
+    except Exception as e:
+        print(f"鍵の読み込み中にエラーが発生しました: {e}")
+        return {}, None
+
+def serialize_encrypted_data(encrypted_data: Dict[str, Any]) -> str:
     """
-    公開鍵と秘密鍵をファイルに保存
+    暗号化データを文字列にシリアライズ
 
     Args:
-        public_key: 公開鍵
-        private_key: 秘密鍵
-        public_key_file: 公開鍵の保存先
-        private_key_file: 秘密鍵の保存先
-    """
-    # 公開鍵の保存
-    with open(public_key_file, 'w') as f:
-        json.dump(public_key, f)
-
-    # 秘密鍵の保存
-    with open(private_key_file, 'w') as f:
-        json.dump(private_key, f)
-
-
-def load_keys(public_key_file: str, private_key_file: Optional[str] = None) -> Tuple[Dict[str, int], Optional[Dict[str, int]]]:
-    """
-    ファイルから鍵を読み込む
-
-    Args:
-        public_key_file: 公開鍵ファイル
-        private_key_file: 秘密鍵ファイル（省略可）
+        encrypted_data: シリアライズする暗号化データの辞書
 
     Returns:
-        (public_key, private_key)
+        JSON形式の文字列
     """
-    # 公開鍵の読み込み
-    with open(public_key_file, 'r') as f:
-        public_key = json.load(f)
+    # 大きな整数は文字列に変換
+    def process_value(v):
+        if isinstance(v, int) and v > 1e15:
+            return str(v)
+        elif isinstance(v, dict):
+            return {k: process_value(val) for k, val in v.items()}
+        elif isinstance(v, list):
+            return [process_value(item) for item in v]
+        else:
+            return v
 
-    # 秘密鍵の読み込み（指定されている場合）
-    private_key = None
-    if private_key_file:
-        try:
-            with open(private_key_file, 'r') as f:
-                private_key = json.load(f)
-        except FileNotFoundError:
-            pass  # 秘密鍵ファイルが見つからない場合は None のままにする
+    serializable_data = {k: process_value(v) for k, v in encrypted_data.items()}
+    return json.dumps(serializable_data, indent=2)
 
-    return public_key, private_key
-
-
-def derive_key_from_password(password: str, salt: Optional[bytes] = None, crypto_type: str = "paillier", bits: int = None) -> Tuple[Dict[str, Any], Dict[str, Any], bytes]:
-    """
-    パスワードから鍵ペアを導出（固定的に生成）
-
-    同じパスワードとソルトからは同じ鍵ペアが生成されます。
-
-    Args:
-        password: パスワード文字列
-        salt: ソルト（省略時はランダム生成）
-        crypto_type: 暗号方式 ("paillier" または "elgamal")
-        bits: 鍵のビット長（省略時はデフォルト値）
-
-    Returns:
-        (public_key, private_key, salt)
-    """
-    # ソルトがなければ生成
-    if salt is None:
-        salt = os.urandom(SALT_SIZE)
-
-    # パスワードと塩からシード値を導出
-    seed_bytes = hashlib.pbkdf2_hmac(
-        'sha256',
-        password.encode(),
-        salt,
-        KDF_ITERATIONS,
-        dklen=32
-    )
-    seed = int.from_bytes(seed_bytes, 'big')
-
-    # パスワードから直接素数を導出する関数
-    def derive_prime(base_seed: int, index: int, prime_bits: int) -> int:
-        """決定的に素数を導出する"""
-        # シードとインデックスを組み合わせて新しいシードを生成
-        combined_seed = hashlib.sha256(f"{base_seed}:{index}".encode()).digest()
-        combined_seed_int = int.from_bytes(combined_seed, 'big')
-
-        # 開始数を設定（必要なビット数を持つ奇数）
-        start_num = (combined_seed_int | (1 << (prime_bits - 1))) | 1
-
-        # 候補数から開始して素数を探す
-        candidate = start_num
-        while True:
-            if sympy.isprime(candidate):
-                return candidate
-            # 次の奇数に移動
-            candidate += 2
-
-    # 暗号方式に応じて鍵を生成
-    if crypto_type.lower() == "paillier":
-        bits = bits or PAILLIER_KEY_BITS
-        half_bits = bits // 2
-
-        # 2つの異なる素数を決定的に生成
-        p = derive_prime(seed, 1, half_bits)
-        q = derive_prime(seed, 2, half_bits)
-
-        # 鍵パラメータの計算
-        n = p * q
-        lambda_val = (p - 1) * (q - 1) // math.gcd(p - 1, q - 1)
-        g = n + 1
-        mu = mod_inverse(lambda_val, n)
-
-        public_key = {'n': n, 'g': g}
-        private_key = {'lambda': lambda_val, 'mu': mu, 'p': p, 'q': q, 'n': n}
-
-    elif crypto_type.lower() == "elgamal":
-        bits = bits or ELGAMAL_KEY_BITS
-
-        # 素数pを決定的に生成
-        p = derive_prime(seed, 1, bits)
-
-        # 原始根gを決定的に選択
-        # 通常は試行錯誤で見つけるが、ここでは簡略化のため決定的な方法で選ぶ
-        g_seed = hashlib.sha256(f"{seed}:generator".encode()).digest()
-        g_seed_int = int.from_bytes(g_seed, 'big')
-        g = 2 + (g_seed_int % (p - 3))  # 2 <= g < p-1 の範囲で選択
-
-        # 秘密鍵xを決定的に生成
-        x_seed = hashlib.sha256(f"{seed}:private_key".encode()).digest()
-        x_seed_int = int.from_bytes(x_seed, 'big')
-        x = 2 + (x_seed_int % (p - 3))  # 2 <= x < p-1 の範囲で選択
-
-        # 公開鍵yを計算
-        y = pow(g, x, p)
-
-        public_key = {'p': p, 'g': g, 'y': y}
-        private_key = {'x': x, 'p': p}
-
-    else:
-        raise ValueError(f"サポートされていない暗号方式: {crypto_type}")
-
-    return public_key, private_key, salt
-
-
-def serialize_encrypted_data(encrypted_chunks: Union[List[int], List[Tuple[int, int]]],
-                          original_size: int,
-                          crypto_type: str = "paillier",
-                          additional_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    暗号化データをシリアライズ可能な形式に変換
-
-    Args:
-        encrypted_chunks: 暗号化されたチャンクのリスト
-        original_size: 元のデータサイズ
-        crypto_type: 暗号方式 ("paillier" または "elgamal")
-        additional_data: 追加のメタデータ
-
-    Returns:
-        シリアライズ可能な辞書
-    """
-    # 暗号化チャンクを16進数文字列に変換
-    if crypto_type.lower() == "paillier":
-        hex_chunks = [hex(chunk) for chunk in encrypted_chunks]
-    elif crypto_type.lower() == "elgamal":
-        hex_chunks = [(hex(c1), hex(c2)) for c1, c2 in encrypted_chunks]
-    else:
-        raise ValueError(f"サポートされていない暗号方式: {crypto_type}")
-
-    # データを辞書に格納
-    result = {
-        "format": "homomorphic_encrypted",
-        "version": "1.0",
-        "crypto_type": crypto_type,
-        "chunks": hex_chunks,
-        "original_size": original_size,
-        "timestamp": int(time.time())
-    }
-
-    # 追加のメタデータがあれば追加
-    if additional_data:
-        result.update(additional_data)
-
-    return result
-
-
-def deserialize_encrypted_data(data: Dict[str, Any]) -> Tuple[Union[List[int], List[Tuple[int, int]]], int, str]:
+def deserialize_encrypted_data(serialized_data: str) -> Dict[str, Any]:
     """
     シリアライズされた暗号化データを復元
 
     Args:
-        data: シリアライズされたデータ辞書
+        serialized_data: JSON形式の文字列
 
     Returns:
-        (encrypted_chunks, original_size, crypto_type)
+        復元された暗号化データの辞書
     """
-    # フォーマットチェック
-    if data.get("format") != "homomorphic_encrypted":
-        raise ValueError("サポートされていないフォーマットです")
+    try:
+        data = json.loads(serialized_data)
 
-    # バージョンチェック
-    if data.get("version") != "1.0":
-        raise ValueError("サポートされていないバージョンです")
+        # 数値文字列を整数に変換
+        def process_value(v):
+            if isinstance(v, str) and v.isdigit():
+                return int(v)
+            elif isinstance(v, dict):
+                return {k: process_value(val) for k, val in v.items()}
+            elif isinstance(v, list):
+                return [process_value(item) for item in v]
+            else:
+                return v
 
-    # 暗号方式の取得
-    crypto_type = data.get("crypto_type", "paillier")
+        return {k: process_value(v) for k, v in data.items()}
+    except json.JSONDecodeError as e:
+        print(f"データのデシリアライズ中にエラーが発生しました: {e}")
+        return {}
 
-    # 暗号化チャンクを16進数文字列から復元
-    original_size = data["original_size"]
+if __name__ == "__main__":
+    # テスト用コード
+    print("Paillier暗号テスト")
 
-    # Paillierの場合は整数のリスト
-    if crypto_type.lower() == "paillier":
-        encrypted_chunks = [int(chunk, 16) for chunk in data["chunks"]]
-    # ElGamalの場合はタプルのリスト
-    elif crypto_type.lower() == "elgamal":
-        encrypted_chunks = [(int(c1, 16), int(c2, 16)) for c1, c2 in data["chunks"]]
-    else:
-        raise ValueError(f"サポートされていない暗号方式: {crypto_type}")
+    # Paillierインスタンスの作成
+    paillier = PaillierCrypto(bits=1024)  # 小さい値でテスト
 
-    return encrypted_chunks, original_size, crypto_type
-
-
-# 準同型暗号のハイブリッド利用例とデモ機能
-def homomorphic_demo():
-    """
-    準同型暗号のデモ
-    """
-    print("=== Paillier暗号（加法準同型）デモ ===")
-    paillier = PaillierCrypto(bits=1024)  # より小さい鍵サイズでデモ実行
+    # 鍵の生成
     public_key, private_key = paillier.generate_keys()
+    print(f"公開鍵: n={public_key['n']}, g={public_key['g']}")
+    print(f"秘密鍵: lambda={private_key['lambda']}, mu={private_key['mu']}")
 
+    # 暗号化テスト
     m1 = 42
     m2 = 73
 
     c1 = paillier.encrypt(m1, public_key)
     c2 = paillier.encrypt(m2, public_key)
 
-    # 暗号文同士の加算
+    print(f"平文1: {m1} → 暗号文1: {c1}")
+    print(f"平文2: {m2} → 暗号文2: {c2}")
+
+    # 復号テスト
+    d1 = paillier.decrypt(c1, private_key)
+    d2 = paillier.decrypt(c2, private_key)
+
+    print(f"暗号文1: {c1} → 復号1: {d1}")
+    print(f"暗号文2: {c2} → 復号2: {d2}")
+
+    # 準同型性テスト
+    print("\n準同型性テスト")
+
+    # 加算: E(m1 + m2) = E(m1) ⊙ E(m2)
     c_add = paillier.add(c1, c2, public_key)
+    d_add = paillier.decrypt(c_add, private_key)
 
-    # 復号
-    decrypted = paillier.decrypt(c_add, private_key)
+    print(f"加算: {m1} + {m2} = {m1 + m2}")
+    print(f"準同型加算の復号: {d_add}")
+    print(f"検証: {d_add == (m1 + m2) % public_key['n']}")
 
-    print(f"m1 = {m1}, m2 = {m2}")
-    print(f"m1 + m2 = {m1 + m2}")
-    print(f"復号結果 = {decrypted}")
+    # 定数加算: E(m1 + k) = E(m1) ⊙ E(k)
+    k = 30
+    c_add_const = paillier.add_constant(c1, k, public_key)
+    d_add_const = paillier.decrypt(c_add_const, private_key)
 
-    # 定数倍のテスト
-    k = 5
-    c_mul = paillier.multiply_constant(c1, k, public_key)
-    decrypted_mul = paillier.decrypt(c_mul, private_key)
-    print(f"\nm1 * {k} = {m1 * k}")
-    print(f"復号結果 = {decrypted_mul}")
+    print(f"\n定数加算: {m1} + {k} = {m1 + k}")
+    print(f"準同型定数加算の復号: {d_add_const}")
+    print(f"検証: {d_add_const == (m1 + k) % public_key['n']}")
 
-    # バイトデータのテスト
-    test_text = "これは準同型暗号のテストです。Hello, Homomorphic Encryption!"
-    test_bytes = test_text.encode('utf-8')
+    # 定数乗算: E(m1 * k) = E(m1)^k
+    c_mult = paillier.multiply_constant(c1, k, public_key)
+    d_mult = paillier.decrypt(c_mult, private_key)
 
-    print(f"\nテキストのバイナリ暗号化テスト: {test_text}")
-    # バイナリデータの暗号化
-    encrypted_chunks = paillier.encrypt_bytes(test_bytes, public_key)
-    print(f"暗号化チャンク数: {len(encrypted_chunks)}")
+    print(f"\n定数乗算: {m1} * {k} = {m1 * k}")
+    print(f"準同型定数乗算の復号: {d_mult}")
+    print(f"検証: {d_mult == (m1 * k) % public_key['n']}")
 
-    # バイナリデータの復号
-    decrypted_bytes = paillier.decrypt_bytes(encrypted_chunks, len(test_bytes), private_key)
-    decrypted_text = decrypted_bytes.decode('utf-8')
-    print(f"復号テキスト: {decrypted_text}")
-    print(f"復号成功: {test_text == decrypted_text}")
+    # 再ランダム化テスト
+    print("\n再ランダム化テスト")
 
-    # パスワードからの鍵導出テスト
-    print("\n=== パスワードからの鍵導出テスト ===")
-    password = "secure_password_123"
-    salt = os.urandom(SALT_SIZE)
+    c1_rand = paillier.randomize(c1, public_key)
+    d1_rand = paillier.decrypt(c1_rand, private_key)
 
-    # 1回目の導出
-    pub1, priv1, _ = derive_key_from_password(password, salt, "paillier", 1024)
-
-    # 2回目の導出（同じパスワードとソルト）
-    pub2, priv2, _ = derive_key_from_password(password, salt, "paillier", 1024)
-
-    # 鍵の比較
-    print(f"同じパスワードとソルトからの鍵一貫性: {pub1['n'] == pub2['n']}")
-
-    # Paillier暗号文のシリアライズテスト
-    print("\n=== 暗号文のシリアライズテスト ===")
-    serialized = serialize_encrypted_data(encrypted_chunks, len(test_bytes), "paillier")
-    print(f"シリアライズ結果のキー: {list(serialized.keys())}")
-
-    # デシリアライズテスト
-    deserialized_chunks, original_size, crypto_type = deserialize_encrypted_data(serialized)
-    print(f"デシリアライズしたチャンク数: {len(deserialized_chunks)}")
-    print(f"元のサイズ: {original_size}, 暗号方式: {crypto_type}")
-
-    # デシリアライズしたデータの復号テスト
-    decrypted_bytes2 = paillier.decrypt_bytes(deserialized_chunks, original_size, private_key)
-    decrypted_text2 = decrypted_bytes2.decode('utf-8')
-    print(f"シリアライズ・デシリアライズ後の復号テキスト: {decrypted_text2}")
-    print(f"シリアライズ・デシリアライズの成功: {test_text == decrypted_text2}")
-
-    print("\n=== ElGamal暗号（乗法準同型）デモ ===")
-    elgamal = ElGamalCrypto(bits=512)  # より小さい鍵サイズでデモ実行
-    public_key, private_key = elgamal.generate_keys()
-
-    m1 = 11
-    m2 = 7
-
-    c1 = elgamal.encrypt(m1, public_key)
-    c2 = elgamal.encrypt(m2, public_key)
-
-    # 暗号文同士の乗算
-    c_mul = elgamal.multiply(c1, c2, public_key)
-
-    # 復号
-    decrypted = elgamal.decrypt(c_mul, private_key)
-
-    print(f"m1 = {m1}, m2 = {m2}")
-    print(f"m1 * m2 = {m1 * m2}")
-    print(f"復号結果 = {decrypted}")
-
-
-if __name__ == "__main__":
-    homomorphic_demo()
+    print(f"元の暗号文: {c1}")
+    print(f"再ランダム化後: {c1_rand}")
+    print(f"再ランダム化後の復号: {d1_rand}")
+    print(f"元の平文と同じ: {d1_rand == m1}")
+    print(f"元の暗号文と異なる: {c1_rand != c1}")

@@ -2,794 +2,864 @@
 # -*- coding: utf-8 -*-
 
 """
-準同型暗号マスキング方式のデータアダプタモジュール
+準同型暗号マスキング方式のデータアダプターモジュール
 
-このモジュールは、テキストやバイナリなどの異なるデータ形式間の
-変換を行うアダプタ機能を提供します。暗号化前のデータ変換と
-復号後のデータ変換を一貫して行い、異なるデータ形式を適切に
-処理できるようにします。
+このモジュールは、さまざまな形式のデータ（テキスト、JSON、バイナリなど）を
+暗号化・復号に適したフォーマットに変換するためのアダプターを提供します。
 """
 
-import base64
+import os
+import sys
 import json
-import struct
-from typing import Tuple, Dict, Any, Optional, Union, List
-
+import base64
+import binascii
+import io
+import csv
+import re
+from typing import Dict, List, Tuple, Any, Optional, Union, BinaryIO
 
 class DataAdapter:
     """
-    データ変換のためのベースアダプタクラス
+    データタイプのアダプターの基底クラス
 
-    異なるデータ形式間の変換を管理します。
+    このクラスは、さまざまな形式のデータを暗号化・復号に適した
+    形式に変換するための基本機能を提供します。
     """
 
     @staticmethod
     def detect_data_type(data: bytes) -> str:
         """
-        バイナリデータからデータ形式を自動検出
+        データ形式を自動検出
 
         Args:
-            data: 分析するバイトデータ
+            data: 検出するデータ
 
         Returns:
-            検出されたデータ形式 ('text', 'binary', 'json', 'base64', 'unknown')
+            検出されたデータタイプ ('text', 'json', 'csv', 'binary', 'base64')
         """
-        # テキストデータの検出
-        if TextAdapter.is_text(data):
-            try:
-                # JSONの検出
-                json.loads(data.decode('utf-8'))
-                return 'json'
-            except (json.JSONDecodeError, UnicodeDecodeError):
+        if data is None or len(data) == 0:
+            return 'binary'
+
+        # マーカーが付いている場合はそれで判断
+        try:
+            header = data[:20].decode('utf-8', errors='ignore')
+            if header.startswith('TEXT:'):
                 return 'text'
+            elif header.startswith('JSON:'):
+                return 'json'
+            elif header.startswith('CSV:'):
+                return 'csv'
+        except UnicodeDecodeError:
+            pass  # デコードエラーの場合は次の判定に進む
 
-        # Base64データの検出
-        if Base64Adapter.is_base64(data):
-            return 'base64'
+        # ファイル内容からの判定
+        try:
+            # まずUTF-8としてデコードを試みる
+            text = data.decode('utf-8', errors='strict')
 
-        # その他はバイナリとして扱う
-        return 'binary'
+            # JSONとして解析できるか試みる
+            try:
+                json.loads(text)
+                return 'json'
+            except json.JSONDecodeError:
+                pass
+
+            # CSV形式かどうかをチェック
+            try:
+                lines = text.splitlines()
+                if len(lines) > 0:
+                    # 最初の数行をCSVとして解析
+                    fields = next(csv.reader([lines[0]]))
+                    if len(fields) > 1:  # 複数のフィールドがあればCSVの可能性
+                        # 2行目以降も同じフィールド数かをチェック
+                        if len(lines) > 1:
+                            fields2 = next(csv.reader([lines[1]]))
+                            if abs(len(fields) - len(fields2)) <= 1:  # フィールド数がほぼ同じ
+                                return 'csv'
+            except Exception:
+                pass
+
+            # それ以外はテキスト
+            return 'text'
+
+        except UnicodeDecodeError:
+            # UTF-8でデコードできない場合はバイナリ
+            return 'binary'
 
     @staticmethod
     def get_adapter(data_type: str) -> 'DataAdapter':
         """
-        データ形式に基づいて適切なアダプタを取得
+        指定されたデータタイプのアダプターを取得
 
         Args:
-            data_type: データ形式名
+            data_type: データタイプ
 
         Returns:
-            対応するアダプタインスタンス
-
-        Raises:
-            ValueError: サポートされていないデータ形式が指定された場合
+            アダプターのインスタンス
         """
         adapters = {
             'text': TextAdapter(),
+            'json': JsonAdapter(),
+            'csv': CsvAdapter(),
             'binary': BinaryAdapter(),
-            'json': JSONAdapter(),
-            'base64': Base64Adapter()
+            'base64': Base64Adapter(),
+            'auto': DataAdapter()
         }
 
-        adapter = adapters.get(data_type)
-        if adapter is None:
-            raise ValueError(f"サポートされていないデータ形式です: {data_type}")
+        return adapters.get(data_type, BinaryAdapter())
 
-        return adapter
-
-
-class BinaryAdapter(DataAdapter):
-    """
-    バイナリデータのアダプタ
-
-    バイナリデータは変換なしでそのまま処理されます。
-    """
-
-    def to_processable(self, data: bytes) -> bytes:
+    def prepare_for_encryption(self, data: bytes) -> Tuple[bytes, str]:
         """
-        処理可能な形式に変換（バイナリはそのまま）
+        暗号化のためのデータ準備（自動検出）
 
         Args:
-            data: 変換する元データ
+            data: 準備するデータ
 
         Returns:
-            変換後のデータ
+            (処理済みデータ, データタイプ)
         """
-        return data
+        # データタイプを検出
+        data_type = self.detect_data_type(data)
 
-    def from_processable(self, data: bytes) -> bytes:
+        # 適切なアダプターを使用
+        adapter = self.get_adapter(data_type)
+        return adapter.prepare_for_encryption(data)
+
+    def process_after_decryption(self, data: bytes, original_type: str) -> Union[bytes, str]:
         """
-        処理後のデータを元の形式に戻す（バイナリはそのまま）
+        復号後のデータ処理（自動検出）
 
         Args:
-            data: 変換するデータ
+            data: 処理するデータ
+            original_type: 元のデータタイプ
 
         Returns:
-            変換後のデータ
+            処理済みデータ
         """
-        return data
+        # 適切なアダプターを使用
+        adapter = self.get_adapter(original_type)
+        return adapter.process_after_decryption(data, original_type)
 
 
 class TextAdapter(DataAdapter):
-    """
-    テキストデータのアダプタ
+    """テキストデータ用アダプター"""
 
-    文字列データとバイナリデータの間で変換を行います。
-    エンコーディング情報も保持します。
-    多段式エンコーディング変換（utf8 -> latin1 -> base64）を実装し、
-    テキスト復号時のエンコーディング問題を解決します。
-    """
-
-    def __init__(self, encoding: str = 'utf-8'):
+    def prepare_for_encryption(self, data: bytes) -> Tuple[bytes, str]:
         """
-        初期化
+        テキストデータを暗号化用に準備
 
         Args:
-            encoding: テキストエンコーディング（デフォルト: UTF-8）
-        """
-        self.encoding = encoding
-
-    @staticmethod
-    def is_text(data: bytes, threshold: float = 0.8) -> bool:
-        """
-        データがテキストかどうかを判定
-
-        Args:
-            data: 判定するデータ
-            threshold: テキストと判断する閾値（0.0-1.0）
+            data: 準備するデータ
 
         Returns:
-            テキストの場合はTrue
+            (処理済みデータ, データタイプ)
         """
-        if not data:
-            return False
-
-        # ASCII範囲の表示可能文字と制御文字（改行、タブなど）の数をカウント
-        printable_count = sum(1 for b in data if (32 <= b <= 126) or b in (9, 10, 13))
-        text_ratio = printable_count / len(data)
-
-        # 閾値を超えていればテキストと判断
-        if text_ratio >= threshold:
-            # UTF-8としてデコードを試みる
+        # まずデータがバイナリかどうかを確認し、変換
+        if not isinstance(data, bytes):
             try:
-                data.decode('utf-8')
-                return True
-            except UnicodeDecodeError:
-                # 他のエンコーディングを試す
-                for enc in ['utf-16', 'latin-1', 'shift-jis', 'euc-jp']:
-                    try:
-                        data.decode(enc)
-                        return True
-                    except (UnicodeDecodeError, LookupError):
-                        continue
+                data = str(data).encode('utf-8')
+            except UnicodeEncodeError:
+                # UTF-8で変換できない場合はLatin-1を試す
+                data = str(data).encode('latin-1')
 
-        return False
+        try:
+            # UTF-8でデコードを試みる
+            text = data.decode('utf-8')
 
-    def detect_encoding(self, data: bytes) -> str:
+            # マーカーを追加
+            marked_text = f"TEXT:UTF8:{text}"
+
+            # UTF-8でエンコード
+            encoded = marked_text.encode('utf-8')
+
+            print(f"テキストデータをUTF-8で準備: {len(data)}バイト → {len(encoded)}バイト")
+
+            return encoded, 'text'
+        except UnicodeDecodeError:
+            # UTF-8でないエンコーディングの処理
+            try:
+                # エンコーディングの自動検出処理
+                encoding = self._detect_encoding(data)
+
+                if encoding and encoding != 'utf-8':
+                    # 指定されたエンコーディングでデコード
+                    text = data.decode(encoding)
+
+                    # マーカーを追加（エンコーディング情報を含む）
+                    marked_text = f"TEXT:{encoding.upper()}:{text}"
+
+                    # UTF-8でエンコード（統一エンコーディング）
+                    encoded = marked_text.encode('utf-8')
+
+                    print(f"テキストデータを{encoding}から変換: {len(data)}バイト → {len(encoded)}バイト")
+
+                    return encoded, 'text'
+
+                # 検出できない場合はLatin-1を試みる
+                text = data.decode('latin-1')
+                marked_text = f"TEXT:LATIN1:{text}"
+                encoded = marked_text.encode('utf-8')
+
+                print(f"テキストデータをLatin-1で処理: {len(data)}バイト → {len(encoded)}バイト")
+
+                return encoded, 'text'
+            except Exception as e:
+                print(f"テキスト処理エラー: {e}")
+
+                # 多段階エンコーディングを使用
+                encoded = self.multi_stage_encoding_binary(data)
+
+                print(f"テキストデータを多段階エンコード: {len(data)}バイト → {len(encoded)}バイト")
+
+                return encoded, 'text'
+
+    def _detect_encoding(self, data: bytes) -> Optional[str]:
         """
-        テキストデータのエンコーディングを検出
+        テキストのエンコーディングを検出
 
         Args:
-            data: 検出するテキストデータ
+            data: 検出するデータ
 
         Returns:
-            検出されたエンコーディング
+            検出されたエンコーディング名、検出できない場合はNone
         """
-        # よく使われるエンコーディング順に試す
-        encodings = ['utf-8', 'utf-16', 'latin-1', 'shift-jis', 'euc-jp']
+        # 優先順位の高いエンコーディングから試す
+        encodings = ['utf-8', 'shift-jis', 'euc-jp', 'iso-2022-jp', 'latin-1']
+
+        # BOMでUTF-8が明示されているか確認
+        if data.startswith(b'\xef\xbb\xbf'):
+            return 'utf-8'
 
         for enc in encodings:
             try:
                 data.decode(enc)
                 return enc
-            except (UnicodeDecodeError, LookupError):
+            except UnicodeDecodeError:
                 continue
 
-        # デフォルトは安全なUTF-8
-        return 'utf-8'
+        return None
 
-    def apply_multi_stage_encoding(self, text: str) -> bytes:
+    def multi_stage_encoding(self, text: str) -> bytes:
         """
-        多段式エンコーディング変換を適用
-
-        テキストに対して utf8 -> latin1 -> base64 の多段変換を行います。
+        テキストを複数段階でエンコード（より堅牢に）
 
         Args:
-            text: 元のテキスト
+            text: エンコードするテキスト
 
         Returns:
-            多段エンコーディングされたデータ
+            エンコードされたバイト列
         """
-        if isinstance(text, bytes):
-            try:
-                # バイト列の場合はデコードしてテキストにする
-                text = text.decode('utf-8')
-            except UnicodeDecodeError:
-                try:
-                    text = text.decode('latin-1')
-                except Exception:
-                    print(f"[警告] バイト列をテキストに変換できませんでした")
-                    # バイト列をBase64エンコードして返す
-                    result = b'BIN-BASE64:' + base64.b64encode(text)
-                    return result
+        # 1. UTF-8エンコード
+        utf8_bytes = text.encode('utf-8')
 
-        print(f"[DEBUG] 多段エンコーディング開始: '{text[:30]}'... (長さ: {len(text)})")
+        # 2. エンコードされたバイト列をBase64エンコード
+        base64_bytes = base64.b64encode(utf8_bytes)
 
-        try:
-            # 特殊文字や非ASCII文字を含んでいるかチェック
-            has_special_chars = any(ord(c) > 127 for c in text)
+        # 3. Base64文字列にマーカーを追加してUTF-8エンコード
+        marked_text = f"TXT-MULTI:{base64_bytes.decode('ascii')}"
+        result = marked_text.encode('utf-8')
 
-            # ステップ1: UTF-8でエンコード
-            utf8_data = text.encode('utf-8')
-            print(f"[DEBUG] UTF-8エンコード後: {len(utf8_data)}バイト")
+        return result
 
-            # ステップ2: latin-1としてデコードし、再度エンコード（安全なバイト変換）
-            # latin-1は1バイトあたり1文字なので、どんなバイトもデコードできる
-            latin1_text = utf8_data.decode('latin-1', errors='replace')
-            latin1_data = latin1_text.encode('latin-1', errors='replace')
-            print(f"[DEBUG] Latin-1変換後: {len(latin1_data)}バイト")
+    def multi_stage_encoding_binary(self, data: bytes) -> bytes:
+        """
+        バイナリデータを複数段階でエンコード（テキスト変換失敗時のフォールバック）
 
-            # ステップ3: Base64エンコード
-            base64_data = base64.b64encode(latin1_data)
-            print(f"[DEBUG] Base64エンコード後: {len(base64_data)}バイト")
+        Args:
+            data: エンコードするバイナリデータ
 
-            # Base64データの検証（無効な文字がないことを確認）
-            base64_str = base64_data.decode('ascii', errors='replace')
-            valid_base64_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
-            if not all(c in valid_base64_chars for c in base64_str):
-                print(f"[WARNING] Base64データに無効な文字が含まれています")
-                # 無効な文字を除去
-                cleaned_base64 = ''.join(c for c in base64_str if c in valid_base64_chars)
-                base64_data = cleaned_base64.encode('ascii')
+        Returns:
+            エンコードされたバイト列
+        """
+        # 1. バイナリデータをBase64エンコード
+        base64_bytes = base64.b64encode(data)
 
-            # 情報を含むヘッダーを追加（変換方法と特殊文字の有無を記録）
-            enc_type = 'utf8-latin1-base64-special' if has_special_chars else 'utf8-latin1-base64'
-            result = b'TXT-MULTI:' + enc_type.encode('ascii') + b':' + base64_data
-            print(f"[DEBUG] 最終結果 (先頭30バイト): {result[:30]}")
+        # 2. Base64文字列にマーカーを追加してUTF-8エンコード
+        marked_text = f"TXT-BIN:{base64_bytes.decode('ascii')}"
+        result = marked_text.encode('utf-8')
 
-            return result
-        except Exception as e:
-            print(f"[ERROR] 多段エンコーディング中にエラーが発生: {e}")
-            # エラー発生時はテキスト形式で保存
-            try:
-                result = b'TXT:utf-8:' + text.encode('utf-8', errors='replace')
-            except Exception:
-                # 最終フォールバック: とにかく何かを返す
-                result = b'TXT:ascii:' + text.encode('ascii', errors='replace')
-            return result
+        return result
 
     def reverse_multi_stage_encoding(self, data: bytes) -> str:
         """
-        多段式エンコーディング変換の逆変換を適用
-
-        base64 -> latin1 -> utf8 の逆変換を行います。
+        複数段階エンコードを逆変換
 
         Args:
-            data: 多段エンコーディングされたデータ
+            data: 逆変換するデータ
 
         Returns:
             元のテキスト
         """
-        print(f"[DEBUG] 多段エンコーディング逆変換開始: {data[:30]}...")
-
-        # バイナリエンコーディングのチェック
-        if data.startswith(b'BIN-BASE64:'):
-            try:
-                # Base64エンコードされたバイナリデータ
-                binary_data = base64.b64decode(data[11:])
-                print(f"[DEBUG] バイナリデータ復元 ({len(binary_data)}バイト)")
-                # テキストとしてデコードを試みる
-                for encoding in ['utf-8', 'latin-1', 'shift-jis', 'euc-jp']:
-                    try:
-                        text = binary_data.decode(encoding)
-                        print(f"[DEBUG] {encoding}でデコード成功")
-                        return text
-                    except UnicodeDecodeError:
-                        continue
-                # デコードできなかった場合はlatin-1で強制デコード
-                return binary_data.decode('latin-1', errors='replace')
-            except Exception as e:
-                print(f"[ERROR] バイナリデータ復元中にエラー: {e}")
-                raise ValueError("バイナリデータの復元に失敗しました")
-
-        # 多段エンコーディングのヘッダーチェック
-        if not isinstance(data, bytes):
-            data = str(data).encode('ascii', errors='ignore')
-
-        header_match = None
-        if data.startswith(b'TXT-MULTI:'):
-            header_match = data
-        else:
-            # データ内でヘッダーを検索
-            data_str = data.decode('ascii', errors='ignore')
-            header_pos = data_str.find('TXT-MULTI:')
-            if header_pos >= 0:
-                header_match = data[header_pos:]
-                print(f"[DEBUG] ヘッダー位置: {header_pos}、抽出されたヘッダー: {header_match[:30]}")
-            else:
-                # ヘッダーが見つからない場合はエラー
-                raise ValueError("多段エンコーディングのヘッダーがありません")
-
-        if not header_match:
-            raise ValueError("多段エンコーディングのヘッダーが見つかりません")
-
-        header_end = header_match.find(b':', 10)  # 'TXT-MULTI:' の後のコロンを検索
-        if header_end < 0:
-            raise ValueError("無効な多段エンコーディングフォーマット")
-
-        # エンコーディング情報を取得
-        encoding_info = header_match[10:header_end].decode('ascii', errors='ignore')
-        print(f"[DEBUG] エンコーディング情報: {encoding_info}")
-
-        # エンコーディング方式の検証
-        if encoding_info not in ['utf8-latin1-base64', 'utf8-latin1-base64-special']:
-            raise ValueError(f"サポートされていないエンコーディング方式: {encoding_info}")
-
-        # 特殊文字処理モードの検出
-        has_special_chars = 'special' in encoding_info
-
         try:
-            # Base64部分を取得
-            base64_data = header_match[header_end+1:]
-            print(f"[DEBUG] Base64データサイズ: {len(base64_data)}バイト")
-            print(f"[DEBUG] Base64データ先頭: {base64_data[:min(30, len(base64_data))].hex()}")
+            # バイト列をUTF-8でデコード
+            text = data.decode('utf-8')
 
-            # Base64データをクリーンアップ（無効な文字を除去）
-            try:
-                # ASCII文字のみに制限
-                valid_chars = set(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
-                cleaned_base64 = bytearray()
-                for b in base64_data:
-                    if chr(b).encode('ascii', errors='ignore') in valid_chars:
-                        cleaned_base64.append(b)
+            # マーカーを確認
+            if not text.startswith("TXT-MULTI:"):
+                raise ValueError("Invalid multi-stage encoded data")
 
-                cleaned_base64 = bytes(cleaned_base64)
+            # マーカーを削除
+            base64_str = text[len("TXT-MULTI:"):]
 
-                # パディングの調整
-                missing_padding = len(cleaned_base64) % 4
-                if missing_padding:
-                    cleaned_base64 += b'=' * (4 - missing_padding)
+            # Base64デコード
+            utf8_bytes = base64.b64decode(base64_str)
 
-                print(f"[DEBUG] クリーンアップ後のBase64サイズ: {len(cleaned_base64)}バイト")
-            except Exception as e:
-                print(f"[WARNING] Base64クリーンアップエラー: {e}")
-                # もっと単純なクリーンアップを試す
-                try:
-                    # ASCIIとして解釈し、無効な文字を除去
-                    base64_str = base64_data.decode('ascii', errors='ignore')
-                    valid_base64_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
-                    cleaned_base64_str = ''.join(c for c in base64_str if c in valid_base64_chars)
+            # UTF-8デコード
+            original_text = utf8_bytes.decode('utf-8')
 
-                    # パディングの調整
-                    while len(cleaned_base64_str) % 4 != 0:
-                        cleaned_base64_str += '='
-
-                    cleaned_base64 = cleaned_base64_str.encode('ascii')
-                except Exception:
-                    cleaned_base64 = base64_data
-
-            # ステップ1: Base64デコード
-            try:
-                latin1_data = base64.b64decode(cleaned_base64)
-                print(f"[DEBUG] Base64デコード成功: {len(latin1_data)}バイト")
-            except Exception as e:
-                print(f"[ERROR] Base64デコードに失敗: {e}")
-                # フォールバック: ASCIIとして解釈し直接変換
-                try:
-                    ascii_text = cleaned_base64.decode('ascii', errors='ignore')
-                    latin1_data = ascii_text.encode('latin-1', errors='replace')
-                except Exception as e2:
-                    print(f"[ERROR] フォールバック変換も失敗: {e2}")
-                    raise ValueError("Base64データの復元に失敗しました")
-
-            # ステップ2: latin-1としてデコード
-            latin1_text = latin1_data.decode('latin-1', errors='replace')
-            print(f"[DEBUG] Latin-1デコード後のサイズ: {len(latin1_text)}")
-
-            # ステップ3: UTF-8として解釈
-            utf8_data = latin1_text.encode('latin-1', errors='replace')
-
-            # 特殊文字処理モードに応じて適切なデコード方法を選択
-            if has_special_chars:
-                try:
-                    # 特殊文字モードではより厳密なUTF-8デコード
-                    text = utf8_data.decode('utf-8', errors='replace')
-                    print(f"[DEBUG] 特殊文字モードでUTF-8デコード成功: {len(text)}文字")
-                except UnicodeDecodeError as e:
-                    print(f"[WARNING] 特殊文字モードでのUTF-8デコードに失敗: {e}")
-                    # フォールバック
-                    text = latin1_text
-            else:
-                try:
-                    text = utf8_data.decode('utf-8', errors='replace')
-                    print(f"[DEBUG] UTF-8デコード成功: {len(text)}文字")
-                except UnicodeDecodeError as e:
-                    print(f"[WARNING] UTF-8デコードエラー: {e}")
-                    # UTF-8デコードに失敗した場合はLatin-1として直接返す
-                    print("[WARNING] UTF-8デコードに失敗しました。Latin-1として返します")
-                    text = latin1_text
-
-            return text
+            return original_text
         except Exception as e:
-            print(f"[ERROR] 多段エンコーディング逆変換中にエラー: {e}")
-            # 変換できない場合は、元データのASCII部分を抽出して返す
-            try:
-                return data.decode('ascii', errors='replace')
-            except Exception:
-                # 最終手段：バイナリを16進数表現に変換
-                return data.hex()
+            print(f"複数段階エンコード逆変換エラー: {e}")
+            # エラーが発生した場合は元のデータをそのまま返す
+            if isinstance(data, bytes):
+                return data.decode('utf-8', errors='replace')
+            return str(data)
 
-    def to_processable(self, data: bytes) -> bytes:
+    def reverse_multi_stage_encoding_binary(self, data: bytes) -> bytes:
         """
-        処理可能な形式に変換
-
-        テキストデータを処理するため、多段式エンコーディング変換を
-        適用し、バイト列に変換します。
+        バイナリ用の複数段階エンコードを逆変換
 
         Args:
-            data: 変換する元データ
+            data: 逆変換するデータ
 
         Returns:
-            変換後のデータ
+            元のバイナリデータ
         """
-        # エンコーディングの検出
-        encoding = self.detect_encoding(data)
-        print(f"[DEBUG] 検出されたエンコーディング: {encoding}")
-
-        # 現在のエンコーディングでデコード
         try:
-            text = data.decode(encoding)
-            print(f"[DEBUG] デコードされたテキスト（先頭30文字）: {text[:30]}")
+            # UTF-8でデコード
+            text = data.decode('utf-8')
 
-            # 多段式エンコーディング変換を適用
-            return self.apply_multi_stage_encoding(text)
+            # マーカーを確認
+            if not text.startswith("TXT-BIN:"):
+                raise ValueError("Invalid binary multi-stage encoded data")
 
-        except UnicodeDecodeError as e:
-            print(f"[DEBUG] テキストデコードエラー: {e}")
-            # デコードエラーの場合はラテン1（バイナリ互換）でエンコード
-            self.encoding = 'latin-1'
-            try:
-                text = data.decode('latin-1')
-                # 多段式エンコーディング変換を適用
-                return self.apply_multi_stage_encoding(text)
-            except Exception as e2:
-                print(f"[DEBUG] latin-1でもデコードに失敗: {e2}")
-                # 最終手段として元のデータをそのまま返す
-                return data
+            # マーカーを削除
+            base64_str = text[len("TXT-BIN:"):]
 
-    def from_processable(self, data: bytes) -> Union[str, bytes]:
-        """
-        処理後のデータを元の形式に戻す
+            # Base64デコード
+            original_binary = base64.b64decode(base64_str)
 
-        多段式エンコーディングを逆変換してテキストに戻します。
-
-        Args:
-            data: 変換するデータ
-
-        Returns:
-            元のテキストデータ（文字列）
-        """
-        # 多段式エンコーディングのチェック
-        if data.startswith(b'TXT-MULTI:'):
-            try:
-                result = self.reverse_multi_stage_encoding(data)
-                print(f"[DEBUG] 多段エンコーディング逆変換成功: {result[:min(50, len(result))]}")
-                return result
-            except Exception as e:
-                print(f"[DEBUG] 多段エンコーディング逆変換エラー: {e}")
-                # 失敗した場合は他の方法を試す
-
-        # 従来のフォーマットのチェック
-        if data.startswith(b'TXT:'):
-            try:
-                # エンコーディング情報を取得
-                header_end = data.find(b':', 4)
-                if header_end > 4:
-                    # エンコーディング名を取得
-                    encoding = data[4:header_end].decode('ascii')
-                    print(f"[DEBUG] 復号時のエンコーディング: {encoding}")
-
-                    # コンテンツ部分の取得
-                    content = data[header_end+1:]
-
-                    # 指定されたエンコーディングでデコード
-                    text = content.decode(encoding)
-                    return text
-                else:
-                    print("[DEBUG] 無効なヘッダー形式: コロンが見つかりません")
-            except Exception as e:
-                print(f"[DEBUG] テキスト復元エラー: {e}")
-
-        # マジックバイトがない場合か、エラーが発生した場合は
-        # テキストへの変換を試みる
-        try:
-            # 各種エンコーディングを試す
-            for encoding in ['utf-8', 'latin-1', 'shift-jis', 'euc-jp']:
-                try:
-                    text = data.decode(encoding)
-                    print(f"[DEBUG] {encoding}でデコード成功: {text[:min(50, len(text))]}")
-                    return text
-                except UnicodeDecodeError:
-                    continue
-
-            # どのエンコーディングでもデコードできない場合、latin-1で強制デコード
-            print("[DEBUG] 強制的にlatin-1でデコード")
-            return data.decode('latin-1')
-
+            return original_binary
         except Exception as e:
-            print(f"[DEBUG] テキスト変換最終エラー: {e}")
-            # すべての変換が失敗した場合はバイナリをそのまま返す
+            print(f"バイナリ複数段階エンコード逆変換エラー: {e}")
+            # エラーが発生した場合は元のデータをそのまま返す
             return data
 
-
-class JSONAdapter(DataAdapter):
-    """
-    JSONデータのアダプタ
-
-    JSONとバイナリデータの間で変換を行います。
-    """
-
-    def to_processable(self, data: bytes) -> bytes:
+    def process_after_decryption(self, data: bytes, original_type: str) -> str:
         """
-        処理可能な形式に変換
-
-        JSONデータをバイナリデータに変換します。
+        復号後のテキストデータ処理
 
         Args:
-            data: 変換する元データ
+            data: 処理するデータ
+            original_type: 元のデータタイプ
 
         Returns:
-            変換後のデータ
+            処理済みテキスト
         """
-        # JSONタイプを示すヘッダを追加
-        header = b'JSON:'
-        return header + data
+        if not data:
+            return ""
 
-    def from_processable(self, data: bytes) -> bytes:
+        print(f"テキスト処理を開始: データ長={len(data)}バイト")
+        # 先頭部分をチェック
+        if len(data) > 20:
+            print(f"データ先頭: {data[:20]}")
+
+        # 末尾の部分をチェック
+        if len(data) > 20:
+            print(f"データ末尾: {data[-20:]}")
+
+        # 先頭と末尾のヌルバイトをトリム
+        data = data.strip(b'\x00')
+        if len(data) == 0:
+            print("警告: データがすべてヌルバイトでした")
+            return ""
+
+        # 新しいマーカー形式を優先的に処理
+        try:
+            # まずUTF-8でデコード
+            text = data.decode('utf-8', errors='replace')
+
+            # 新しいマーカー形式を検索
+            markers = [
+                "TEXT:UTF8:",
+                "TEXT:LATIN1:",
+                "TEXT:SHIFT-JIS:",
+                "TEXT:EUC-JP:",
+                "TEXT:ISO-2022-JP:"
+            ]
+
+            for marker in markers:
+                marker_pos = text.find(marker)
+                if marker_pos >= 0:
+                    print(f"マーカー '{marker}' を検出")
+                    # マーカー以降のテキストを取得
+                    text_content = text[marker_pos + len(marker):]
+
+                    # エンコーディング情報を抽出
+                    encoding = marker.split(':')[1].lower()
+
+                    if encoding == 'utf8':
+                        # UTF-8はそのまま
+                        result = text_content
+                    else:
+                        # 他のエンコーディングは適切に処理
+                        try:
+                            # 一度エンコードしてから指定のエンコーディングでデコード
+                            result = text_content.encode('utf-8').decode(encoding, errors='replace')
+                        except Exception as e:
+                            print(f"エンコーディング変換エラー({encoding}): {e}")
+                            result = text_content
+
+                    # 末尾に改行がない場合、追加
+                    if result and not result.endswith('\n'):
+                        result += '\n'
+
+                    return result
+
+            # 旧マーカー形式のサポート（後方互換性）
+            old_markers = [
+                "TXT:",
+                "TXT-UTF-8:",
+                "TXT-LATIN1:",
+                "TXT-SHIFT-JIS:",
+                "TXT-EUC-JP:",
+                "TXT-ISO-2022-JP:",
+                "TXT-MULTI:",
+                "TXT-BIN:"
+            ]
+
+            for marker in old_markers:
+                marker_pos = text.find(marker)
+                if marker_pos >= 0:
+                    print(f"旧マーカー '{marker}' を検出 - 後方互換処理")
+                    # マーカー以降のテキストを取得
+                    text_content = text[marker_pos + len(marker):]
+
+                    # マーカーに応じて処理
+                    if marker == "TXT-MULTI:":
+                        text_content = self.reverse_multi_stage_encoding(text_content.encode('utf-8'))
+                    elif marker == "TXT-BIN:":
+                        bin_content = self.reverse_multi_stage_encoding_binary(text_content.encode('utf-8'))
+                        text_content = bin_content.decode('utf-8', errors='replace')
+
+                    # 末尾に改行がない場合、追加
+                    if text_content and not text_content.endswith('\n'):
+                        text_content += '\n'
+
+                    return text_content
+
+            # マーカーが見つからなかった場合、そのままのテキストをチェック
+            if text.strip():
+                # テキストらしき内容があれば、そのまま返す
+                print("マーカーなしテキストを検出")
+
+                # 末尾に改行がない場合、追加
+                if not text.endswith('\n'):
+                    text += '\n'
+
+                return text
+
+        except Exception as e:
+            print(f"テキスト処理中にエラー: {e}")
+            import traceback
+            traceback.print_exc()
+
+        # すべての方法が失敗した場合、UTF-8でデコード（置換モード）
+        try:
+            result = data.decode('utf-8', errors='replace')
+
+            # 末尾に改行がない場合、追加
+            if result and not result.endswith('\n'):
+                result += '\n'
+
+            return result
+        except Exception as e:
+            print(f"最終エラー: {e}")
+            # エラーが発生した場合は空文字列を返す
+            return ""
+
+
+class JsonAdapter(DataAdapter):
+    """JSONデータ用アダプター"""
+
+    def prepare_for_encryption(self, data: bytes) -> Tuple[bytes, str]:
         """
-        処理後のデータを元の形式に戻す
-
-        バイナリデータをJSONデータに変換します。
+        JSONデータを暗号化用に準備
 
         Args:
-            data: 変換するデータ
+            data: 準備するデータ
 
         Returns:
-            元のJSONデータ
+            (処理済みデータ, データタイプ)
         """
-        # ヘッダが存在する場合は削除
-        if data.startswith(b'JSON:'):
-            return data[5:]
+        try:
+            # JSON文字列として解析
+            if isinstance(data, bytes):
+                json_str = data.decode('utf-8')
+            else:
+                json_str = data
+
+            json_obj = json.loads(json_str)
+
+            # 整形してマーカーを追加
+            formatted_json = json.dumps(json_obj, ensure_ascii=False, indent=2)
+            marked_json = f"JSON:{formatted_json}"
+
+            return marked_json.encode('utf-8'), 'json'
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            print(f"JSONデータ解析エラー: {e}")
+            # JSONとして扱えない場合はテキストとして扱う
+            return TextAdapter().prepare_for_encryption(data)
+
+    def process_after_decryption(self, data: bytes, original_type: str) -> str:
+        """
+        復号後のJSONデータ処理
+
+        Args:
+            data: 処理するデータ
+            original_type: 元のデータタイプ
+
+        Returns:
+            処理済みJSON文字列
+        """
+        try:
+            # バイト列を文字列に変換
+            if isinstance(data, bytes):
+                data_str = data.decode('utf-8', errors='replace').strip('\x00')
+            else:
+                data_str = str(data).strip('\x00')
+
+            # マーカーのチェック
+            json_marker = "JSON:"
+            if json_marker in data_str:
+                # マーカー位置を検出
+                marker_pos = data_str.find(json_marker)
+                # マーカー以降のデータを取得
+                json_data = data_str[marker_pos + len(json_marker):]
+
+                # 先頭と末尾の空白文字を削除
+                json_data = json_data.strip()
+
+                try:
+                    # JSONとして解析できるか確認
+                    json_obj = json.loads(json_data)
+                    # フォーマットして返す（整形済みJSONとして）
+                    return json.dumps(json_obj, ensure_ascii=False, indent=2)
+                except json.JSONDecodeError as e:
+                    print(f"JSON解析エラー: {e}, 文字列をそのまま返します")
+                    return json_data
+            else:
+                # マーカーがない場合は、JSONとして解析を試みる
+                try:
+                    # ヌルバイトやその他の制御文字を削除
+                    cleaned_str = re.sub(r'[\x00-\x1F\x7F]', '', data_str)
+                    json_obj = json.loads(cleaned_str)
+                    return json.dumps(json_obj, ensure_ascii=False, indent=2)
+                except json.JSONDecodeError:
+                    # JSON解析できない場合は、元の文字列を返す
+                    print(f"マーカーなしでJSONとして解析できませんでした。テキストとして処理します")
+                    # テキストアダプタに処理を委譲
+                    return TextAdapter().process_after_decryption(data, original_type)
+        except Exception as e:
+            print(f"JSONデータ処理中にエラーが発生しました: {e}")
+            # エラーが発生した場合もテキストとして処理
+            return TextAdapter().process_after_decryption(data, original_type)
+
+
+class CsvAdapter(DataAdapter):
+    """CSVデータ用アダプター"""
+
+    def prepare_for_encryption(self, data: bytes) -> Tuple[bytes, str]:
+        """
+        CSVデータを暗号化用に準備
+
+        Args:
+            data: 準備するデータ
+
+        Returns:
+            (処理済みデータ, データタイプ)
+        """
+        try:
+            # CSV文字列として解析
+            if isinstance(data, bytes):
+                csv_str = data.decode('utf-8')
+            else:
+                csv_str = data
+
+            # CSVのマーカーを付与
+            marked_csv = f"CSV:{csv_str}"
+
+            return marked_csv.encode('utf-8'), 'csv'
+        except UnicodeDecodeError as e:
+            print(f"CSVデータ解析エラー: {e}")
+            # CSVとして扱えない場合はテキストとして扱う
+            return TextAdapter().prepare_for_encryption(data)
+
+    def process_after_decryption(self, data: bytes, original_type: str) -> str:
+        """
+        復号後のCSVデータ処理
+
+        Args:
+            data: 処理するデータ
+            original_type: 元のデータタイプ
+
+        Returns:
+            処理済みCSV文字列
+        """
+        try:
+            # バイト列を文字列に変換
+            if isinstance(data, bytes):
+                data_str = data.decode('utf-8', errors='replace').strip('\x00')
+            else:
+                data_str = str(data).strip('\x00')
+
+            # マーカーのチェック
+            csv_marker = "CSV:"
+            if csv_marker in data_str:
+                # マーカー位置を検出
+                marker_pos = data_str.find(csv_marker)
+                # マーカー以降のデータを取得
+                csv_data = data_str[marker_pos + len(csv_marker):]
+
+                # 改行の正規化
+                csv_data = csv_data.replace('\r\n', '\n').replace('\r', '\n')
+
+                # 末尾に改行がなければ追加
+                if not csv_data.endswith('\n'):
+                    csv_data += '\n'
+
+                return csv_data
+            else:
+                # マーカーがない場合でも、テキストデータとして返す
+                print(f"CSVマーカーが見つかりませんでした。テキストとして処理します")
+
+                # 改行の正規化
+                data_str = data_str.replace('\r\n', '\n').replace('\r', '\n')
+
+                # 末尾に改行がなければ追加
+                if not data_str.endswith('\n'):
+                    data_str += '\n'
+
+                return data_str
+        except Exception as e:
+            print(f"CSVデータ処理中にエラーが発生: {e}")
+            # エラーが発生した場合もテキストとして処理
+            return TextAdapter().process_after_decryption(data, original_type)
+
+
+class BinaryAdapter(DataAdapter):
+    """バイナリデータ用アダプター"""
+
+    def prepare_for_encryption(self, data: bytes) -> Tuple[bytes, str]:
+        """
+        バイナリデータを暗号化用に準備
+
+        Args:
+            data: 準備するデータ
+
+        Returns:
+            (処理済みデータ, データタイプ)
+        """
+        # バイナリデータはそのまま返す
+        if isinstance(data, bytes):
+            return data, 'binary'
+        else:
+            # バイト列でない場合は変換
+            return str(data).encode('utf-8'), 'binary'
+
+    def process_after_decryption(self, data: bytes, original_type: str) -> bytes:
+        """
+        復号後のバイナリデータ処理
+
+        Args:
+            data: 処理するデータ
+            original_type: 元のデータタイプ
+
+        Returns:
+            処理済みバイナリデータ
+        """
+        # バイナリデータはそのまま返す
         return data
 
 
 class Base64Adapter(DataAdapter):
-    """
-    Base64データのアダプタ
+    """Base64データ用アダプター"""
 
-    Base64エンコードされたデータとバイナリデータの間で変換を行います。
-    """
-
-    @staticmethod
-    def is_base64(data: bytes) -> bool:
+    def prepare_for_encryption(self, data: bytes) -> Tuple[bytes, str]:
         """
-        データがBase64エンコードされているかどうかを判定
+        Base64データを暗号化用に準備
 
         Args:
-            data: 判定するデータ
+            data: 準備するデータ
 
         Returns:
-            Base64の場合はTrue
+            (処理済みデータ, データタイプ)
         """
-        # Base64の有効文字のみで構成されているか確認
-        if not data:
-            return False
-
-        # Base64でデコード可能か試す
         try:
-            # 改行を削除して標準的なBase64文字セットかチェック
-            cleaned = data.decode('ascii').strip().replace('\n', '')
-            valid_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
-            if not all(c in valid_chars for c in cleaned):
-                return False
+            # データがBase64でデコードできるか確認
+            decoded = base64.b64decode(data)
 
-            # 実際にデコードしてみる
-            base64.b64decode(cleaned)
-            return True
-        except Exception:
-            return False
+            # デコードした結果にマーカーを追加してエンコード
+            marked_data = b"B64:" + data
 
-    def to_processable(self, data: bytes) -> bytes:
+            return marked_data, 'base64'
+        except binascii.Error:
+            # Base64でない場合はバイナリとして扱う
+            return data, 'binary'
+
+    def process_after_decryption(self, data: bytes, original_type: str) -> bytes:
         """
-        処理可能な形式に変換
-
-        Base64データをバイナリデータに変換します。
+        復号後のBase64データ処理
 
         Args:
-            data: 変換する元データ
+            data: 処理するデータ
+            original_type: 元のデータタイプ
 
         Returns:
-            変換後のデータ
+            処理済みBase64データ
         """
-        # Base64タイプを示すヘッダを追加
-        header = b'B64:'
-        return header + data
-
-    def from_processable(self, data: bytes) -> bytes:
-        """
-        処理後のデータを元の形式に戻す
-
-        バイナリデータをBase64データに変換します。
-
-        Args:
-            data: 変換するデータ
-
-        Returns:
-            元のBase64データ
-        """
-        # ヘッダが存在する場合は削除
-        if data.startswith(b'B64:'):
-            return data[4:]
-        return data
-
-
-def process_data_for_encryption(data: bytes, force_type: Optional[str] = None) -> Tuple[bytes, str]:
-    """
-    暗号化前にデータを処理し、適切な形式に変換
-
-    Args:
-        data: 処理するデータ
-        force_type: 強制的に指定するデータタイプ（省略時は自動検出）
-
-    Returns:
-        (処理されたデータ, データタイプ): 変換後のデータとデータタイプの組
-    """
-    # データタイプの判定または強制指定
-    data_type = force_type or DataAdapter.detect_data_type(data)
-
-    print(f"[DEBUG] 暗号化前: データタイプ={data_type}, サイズ={len(data)}バイト")
-    if data_type == 'text':
-        print(f"[DEBUG] テキスト内容: {data[:min(30, len(data))]}...")
-
-    # テキストデータの場合は特別な処理
-    if data_type == 'text':
         try:
-            # テキストの場合はデコードしてから多段エンコーディングを適用
-            text_adapter = TextAdapter()
-            # まずデコードを試みる
-            for encoding in ['utf-8', 'shift-jis', 'euc-jp', 'latin-1']:
+            # データがBase64マーカーで始まるかチェック
+            if data.startswith(b"B64:"):
+                # マーカーを削除
+                base64_data = data[4:]
+
+                # Base64デコードを試みる
                 try:
-                    text = data.decode(encoding)
-                    print(f"[DEBUG] {encoding}でデコードに成功しました")
-                    # 多段エンコーディングを適用
-                    processed_data = text_adapter.apply_multi_stage_encoding(text)
-                    print(f"[DEBUG] 多段エンコーディング適用後のサイズ: {len(processed_data)}バイト")
-                    print(f"[DEBUG] 変換後先頭バイト: {processed_data[:min(30, len(processed_data))]}")
-                    return processed_data, data_type
-                except UnicodeDecodeError:
-                    continue
-
-            # どのエンコーディングでもデコードできなかった場合はバイナリとして扱う
-            print("[DEBUG] テキストのデコードに失敗しました。バイナリとして処理します。")
-            data_type = 'binary'
+                    decoded = base64.b64decode(base64_data)
+                    return decoded
+                except binascii.Error:
+                    # デコードエラーの場合はマーカーを削除したデータを返す
+                    return base64_data
+            else:
+                # マーカーがなければそのまま返す
+                return data
         except Exception as e:
-            print(f"[DEBUG] テキスト処理中にエラー: {e}")
-            # エラーが発生した場合はバイナリとして処理
-            data_type = 'binary'
-
-    # 適切なアダプタの取得と変換
-    adapter = DataAdapter.get_adapter(data_type)
-    processed_data = adapter.to_processable(data)
-
-    print(f"[DEBUG] 変換後: サイズ={len(processed_data)}バイト")
-    print(f"[DEBUG] 変換後先頭バイト: {processed_data[:min(30, len(processed_data))]}")
-
-    return processed_data, data_type
+            print(f"Base64処理エラー: {e}")
+            # エラーが発生した場合は元のデータをそのまま返す
+            return data
 
 
-def process_data_after_decryption(data: bytes, data_type: str) -> Union[str, bytes]:
+def process_data_for_encryption(data: Union[bytes, str], data_type: str = 'auto') -> Tuple[bytes, str]:
     """
-    復号後のデータを処理し、元の形式に戻す
+    暗号化のためのデータ処理
 
     Args:
         data: 処理するデータ
-        data_type: データタイプ ('auto', 'text', 'binary', 'json', 'base64')
+        data_type: データタイプ ('auto', 'text', 'json', 'csv', 'binary')
 
     Returns:
-        変換後のデータ
+        (処理されたデータ, データタイプ)
     """
-    print(f"[DEBUG] 復号後: データタイプ={data_type}, サイズ={len(data)}バイト")
-    print(f"[DEBUG] 復号後先頭バイト: {data[:min(30, len(data))].hex()}")
+    # データがバイト列でない場合、バイト列に変換
+    if not isinstance(data, bytes):
+        data = str(data).encode('utf-8')
 
-    # 無効なデータをチェック
-    if not data:
-        print("[WARNING] 空のデータを受け取りました")
+    # データタイプの自動検出
+    if data_type == 'auto':
+        data_type = DataAdapter.detect_data_type(data)
+        print(f"データタイプを自動検出: {data_type}")
+
+    # 適切なアダプターを選択
+    adapter = DataAdapter.get_adapter(data_type)
+    processed_data, final_type = adapter.prepare_for_encryption(data)
+
+    print(f"データ処理完了: タイプ={final_type}, サイズ={len(processed_data)}バイト")
+
+    # データタイプマーカーの確認（デバッグ用）
+    if isinstance(processed_data, bytes) and len(processed_data) > 5:
+        # 最初の16バイトをデコードして表示（マーカーチェック用）
+        try:
+            header_str = processed_data[:16].decode('utf-8', errors='replace')
+            print(f"データヘッダー: {header_str}")
+        except UnicodeDecodeError:
+            print("データヘッダーはバイナリで表示できません")
+
+    return processed_data, final_type
+
+
+def process_data_after_decryption(data: bytes, data_type: str = 'auto') -> Union[bytes, str]:
+    """
+    復号後のデータ処理
+
+    Args:
+        data: 処理するデータ (bytes)
+        data_type: データタイプ ('auto', 'text', 'json', 'csv', 'binary')
+
+    Returns:
+        処理されたデータ
+    """
+    if data is None or len(data) == 0:
+        print("警告: 復号データが空です")
         return b'' if data_type == 'binary' else ''
 
-    # データタイプに応じた処理
-    if data_type == 'text':
-        # テキスト形式の場合
-        text_adapter = TextAdapter()
+    # データがバイト列でない場合はエラー
+    if not isinstance(data, bytes):
+        print(f"警告: 復号データがバイト列ではありません ({type(data)})")
+        # 文字列の場合はバイト列に変換
+        if isinstance(data, str):
+            data = data.encode('utf-8')
+        else:
+            # その他の型は文字列に変換してからバイト列に
+            data = str(data).encode('utf-8')
 
+    # デバッグ情報
+    print(f"復号後データ処理: タイプ={data_type}, サイズ={len(data)}バイト")
+    if len(data) > 20:
+        print(f"データ先頭バイト: {data[:20]}")
+        print(f"データ末尾バイト: {data[-20:]}")
+
+    # データタイプのマーカーチェック（自動検出モードの場合）
+    detected_type = data_type
+    if data_type == 'auto':
+        # マーカーによるデータタイプ検出の試み
         try:
-            # データをASCII文字列として判定（エラーは無視）
-            ascii_str = data.decode('ascii', errors='ignore')
+            # 最初の数バイトを文字列としてデコード
+            header = data[:20].decode('utf-8', errors='replace')
 
-            # TXT-MULTI ヘッダーを検索
-            if 'TXT-MULTI:' in ascii_str:
-                print("[DEBUG] テキストデータにTXT-MULTIヘッダーを検出")
-                header_pos = ascii_str.find('TXT-MULTI:')
-                if header_pos >= 0:
-                    try:
-                        # ヘッダーの位置からのデータを抽出
-                        header_data = data[header_pos:]
-                        print(f"[DEBUG] ヘッダー位置: {header_pos}, 抽出データ先頭: {header_data[:20].hex()}")
-                        return text_adapter.reverse_multi_stage_encoding(header_data)
-                    except Exception as e:
-                        print(f"[WARNING] 多段エンコーディング逆変換中にエラー: {e}")
-
-            # ヘッダーがバイナリデータ内にある可能性
-            full_data = data
-            for i in range(len(full_data) - 10):  # 最低10バイトのヘッダーを想定
-                chunk = full_data[i:i+15]  # 15バイトのチャンクを取得
-                try:
-                    chunk_str = chunk.decode('ascii', errors='ignore')
-                    if 'TXT-MULTI:' in chunk_str:
-                        print(f"[DEBUG] バイナリ内でTXT-MULTIヘッダーを検出: 位置={i}")
-                        try:
-                            return text_adapter.reverse_multi_stage_encoding(full_data[i:])
-                        except Exception as e:
-                            print(f"[WARNING] バイナリ内のヘッダーからの逆変換でエラー: {e}")
-                except:
-                    pass
-
-            # もしヘッダーが見つからなければ、異なるエンコーディングでテキスト化を試みる
-            for encoding in ['utf-8', 'latin-1', 'shift-jis', 'euc-jp']:
-                try:
-                    text = data.decode(encoding)
-                    print(f"[DEBUG] {encoding}でデコード成功: {text[:min(50, len(text))]}")
-                    return text
-                except UnicodeDecodeError:
-                    continue
-
-            # デコードできない場合はラテン1で強制デコード
-            print("[DEBUG] 強制的にlatin-1でデコード")
-            return data.decode('latin-1', errors='replace')
-
+            # 既知のマーカーをチェック
+            if header.startswith('TEXT:'):
+                detected_type = 'text'
+                print(f"マーカーからデータタイプを検出: {detected_type}")
+            elif header.startswith('JSON:'):
+                detected_type = 'json'
+                print(f"マーカーからデータタイプを検出: {detected_type}")
+            elif header.startswith('CSV:'):
+                detected_type = 'csv'
+                print(f"マーカーからデータタイプを検出: {detected_type}")
+            else:
+                # マーカーがない場合はデータ内容から推測
+                detected_type = DataAdapter.detect_data_type(data)
+                print(f"データ内容からタイプを推測: {detected_type}")
         except Exception as e:
-            print(f"[ERROR] テキストの復元中にエラー: {e}")
-            # エラー発生時はバイナリとして返す
-            try:
-                return data.decode('latin-1', errors='replace')
-            except:
-                return data
+            print(f"データタイプ検出エラー: {e}")
+            detected_type = 'binary'  # デフォルトはバイナリ
 
-    elif data_type == 'binary':
-        # バイナリ形式の場合はそのまま返す
-        return data
+    # 適切なアダプターで処理
+    adapter = DataAdapter.get_adapter(detected_type)
+    processed_data = adapter.process_after_decryption(data, detected_type)
 
-    elif data_type == 'json':
-        # JSON形式の場合
-        json_adapter = JSONAdapter()
-        json_data = json_adapter.from_processable(data)
+    # 結果の型確認（デバッグ用）
+    result_type = type(processed_data).__name__
+    print(f"処理結果: タイプ={result_type}, サイズ={len(processed_data) if hasattr(processed_data, '__len__') else 'unknown'}")
 
-        # JSON文字列として解析を試みる
+    # テキスト系データの場合は文字列を返し、バイナリデータの場合はバイト列を返す
+    if isinstance(processed_data, str) and detected_type == 'binary':
+        # バイナリデータなのに文字列が返された場合はバイト列に変換
         try:
-            return json_data.decode('utf-8')
-        except:
-            return json_data
-
-    elif data_type == 'base64':
-        # Base64形式の場合
-        base64_adapter = Base64Adapter()
-        return base64_adapter.from_processable(data)
-
-    else:
-        # 不明な形式の場合は、テキスト変換を試みる
+            return processed_data.encode('utf-8')
+        except UnicodeEncodeError:
+            print("警告: バイナリデータへの変換エラー")
+            return processed_data.encode('utf-8', errors='replace')
+    elif isinstance(processed_data, bytes) and detected_type in ['text', 'json', 'csv']:
+        # テキスト系なのにバイト列が返された場合は文字列に変換
         try:
-            return data.decode('utf-8', errors='replace')
-        except:
-            return data
+            return processed_data.decode('utf-8', errors='replace')
+        except UnicodeDecodeError:
+            print("警告: テキストデータへの変換エラー")
+            return processed_data.decode('utf-8', errors='replace')
+
+    return processed_data
 
 
 if __name__ == "__main__":

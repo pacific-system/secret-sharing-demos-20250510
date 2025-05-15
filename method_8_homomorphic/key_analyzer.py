@@ -25,20 +25,20 @@ import json
 from typing import Dict, Any, Tuple, List, Callable, Union, Optional, Set
 
 # 内部モジュールのインポート
-from method_8_homomorphic.config import (
+from config import (
     KDF_ITERATIONS,
     MASK_SEED_SIZE,
     KEY_SIZE_BYTES,
     SECURITY_PARAMETER
 )
-from method_8_homomorphic.timing_resistant import (
+from timing_resistant import (
     constant_time_compare,
     add_timing_noise,
     timing_resistant_operation,
     constant_time_select,
     TimingProtection
 )
-from method_8_homomorphic.environmental_check import (
+from environmental_check import (
     get_system_entropy,
     get_hardware_fingerprint,
     get_dynamic_threshold,

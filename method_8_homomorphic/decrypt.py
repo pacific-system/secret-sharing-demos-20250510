@@ -250,47 +250,91 @@ def ensure_directory(directory: str) -> None:
 
 def mod_inverse(a: int, m: int) -> int:
     """
-    モジュラー逆元を計算: a^(-1) mod m
+    モジュラ逆数の計算
 
-    拡張ユークリッドアルゴリズムを使用（非再帰的実装）
+    この関数は拡張ユークリッドアルゴリズムを使用して、
+    aのmod mにおける逆数を計算します。
+
+    ax ≡ 1 (mod m) となるようなxを見つけます。
 
     Args:
-        a: 逆元を求める数
-        m: 法
+        a: 逆数を求める数
+        m: 法（モジュラス）
 
     Returns:
-        aのモジュラー逆元
+        aのmod mにおける逆数
 
     Raises:
-        ValueError: 逆元が存在しない場合
+        ValueError: aとmが互いに素でない場合
     """
-    if m == 0:
-        raise ValueError("法が0であってはなりません")
-
     if m == 1:
         return 0
 
-    # aとmの最大公約数が1でなければ逆元は存在しない
-    if math.gcd(a, m) != 1:
-        raise ValueError(f"{a}と{m}は互いに素ではないため、逆元が存在しません")
+    def extended_gcd(a, b):
+        if a == 0:
+            return b, 0, 1
+        else:
+            gcd, x, y = extended_gcd(b % a, a)
+            return gcd, y - (b // a) * x, x
 
-    # 非再帰的な拡張ユークリッドアルゴリズム
-    old_r, r = a, m
-    old_s, s = 1, 0
-    old_t, t = 0, 1
+    gcd, x, y = extended_gcd(a, m)
 
-    while r != 0:
-        quotient = old_r // r
-        old_r, r = r, old_r - quotient * r
-        old_s, s = s, old_s - quotient * s
-        old_t, t = t, old_t - quotient * t
+    if gcd != 1:
+        raise ValueError(f"モジュラ逆数が存在しません: {a} と {m} は互いに素ではありません。")
+    else:
+        return x % m
 
-    # 逆元の計算
-    # old_s < 0 の場合は法に対して正にする
-    if old_s < 0:
-        old_s += m
 
-    return old_s
+def remove_comprehensive_indistinguishability_enhanced(
+    indistinguishable_ciphertexts: List[int],
+    metadata: Dict[str, Any],
+    key_type: str,
+    paillier: PaillierCrypto
+) -> List[int]:
+    """
+    識別不能性を除去する拡張関数
+
+    standard 版と enhanced 版の両方に対応するよう、metadata の構造を解析して対応
+
+    Args:
+        indistinguishable_ciphertexts: 識別不能性が適用された暗号文
+        metadata: 識別不能性のメタデータ
+        key_type: 鍵タイプ ("true" または "false")
+        paillier: PaillierCrypto インスタンス
+
+    Returns:
+        識別不能性が除去された暗号文
+    """
+    # メタデータの構造を解析
+    if "indistinguishable_metadata" in metadata:
+        # 新しい構造（encrypt.py で識別不能性機能を追加したケース）
+        indist_metadata = metadata.get("indistinguishable_metadata", {})
+
+        # 鍵タイプに応じたメタデータを取得
+        key_specific_metadata = indist_metadata.get(f"{key_type}_indist_metadata", None)
+
+        if key_specific_metadata:
+            # 識別不能性を除去
+            print(f"拡張された識別不能性（{key_type}鍵）を除去中...")
+            return remove_comprehensive_indistinguishability(
+                indistinguishable_ciphertexts, key_specific_metadata, key_type, paillier
+            )
+        elif indist_metadata.get("randomized", False):
+            # ランダム化のみが適用されている場合
+            print(f"ランダム化のみが適用されています。特別な処理は不要です。")
+            return indistinguishable_ciphertexts
+    elif isinstance(metadata, dict):
+        # 直接 remove_comprehensive_indistinguishability に渡せる形式の場合
+        # 標準的な実装との互換性のために direct_metadata を探す
+        direct_metadata = metadata.get("direct_metadata", metadata)
+        print(f"標準的な識別不能性（{key_type}鍵）を除去中...")
+        return remove_comprehensive_indistinguishability(
+            indistinguishable_ciphertexts, direct_metadata, key_type, paillier
+        )
+
+    # 識別不能性メタデータが見つからない場合はそのまま返す
+    print("識別不能性メタデータが見つかりません。暗号文をそのまま返します。")
+    return indistinguishable_ciphertexts
 
 
 def derive_homomorphic_keys(master_key: bytes, public_key: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -583,8 +627,8 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
         # ファイル整合性の検証 (セキュリティ強化機能)
         if use_enhanced_security:
             # ファイルが改ざんされていないか検証
-            encryption_time = encrypted_data.get("encryption_time", "")
-            original_filename = encrypted_data.get("original_filename", "")
+            encryption_time = encrypted_data.get("timestamp", "")
+            original_filename = encrypted_data.get(f"{key_type}_filename", "")
             chunks_hash = hashlib.sha256(str(chunks[:5]).encode()).hexdigest()[:8]
 
             print(f"ファイル整合性を検証中... ハッシュ: {chunks_hash}")
@@ -629,21 +673,22 @@ def decrypt_file_with_progress(encrypted_file_path: str, key: bytes, output_path
                 return False
 
         # 識別不能性の除去
-        # もしchunksがindistinguishable_ciphertextsの場合、識別不能性の除去が必要
-        comprehensive_metadata = encrypted_data.get("indistinguishability", {})
-        if comprehensive_metadata:
+        # もしインテージションが完了していれば新しいメタデータの構造を使用する
+        indistinguishable = encrypted_data.get("indistinguishable", False)
+        if indistinguishable:
             print("識別不能性を除去中...")
             try:
                 if use_enhanced_security:
                     # セキュリティ強化版を使用
                     unmasked_chunks = remove_comprehensive_indistinguishability_enhanced(
-                        unmasked_chunks, comprehensive_metadata, key_type, paillier
+                        unmasked_chunks, encrypted_data, key_type, paillier
                     )
                 else:
                     # 既存の実装を使用
                     from method_8_homomorphic.indistinguishable import remove_comprehensive_indistinguishability
+                    indist_metadata = encrypted_data.get("indistinguishable_metadata", {})
                     unmasked_chunks = remove_comprehensive_indistinguishability(
-                        unmasked_chunks, comprehensive_metadata, key_type, paillier
+                        unmasked_chunks, indist_metadata, key_type, paillier
                     )
                 print("識別不能性除去完了")
             except Exception as e:

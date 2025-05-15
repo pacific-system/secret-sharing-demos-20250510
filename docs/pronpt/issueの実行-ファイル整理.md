@@ -26,14 +26,14 @@
 統合が完了したら
 /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_indistinguishable_feature.py
 このファイルは
-/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/_trash
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/\_trash
 このディレクトリ（仮削除）に移動してください
-
 
 [あなたの性質]
 
 - あなたは真摯に対応し、適正な状態にして報告します
 - あなたはテストを通すために要件を犠牲にするような信頼度の低い行動はとりません
+- あなたは最終成果物を常に意識して行動し、最終成果物の品質を最大化します
 
 [要求の完了方法]
 

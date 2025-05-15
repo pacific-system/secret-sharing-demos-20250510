@@ -36,6 +36,7 @@ import hashlib
 import argparse
 import binascii
 import random
+import secrets
 from typing import Dict, Any, Tuple, List, Optional
 
 # 親ディレクトリをインポートパスに追加
@@ -66,6 +67,13 @@ from method_8_homomorphic.crypto_mask import (
 from method_8_homomorphic.crypto_adapters import (
     process_data_for_encryption, process_data_after_decryption,
     DataAdapter
+)
+from method_8_homomorphic.indistinguishable import (
+    randomize_ciphertext, batch_randomize_ciphertexts,
+    add_statistical_noise, remove_statistical_noise,
+    interleave_ciphertexts, deinterleave_ciphertexts,
+    add_redundancy, remove_redundancy,
+    apply_comprehensive_indistinguishability, remove_comprehensive_indistinguishability
 )
 
 
@@ -158,6 +166,33 @@ def parse_arguments() -> argparse.Namespace:
         choices=['text', 'binary', 'json', 'base64', 'auto'],
         default='auto',
         help='入力データの形式を強制指定（デフォルト: 自動検出）'
+    )
+
+    # 識別不能性機能関連のオプション
+    parser.add_argument(
+        '--indistinguishable', '-i',
+        action='store_true',
+        help='識別不能性機能を適用する'
+    )
+
+    parser.add_argument(
+        '--noise-intensity',
+        type=float,
+        default=0.05,
+        help='統計的ノイズの強度（0.0～1.0）'
+    )
+
+    parser.add_argument(
+        '--redundancy-factor',
+        type=int,
+        default=1,
+        help='冗長性の係数（1以上の整数、1の場合は冗長性なし）'
+    )
+
+    parser.add_argument(
+        '--shuffle-seed',
+        type=str,
+        help='シャッフルのためのシード（16進数文字列、省略時はランダム生成）'
     )
 
     return parser.parse_args()
@@ -390,6 +425,72 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
             encrypted = paillier_obj.encrypt(chunk_int, paillier_pub)
             false_encrypted.append(encrypted)
 
+        # 識別不能性機能の適用（オプションが指定されている場合）
+        if hasattr(args, 'indistinguishable') and args.indistinguishable:
+            print("識別不能性機能を適用中...")
+
+            # シャッフルのためのシード値を準備
+            shuffle_seed = None
+            if hasattr(args, 'shuffle_seed') and args.shuffle_seed:
+                try:
+                    shuffle_seed = binascii.unhexlify(args.shuffle_seed)
+                except binascii.Error:
+                    print("警告: 無効なシャッフルシード形式です。ランダムなシードを生成します。")
+                    shuffle_seed = secrets.token_bytes(16)
+            else:
+                shuffle_seed = secrets.token_bytes(16)
+
+            # 識別不能性パラメータを取得
+            noise_intensity = getattr(args, 'noise_intensity', 0.05)
+            redundancy_factor = getattr(args, 'redundancy_factor', 1)
+
+            print(f"統計的ノイズ強度: {noise_intensity}")
+            print(f"冗長性係数: {redundancy_factor}")
+
+            # 暗号文のランダム化
+            true_encrypted = batch_randomize_ciphertexts(paillier_obj, true_encrypted)
+            false_encrypted = batch_randomize_ciphertexts(paillier_obj, false_encrypted)
+
+            # 総合的な識別不能性を適用
+            indist_true, indist_false = None, None
+            indist_true_metadata, indist_false_metadata = None, None
+
+            if redundancy_factor > 1 or noise_intensity > 0:
+                # 総合的な識別不能性処理
+                indist_true, indist_true_metadata = apply_comprehensive_indistinguishability(
+                    true_encrypted, false_encrypted, paillier_obj,
+                    noise_intensity=noise_intensity,
+                    redundancy_factor=redundancy_factor
+                )
+
+                # 偽データにも同じパラメータで適用
+                indist_false, indist_false_metadata = apply_comprehensive_indistinguishability(
+                    false_encrypted, true_encrypted, paillier_obj,
+                    noise_intensity=noise_intensity,
+                    redundancy_factor=redundancy_factor
+                )
+
+                # 識別不能性メタデータを保存
+                true_encrypted = indist_true
+                false_encrypted = indist_false
+
+                # 識別不能性のメタデータを設定
+                indist_metadata = {
+                    "true_indist_metadata": indist_true_metadata,
+                    "false_indist_metadata": indist_false_metadata,
+                    "noise_intensity": noise_intensity,
+                    "redundancy_factor": redundancy_factor,
+                    "shuffle_seed": shuffle_seed.hex() if shuffle_seed else None
+                }
+            else:
+                # 基本的なランダム化のみ
+                indist_metadata = {
+                    "randomized": True,
+                    "noise_intensity": 0,
+                    "redundancy_factor": 1,
+                    "shuffle_seed": shuffle_seed.hex() if shuffle_seed else None
+                }
+
         # マスク適用と真偽変換
         print("マスク関数を適用し、真偽両方の状態を区別不可能な形式に変換中...")
         print("この処理により、暗号文だけではどちらが「正規」ファイルか判別できなくなります")
@@ -424,6 +525,13 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
             "false_filename": os.path.basename(args.false_file),
             "public_key": paillier_obj.public_key  # 公開鍵情報を追加
         }
+
+        # 識別不能性メタデータを追加
+        if hasattr(args, 'indistinguishable') and args.indistinguishable:
+            metadata["indistinguishable"] = True
+            metadata["indistinguishable_metadata"] = indist_metadata
+        else:
+            metadata["indistinguishable"] = False
 
         # エンコーディング情報の統一的な取得と保存（両方のファイルに対して同じアプローチ）
         try:

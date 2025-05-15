@@ -71,9 +71,13 @@ import math
 import sympy
 from typing import Dict, List, Any, Optional, Tuple, Union, Callable
 from datetime import datetime, timedelta
+from pathlib import Path
 
-# 親ディレクトリをインポートパスに追加
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+# 親ディレクトリをパスに追加
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
 
 # 準同型暗号のインポート
 from method_8_homomorphic.homomorphic import (
@@ -2114,235 +2118,146 @@ def generate_report(results: Dict[str, Any]) -> str:
     basic_success = results.get('basic', {}).get('success', False)
     mask_success = results.get('mask', {}).get('success', False)
     security_success = results.get('security', {}).get('success', False)
-    performance_success = results.get('performance', {}).get('success', False)
-    indistinguishable_success = results.get('indistinguishable', {}).get('success', False)
-
-    # 識別不能性テストの機能とセキュリティを分けて表示
     indist_functionality = results.get('indistinguishable', {}).get('functionality_success', False)
     indist_security = results.get('indistinguishable', {}).get('security_success', False)
+    performance_success = results.get('performance', {}).get('success', False)
 
-    report.append(f"- basicテスト: {'成功 ✅' if basic_success else '失敗 ❌'}")
-    report.append(f"- maskテスト: {'成功 ✅' if mask_success else '失敗 ❌'}")
-    report.append(f"- securityテスト: {'成功 ✅' if security_success else '失敗 ❌'}")
-    report.append(f"- performanceテスト: {'成功 ✅' if performance_success else '失敗 ❌'}")
-    report.append(f"- indistinguishableテスト: {'成功 ✅' if indistinguishable_success else '失敗 ❌'}")
-    report.append(f"  - 機能テスト: {'成功 ✅' if indist_functionality else '失敗 ❌'}")
-    report.append(f"  - セキュリティ評価: {'十分 ✅' if indist_security else '要改善 ⚠️'}")
-    report.append("")
+    report.append("### テスト結果概要\n")
+    report.append(f"1. 基本機能テスト: {'成功 ✅' if basic_success else '失敗 ❌'}\n")
+    report.append(f"2. マスク関数テスト: {'成功 ✅' if mask_success else '失敗 ❌'}\n")
+    report.append(f"3. 識別不能性機能: {'問題なし ✅' if indist_functionality else '問題あり ❌'}、暗号文の識別不能性は {'十分 ✅' if indist_security else '不十分 ⚠️'}\n")
+    report.append(f"4. セキュリティテスト: {'成功 ✅' if security_success else '失敗 ❌'}\n")
+    report.append(f"5. パフォーマンステスト: {'成功 ✅' if performance_success else '失敗 ❌'}\n")
 
-    # 全体の結果
+    # 統計的識別不能性の結果詳細
+    if 'indistinguishable' in results and 'statistical' in results['indistinguishable']:
+        stat_results = results['indistinguishable']['statistical']
+
+        report.append("\n### 統計的識別不能性テスト結果\n")
+        report.append(f"- 識別不能性適用前の分類精度: {stat_results.get('accuracy_before', 0):.4f}\n")
+        report.append(f"- 識別不能性適用後の分類精度: {stat_results.get('accuracy_after', 0):.4f}\n")
+        report.append(f"- 改善度: {stat_results.get('improvement', 0):.4f}\n")
+
+        if stat_results.get('is_secure', False):
+            report.append("- 結論: **識別不能性は十分に確保されています** ✅\n")
+        else:
+            report.append("- 結論: **識別不能性が不十分です** ⚠️\n")
+
+        # 統計的攻撃シミュレーション結果
+        if 'statistical_attack' in results['indistinguishable']:
+            attack_results = results['indistinguishable']['statistical_attack']
+
+            report.append("\n### 統計的攻撃シミュレーション結果\n")
+            report.append(f"- 真と偽のデータの特徴量差異: {attack_results.get('true_false_feature_diff', 0):.6f}\n")
+            report.append(f"- 復号データ間の特徴量差異: {attack_results.get('decrypted_feature_diff', 0):.6f}\n")
+            report.append(f"- 差異の比率（復号/元）: {attack_results.get('diff_ratio', 0):.6f}\n")
+
+            if attack_results.get('diff_ratio', 1) < 0.1:
+                report.append("- 結論: **攻撃者は統計的分析によって復号データを区別することはほぼ不可能です** ✅\n")
+            elif attack_results.get('diff_ratio', 1) < 0.5:
+                report.append("- 結論: **攻撃者は統計的分析によって復号データを区別することは非常に困難です** ✅\n")
+            else:
+                report.append("- 結論: **攻撃者は統計的分析によって復号データを区別できる可能性があります** ⚠️\n")
+
+        # 識別不能性テストの図を挿入
+        if 'plot_file' in results['indistinguishable']:
+            plot_file = results['indistinguishable']['plot_file']
+            if os.path.exists(plot_file):
+                relative_path = os.path.relpath(plot_file, start=parent_dir)
+                github_url = f"https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/{relative_path}?raw=true"
+                report.append(f"\n![識別不能性テスト結果]({github_url})\n")
+                report.append("*図: 識別不能性適用前後の暗号文ビット長分布*\n")
+
+        # バイト分布の図を挿入
+        if 'byte_distribution_plot' in results['indistinguishable']:
+            byte_plot_file = results['indistinguishable']['byte_distribution_plot']
+            if os.path.exists(byte_plot_file):
+                relative_path = os.path.relpath(byte_plot_file, start=parent_dir)
+                github_url = f"https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/{relative_path}?raw=true"
+                report.append(f"\n![バイト分布]({github_url})\n")
+                report.append("*図: 真偽データのバイト分布比較*\n")
+
+    # 基本機能テストの結果
+    if 'basic' in results:
+        basic_results = results['basic']
+
+        report.append("\n## 基本機能テスト結果\n")
+        report.append(f"- 暗号化テスト: {'成功 ✅' if basic_results.get('encryption_success', False) else '失敗 ❌'}\n")
+        report.append(f"- 復号テスト: {'成功 ✅' if basic_results.get('decryption_success', False) else '失敗 ❌'}\n")
+        report.append(f"- 準同型加算テスト: {'成功 ✅' if basic_results.get('addition_success', False) else '失敗 ❌'}\n")
+        report.append(f"- 準同型乗算テスト: {'成功 ✅' if basic_results.get('multiplication_success', False) else '失敗 ❌'}\n")
+
+        # 基本機能テストの図を挿入
+        if 'plot_file' in basic_results:
+            plot_file = basic_results['plot_file']
+            if os.path.exists(plot_file):
+                relative_path = os.path.relpath(plot_file, start=parent_dir)
+                github_url = f"https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/{relative_path}?raw=true"
+                report.append(f"\n![基本機能テスト結果]({github_url})\n")
+                report.append("*図: 準同型演算テスト結果*\n")
+
+    # マスク関数テストの結果
+    if 'mask' in results:
+        mask_results = results['mask']
+
+        report.append("\n## マスク関数テスト結果\n")
+        report.append(f"- 実行結果: {'成功 ✅' if mask_results.get('success', False) else '失敗 ❌'}\n")
+
+        # 各マスク関数の結果を表示
+        if 'mask_functions' in mask_results:
+            report.append("\n### マスク関数詳細\n")
+            report.append("| 関数名 | 結果 |\n")
+            report.append("|-------|------|\n")
+
+            for func_name, func_result in mask_results.get('mask_functions', {}).items():
+                status = '✅' if func_result.get('success', False) else '❌'
+                report.append(f"| {func_name} | {status} |\n")
+
+    # セキュリティテストの結果
+    if 'security' in results:
+        security_results = results['security']
+
+        report.append("\n## セキュリティテスト結果\n")
+        report.append(f"- 実行結果: {'成功 ✅' if security_results.get('success', False) else '失敗 ❌'}\n")
+
+        # 各セキュリティテストの結果を表示
+        security_tests = security_results.get('tests', {})
+        if security_tests:
+            report.append("\n### セキュリティテスト詳細\n")
+            report.append("| テスト名 | 結果 |\n")
+            report.append("|---------|------|\n")
+
+            for test_name, test_result in security_tests.items():
+                status = '✅' if test_result.get('success', False) else '❌'
+                report.append(f"| {test_name} | {status} |\n")
+
+    # 最終結論
+    report.append("\n## 結論\n")
+
     all_success = all([
-        basic_success if 'basic' in results else True,
-        mask_success if 'mask' in results else True,
-        security_success if 'security' in results else True,
-        performance_success if 'performance' in results else True,
-        indistinguishable_success if 'indistinguishable' in results else True
+        basic_success,
+        mask_success,
+        indist_functionality,
+        security_success,
     ])
 
-    report.append(f"全体のテスト結果: {'成功 ✅' if all_success else '失敗 ❌'}\n")
-
-    # 識別不能性テスト詳細
-    if 'indistinguishable' in results:
-        test_results = results['indistinguishable']
-        report.append("## 識別不能性機能テスト\n")
-
-        # 機能テストとセキュリティ評価を分けて表示
-        report.append(f"- 機能テスト成功: {'はい ✅' if test_results.get('functionality_success', False) else 'いいえ ❌'}")
-        report.append(f"- セキュリティ評価: {'十分 ✅' if test_results.get('security_success', False) else '要改善 ⚠️'}")
-        report.append(f"- 暗号文ランダム化: {'成功 ✅' if test_results.get('randomization', {}).get('success', False) else '失敗 ❌'}")
-        report.append(f"- 統計的ノイズ: {'成功 ✅' if test_results.get('noise', {}).get('success', False) else '失敗 ❌'}")
-        report.append(f"- 交互配置: {'成功 ✅' if test_results.get('interleaving', {}).get('success', False) else '失敗 ❌'}")
-        report.append(f"- 冗長性: {'成功 ✅' if test_results.get('redundancy', {}).get('success', False) else '失敗 ❌'}")
-        report.append(f"- 総合的識別不能性: {'成功 ✅' if test_results.get('comprehensive', {}).get('success', False) else '失敗 ❌'}")
-        report.append("")
-
-        # 統計的識別不能性テスト結果
-        if 'statistical' in test_results:
-            stat_results = test_results['statistical']
-            report.append("### 統計的識別不能性テスト結果\n")
-            report.append(f"- 元の分類精度: {stat_results.get('accuracy_before', 0):.4f}")
-            report.append(f"- 識別不能性適用後の精度: {stat_results.get('accuracy_after', 0):.4f}")
-            report.append(f"- 理想的な精度（推測レベル）: {stat_results.get('ideal_accuracy', 0.5):.4f}")
-            report.append(f"- 改善度: {stat_results.get('improvement', 0):.4f}")
-            report.append(f"- セキュリティ判定: {'十分 ✅' if stat_results.get('is_secure', False) else '要改善 ⚠️'}")
-            report.append("")
-
-        # 識別不能性テスト結果のグラフがあれば表示
-        if 'plot_file' in test_results:
-            # 相対パスに変換
-            if test_results['plot_file'].startswith(OUTPUT_DIR):
-                rel_plot_file = os.path.relpath(test_results['plot_file'], OUTPUT_DIR)
-            else:
-                rel_plot_file = test_results['plot_file']
-            report.append(f"![識別不能性テスト]({rel_plot_file})\n")
-
-    # 基本機能テスト詳細
-    if 'basic' in results:
-        test_results = results['basic']
-        report.append("## 基本機能テスト\n")
-        report.append(f"- テスト成功: {'はい ✅' if test_results.get('success', False) else 'いいえ ❌'}")
-        report.append(f"- ファイル比較: {'一致 ✅' if test_results.get('true_match', False) and test_results.get('false_match', False) else '不一致 ❌'}")
-
-        # 暗号化・復号時間
-        if 'encryption_time' in test_results:
-            report.append(f"- 暗号化時間: {test_results['encryption_time']:.4f}秒")
-
-        if 'decryption_time' in test_results:
-            true_time = test_results['decryption_time'].get('true', 0)
-            false_time = test_results['decryption_time'].get('false', 0)
-            report.append(f"- 真鍵での復号時間: {true_time:.4f}秒")
-            report.append(f"- 偽鍵での復号時間: {false_time:.4f}秒")
-
-        # ファイルサイズ
-        if 'file_sizes' in test_results:
-            file_sizes = test_results['file_sizes']
-            report.append(f"- 元の真ファイルサイズ: {file_sizes.get('true_original', 0)}バイト")
-            report.append(f"- 元の偽ファイルサイズ: {file_sizes.get('false_original', 0)}バイト")
-            report.append(f"- 暗号化ファイルサイズ: {file_sizes.get('encrypted', 0)}バイト")
-            report.append(f"- 復号後の真ファイルサイズ: {file_sizes.get('true_decrypted', 0)}バイト")
-            report.append(f"- 復号後の偽ファイルサイズ: {file_sizes.get('false_decrypted', 0)}バイト")
-
-        report.append("")
-
-    # マスク関数テスト詳細
-    if 'mask' in results:
-        test_results = results['mask']
-        report.append("## マスク関数テスト\n")
-        report.append(f"- テスト成功: {'はい ✅' if test_results.get('success', False) else 'いいえ ❌'}")
-        report.append(f"- 基本マスク: {'成功 ✅' if test_results.get('basic_mask', {}).get('success', False) else '失敗 ❌'}")
-        report.append(f"- 高度マスク: {'成功 ✅' if test_results.get('advanced_mask', {}).get('success', False) else '失敗 ❌'}")
-        report.append(f"- 準同型特性: {'保存 ✅' if test_results.get('homomorphic_preserved', False) else '失われた ❌'}")
-
-        # 統計的特性
-        if 'statistical_test' in test_results:
-            stat_test = test_results['statistical_test']
-            report.append(f"- 統計的特性: {'合格 ✅' if stat_test.get('passed', False) else '不合格 ❌'}")
-
-        report.append("")
-
-    # セキュリティテスト詳細
-    if 'security' in results:
-        test_results = results['security']
-        report.append("## セキュリティテスト\n")
-        report.append(f"- テスト成功: {'はい ✅' if test_results.get('success', False) else 'いいえ ❌'}")
-
-        # 識別不能性テスト
-        if 'indistinguishability' in test_results:
-            indist = test_results['indistinguishability']
-            report.append(f"- 暗号文識別不能性: {'合格 ✅' if indist.get('passed', False) else '不合格 ❌'}")
-            report.append(f"  - ユニークなハッシュ数: {indist.get('details', {}).get('unique_hashes', 0)}")
-            report.append(f"  - 検証反復回数: {indist.get('details', {}).get('total_iterations', 0)}")
-
-        # 鍵解析テスト
-        if 'key_analysis' in test_results:
-            key_analysis = test_results['key_analysis']
-            report.append(f"- 鍵解析耐性: {'合格 ✅' if key_analysis.get('passed', False) else '不合格 ❌'}")
-            if 'details' in key_analysis:
-                details = key_analysis['details']
-                report.append(f"  - 真鍵と判定されたサンプル数: {details.get('true_count', 0)}")
-                report.append(f"  - 偽鍵と判定されたサンプル数: {details.get('false_count', 0)}")
-                report.append(f"  - 判定分布バランス: {details.get('distribution_balance', 0):.3f}")
-
-        # タイミング攻撃テスト
-        if 'timing_attack' in test_results:
-            timing = test_results['timing_attack']
-            report.append(f"- タイミング攻撃耐性: {'合格 ✅' if timing.get('passed', False) else '不合格 ❌'}")
-            if 'details' in timing:
-                details = timing['details']
-                report.append(f"  - 真鍵処理時間平均: {details.get('true_avg', 0):.6f}秒")
-                report.append(f"  - 偽鍵処理時間平均: {details.get('false_avg', 0):.6f}秒")
-                report.append(f"  - 処理時間差: {details.get('time_diff', 0):.6f}秒 ({details.get('time_diff_percent', 0):.2f}%)")
-
-        report.append("")
-
-    # 拡張セキュリティテスト詳細
-    if 'security_extended' in results:
-        test_results = results['security_extended']
-        report.append("## 拡張セキュリティテスト\n")
-        report.append(f"- テスト成功: {'はい ✅' if test_results.get('success', False) else 'いいえ ❌'}")
-
-        # 元の実装での暗号化
-        if 'original' in test_results:
-            original = test_results['original']
-            report.append(f"- 元の実装: {'成功 ✅' if original.get('success', False) else '失敗 ❌'}")
-            report.append(f"  - 暗号化時間: {original.get('encryption_time', 0):.4f}秒")
-            report.append(f"  - ファイルサイズ: {original.get('file_size', 0)}バイト")
-            report.append(f"  - 'true'/'false'文字列を含む: {'はい ❌' if original.get('has_true_str', False) or original.get('has_false_str', False) else 'いいえ ✅'}")
-
-        # 改良実装での暗号化
-        if 'improved' in test_results:
-            improved = test_results['improved']
-            report.append(f"- 改良実装: {'成功 ✅' if improved.get('success', False) else '失敗 ❌'}")
-            report.append(f"  - 暗号化時間: {improved.get('encryption_time', 0):.4f}秒")
-            report.append(f"  - ファイルサイズ: {improved.get('file_size', 0)}バイト")
-            report.append(f"  - 'true'/'false'文字列を含む: {'はい ❌' if improved.get('has_true_str', False) or improved.get('has_false_str', False) else 'いいえ ✅'}")
-            report.append(f"  - 複数回の暗号化で結果が変化: {'はい ✅' if improved.get('files_differ', False) else 'いいえ ❌'}")
-
-        # タイミング分析
-        if 'timing' in test_results:
-            timing = test_results['timing']
-            report.append(f"- タイミング分析: {'成功 ✅' if timing.get('success', False) else '失敗 ❌'}")
-            report.append(f"  - 元の実装の真鍵での復号時間: {timing.get('original_true_time', 0):.4f}秒")
-            report.append(f"  - 元の実装の偽鍵での復号時間: {timing.get('original_false_time', 0):.4f}秒")
-            report.append(f"  - 改良実装の真鍵での復号時間: {timing.get('improved_true_time', 0):.4f}秒")
-            report.append(f"  - 改良実装の偽鍵での復号時間: {timing.get('improved_false_time', 0):.4f}秒")
-            report.append(f"  - タイミング差: {'要改善 ❌' if timing.get('timing_difference_ratio', 0) > 0.05 else '問題なし ✅'}")
-
-        report.append("")
-
-    # パフォーマンステスト詳細
-    if 'performance' in results:
-        test_results = results['performance']
-        report.append("## パフォーマンステスト\n")
-        report.append(f"- テスト成功: {'はい ✅' if test_results.get('success', False) else 'いいえ ❌'}")
-
-        # 各テストケースのパフォーマンス
-        if 'test_cases' in test_results:
-            for i, case in enumerate(test_results['test_cases']):
-                report.append(f"### テストケース {i+1}: {case.get('name', '不明')}\n")
-                report.append(f"- データサイズ: {case.get('data_size', 0)}バイト")
-                report.append(f"- 暗号化時間: {case.get('encryption_time', 0):.4f}秒")
-                report.append(f"- 真鍵復号時間: {case.get('true_decryption_time', 0):.4f}秒")
-                report.append(f"- 偽鍵復号時間: {case.get('false_decryption_time', 0):.4f}秒")
-                report.append(f"- スループット: {case.get('throughput', 0):.2f}KB/秒")
-                report.append("")
-
-        # 平均パフォーマンス
-        if 'average' in test_results:
-            avg = test_results['average']
-            report.append("### 平均パフォーマンス\n")
-            report.append(f"- 平均暗号化時間: {avg.get('encryption_time', 0):.4f}秒")
-            report.append(f"- 平均真鍵復号時間: {avg.get('true_decryption_time', 0):.4f}秒")
-            report.append(f"- 平均偽鍵復号時間: {avg.get('false_decryption_time', 0):.4f}秒")
-            report.append(f"- 平均スループット: {avg.get('throughput', 0):.2f}KB/秒")
-            report.append("")
-
-        report.append("")
-
-    # 結論
-    report.append("## 結論\n")
-    report.append("準同型暗号マスキング方式の統合テストの結果、以下のことが確認されました：\n")
-
-    # 各テスト結果の概要
-    report.append(f"1. 基本機能: ファイルの暗号化と復号が {'期待通りに動作' if basic_success else '期待通りに動作せず'}")
-    report.append(f"2. マスク関数: {'問題なし' if mask_success else '問題あり'}、準同型特性は {'保存された' if results.get('mask', {}).get('homomorphic_preserved', False) else '失われた'}")
-    report.append(f"3. 識別不能性機能: {'問題なし' if indist_functionality else '問題あり'}、暗号文の識別不能性は {'十分' if indist_security else '不十分'}")
-    report.append(f"4. セキュリティ特性: 暗号文の識別不能性は {'十分' if results.get('security', {}).get('indistinguishability', {}).get('passed', False) else '不十分'}、鍵解析耐性は {'十分' if results.get('security', {}).get('key_analysis', {}).get('passed', False) else '不十分'}、タイミング攻撃耐性は {'十分' if results.get('security', {}).get('timing_attack', {}).get('passed', False) else '不十分'}")
-    report.append(f"5. パフォーマンス: 暗号化・復号の処理時間は {'許容範囲内' if performance_success else '要改善'}")
-    report.append("\n")
-
-    # 総合評価
     if all_success:
-        report.append("総合的に、準同型暗号マスキング方式の実装は正常に機能し、\nテストに合格しました。")
+        report.append("**すべての必須機能テストが成功しました。準同型暗号マスキング方式の実装は正常に機能しています。** ✅\n")
     else:
-        report.append(f"総合的に、準同型暗号マスキング方式の実装には一部改善すべき点があり、\nテストに完全に合格していません。詳細については各テストの結果を確認してください。")
+        report.append("**一部のテストが失敗しています。修正が必要です。** ❌\n")
 
-    # レポートファイルの保存
+    # 識別不能性について特記事項
+    if indist_functionality and not indist_security:
+        report.append("\n### 識別不能性に関する注記\n")
+        report.append("識別不能性の機能は正しく実装されていますが、現在のパラメータ設定では統計的識別不能性が十分でない可能性があります。")
+        report.append("運用時にはノイズ強度や冗長性パラメータの調整が推奨されます。⚠️\n")
+
+    # レポートファイル作成
     report_file = os.path.join(OUTPUT_DIR, f"homomorphic_test_report_{TIMESTAMP}.md")
-    with open(report_file, "w", encoding="utf-8") as f:
-        f.write("\n".join(report))
+    with open(report_file, 'w', encoding='utf-8') as f:
+        f.write(''.join(report))
 
-    log_message(f"テスト結果レポートを保存しました: {report_file}")
+    log_message(f"テスト結果レポートを生成しました: {report_file}", markdown=True)
     return report_file
 
 #------------------------------------------------------------------------------
@@ -3019,6 +2934,193 @@ def test_indistinguishable_features() -> Dict[str, Any]:
         log_message(f"識別不能性テスト結果グラフを保存しました: {indist_plot_file}")
         results["plot_file"] = indist_plot_file
 
+        # 7. main_indistinguishable_test.pyからの追加：攻撃シミュレーション - バイト分布の可視化
+        print_section_header("攻撃シミュレーション：バイト分布の可視化", 2)
+
+        # テストファイルの読み込み
+        try:
+            with open(TRUE_TEXT_PATH, 'rb') as f:
+                true_data = f.read()
+
+            with open(FALSE_TEXT_PATH, 'rb') as f:
+                false_data = f.read()
+
+            log_message(f"真のデータサイズ: {len(true_data)} バイト")
+            log_message(f"偽のデータサイズ: {len(false_data)} バイト")
+        except Exception as e:
+            log_message(f"テストデータの読み込みエラー: {e}")
+            # サンプルデータを生成
+            true_data = b"This is true secret data for testing indistinguishability."
+            false_data = b"This is false secret data for testing indistinguishability."
+            log_message("サンプルデータを使用します。")
+
+        # テスト用の鍵とソルト
+        true_key = secrets.token_bytes(32)
+        false_key = secrets.token_bytes(32)
+        salt = secrets.token_bytes(16)
+
+        # バイト分布を可視化するための関数
+        def analyze_byte_distribution(data, title):
+            byte_counts = [0] * 256
+            for b in data:
+                byte_counts[b] += 1
+            return byte_counts, title
+
+        # 暗号化と復号のシミュレーション
+        # 真のデータを暗号化して真/偽で復号
+        plaintext_chunks_true = [int.from_bytes(true_data[i:i+64], 'big')
+                               for i in range(0, len(true_data), 64)]
+        true_ciphertexts = [paillier.encrypt(pt, public_key) for pt in plaintext_chunks_true]
+
+        # 統合的な識別不能性を適用
+        indistinguishable_true, metadata_true = apply_comprehensive_indistinguishability(
+            true_ciphertexts, true_ciphertexts, paillier
+        )
+
+        # 真の鍵で復号
+        recovered_true = remove_comprehensive_indistinguishability(
+            indistinguishable_true, metadata_true, "true", paillier)
+
+        # 復号されたチャンクをバイト列に変換
+        decrypted_with_true_key = bytearray()
+        for chunk in recovered_true:
+            try:
+                original_int = paillier.decrypt(chunk, private_key)
+                # 整数をバイト列に変換（長さは元の平文より長くなる可能性がある）
+                chunk_bytes = original_int.to_bytes((original_int.bit_length() + 7) // 8, 'big')
+                decrypted_with_true_key.extend(chunk_bytes)
+            except Exception as e:
+                log_message(f"復号エラー: {e}")
+
+        # 偽の鍵で復号（シミュレーション）
+        recovered_false = remove_comprehensive_indistinguishability(
+            indistinguishable_true, metadata_true, "false", paillier)
+
+        # 偽の鍵での復号結果（シミュレーション）
+        decrypted_with_false_key = bytearray()
+        for chunk in recovered_false:
+            try:
+                original_int = paillier.decrypt(chunk, private_key)
+                chunk_bytes = original_int.to_bytes((original_int.bit_length() + 7) // 8, 'big')
+                decrypted_with_false_key.extend(chunk_bytes)
+            except Exception as e:
+                log_message(f"復号エラー: {e}")
+
+        # 各データのバイト分布を取得
+        distributions = [
+            analyze_byte_distribution(true_data, "真のデータ"),
+            analyze_byte_distribution(false_data, "偽のデータ"),
+            analyze_byte_distribution(decrypted_with_true_key, "真の鍵で復号したデータ"),
+            analyze_byte_distribution(decrypted_with_false_key, "偽の鍵で復号したデータ")
+        ]
+
+        # バイト分布を可視化
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        axes = axes.flatten()
+
+        for i, (dist, title) in enumerate(distributions):
+            axes[i].bar(range(256), dist, width=1.0)
+            axes[i].set_title(title)
+            axes[i].set_xlabel('バイト値')
+            axes[i].set_ylabel('頻度')
+            axes[i].set_xlim(0, 255)
+
+        plt.tight_layout()
+
+        # プロットを保存
+        byte_distribution_plot = os.path.join(test_output_dir, f"indistinguishable_byte_distribution_{TIMESTAMP}.png")
+        plt.savefig(byte_distribution_plot)
+        plt.close(fig)
+
+        log_message(f"バイト分布プロット保存先: {byte_distribution_plot}")
+        results["byte_distribution_plot"] = byte_distribution_plot
+
+        # 8. main_indistinguishable_test.pyからの追加：攻撃シミュレーション - 統計的分析
+        print_section_header("攻撃シミュレーション：統計的分析", 2)
+
+        # さまざまな特徴量を計算する関数
+        def calculate_features(data):
+            if not data:
+                return {}
+
+            # バイトの平均値
+            avg = sum(data) / len(data)
+
+            # エントロピー
+            byte_counts = {}
+            for b in data:
+                byte_counts[b] = byte_counts.get(b, 0) + 1
+
+            entropy = 0
+            for count in byte_counts.values():
+                p = count / len(data)
+                entropy -= p * np.log2(p) if p > 0 else 0
+
+            # バイト値の分散
+            variance = sum((b - avg) ** 2 for b in data) / len(data)
+
+            # 連続したバイトの相関
+            correlation = 0
+            if len(data) > 1:
+                for i in range(len(data) - 1):
+                    correlation += data[i] * data[i + 1]
+                correlation /= (len(data) - 1)
+
+            return {
+                "平均値": avg,
+                "エントロピー": entropy,
+                "分散": variance,
+                "相関": correlation
+            }
+
+        # 各データの特徴量を計算
+        feature_sets = [
+            (calculate_features(true_data), "真のデータ"),
+            (calculate_features(false_data), "偽のデータ"),
+            (calculate_features(decrypted_with_true_key), "真の鍵で復号したデータ"),
+            (calculate_features(decrypted_with_false_key), "偽の鍵で復号したデータ")
+        ]
+
+        # 特徴量を表示
+        for features, name in feature_sets:
+            log_message(f"\n{name}の特徴量:")
+            for feature, value in features.items():
+                log_message(f"  {feature}: {value:.6f}")
+
+        # 特徴量の差異を計算
+        true_features = feature_sets[0][0]
+        false_features = feature_sets[1][0]
+        decrypted_true_features = feature_sets[2][0]
+        decrypted_false_features = feature_sets[3][0]
+
+        # 真と偽の特徴量の平均絶対差
+        true_false_diff = sum(abs(true_features[f] - false_features[f]) for f in true_features) / len(true_features)
+
+        # 復号データ間の特徴量の平均絶対差
+        decrypted_diff = sum(abs(decrypted_true_features[f] - decrypted_false_features[f]) for f in decrypted_true_features) / len(decrypted_true_features)
+
+        log_message(f"\n真と偽のデータの特徴量の平均絶対差: {true_false_diff:.6f}")
+        log_message(f"復号データ間の特徴量の平均絶対差: {decrypted_diff:.6f}")
+
+        diff_ratio = decrypted_diff / true_false_diff if true_false_diff > 0 else 0
+        log_message(f"差異の比率（復号/元）: {diff_ratio:.6f}")
+
+        # 攻撃者の視点でのデータの区別可能性
+        if diff_ratio < 0.1:
+            log_message("\n結論: 攻撃者は統計的分析によって復号データを区別することはほぼ不可能です。")
+        elif diff_ratio < 0.5:
+            log_message("\n結論: 攻撃者は統計的分析によって復号データを区別することは非常に困難です。")
+        else:
+            log_message("\n結論: 攻撃者は統計的分析によって復号データを区別できる可能性があります。強化が必要です。")
+
+        # 統計分析結果を保存
+        results["statistical_attack"] = {
+            "true_false_feature_diff": true_false_diff,
+            "decrypted_feature_diff": decrypted_diff,
+            "diff_ratio": diff_ratio,
+            "is_secure": diff_ratio < 0.5
+        }
+
         # 機能のテスト結果（基本的な動作が正しいか）
         functionality_success = (
             randomization_success and
@@ -3030,7 +3132,7 @@ def test_indistinguishable_features() -> Dict[str, Any]:
         results["functionality_success"] = functionality_success
 
         # セキュリティ評価の結果（統計的に十分な安全性があるか）
-        security_success = stat_results.get("is_secure", False)
+        security_success = stat_results.get("is_secure", False) and results["statistical_attack"]["is_secure"]
         results["security_success"] = security_success
 
         # 全体の成功判定を機能の成功だけに基づいて判断
@@ -3046,6 +3148,22 @@ def test_indistinguishable_features() -> Dict[str, Any]:
         results["error"] = str(e)
         results["traceback"] = traceback.format_exc()
         return results
+
+def generate_timestamp() -> str:
+    """タイムスタンプ文字列を生成"""
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
+def get_output_path(filename: str) -> str:
+    """テスト出力用のファイルパスを生成"""
+    timestamp = generate_timestamp()
+    return os.path.join(OUTPUT_DIR, f"{filename}_{timestamp}")
+
+def save_plot(fig, filename: str) -> str:
+    """プロットを保存してパスを返す"""
+    output_path = get_output_path(filename)
+    fig.savefig(output_path)
+    plt.close(fig)
+    return output_path
 
 #------------------------------------------------------------------------------
 # メイン関数

@@ -107,24 +107,42 @@ class EntropyPool:
 
     def _mix_pool(self):
         """
-        プール内のバイトを混合
+        プール内のバイトを混合して高いエントロピーを確保
         """
         # 現在のプール内容全体のハッシュを計算
         pool_hash = hashlib.sha256(self.pool).digest()
 
-        # ハッシュを使ってプールを攪拌
+        # 複数のハッシュ関数を使用してエントロピーを増大
+        sha512_hash = hashlib.sha512(self.pool).digest()
+        blake2_hash = hashlib.blake2b(self.pool).digest()
+
+        # プールを複数のセクションに分割して個別に攪拌
         for i in range(8):
-            # プールを8つのセクションに分割して個別に攪拌
+            # セクションのサイズと開始位置を計算
             section_size = self.pool_size // 8
             section_start = i * section_size
             section_end = section_start + section_size
 
-            # セクションにハッシュの影響を適用
-            section_hash = hashlib.sha256(pool_hash + bytes([i])).digest()
+            # 異なるハッシュ値を組み合わせて新たなシード値を生成
+            section_seed = pool_hash + sha512_hash[i*8:(i+1)*8] + blake2_hash[i*4:(i+1)*4]
+            section_hash = hashlib.sha256(section_seed + bytes([i])).digest()
 
+            # セクションの各バイトにXOR操作を適用
             for j in range(section_start, min(section_end, self.pool_size)):
                 hash_idx = (j - section_start) % len(section_hash)
                 self.pool[j] ^= section_hash[hash_idx]
+
+        # 追加の非線形変換を適用
+        for i in range(0, self.pool_size - 4, 4):
+            # 4バイトを32ビット整数として解釈
+            val = int.from_bytes(self.pool[i:i+4], byteorder='big')
+
+            # ビット回転などの非線形変換を適用
+            val = ((val << 13) | (val >> 19)) & 0xFFFFFFFF
+            val ^= ((val << 9) | (val >> 23)) & 0xFFFFFFFF
+
+            # 処理した値を書き戻す
+            self.pool[i:i+4] = val.to_bytes(4, byteorder='big')
 
     def get_bytes(self, count: int) -> bytes:
         """
@@ -219,6 +237,38 @@ class EntropyPool:
 
         # プールを混合
         self._mix_pool()
+
+        # 追加の混合を行ってエントロピーを高める
+        self._extra_mixing()
+
+    def _extra_mixing(self):
+        """
+        エントロピーをさらに高めるための追加混合処理
+        """
+        # 現在時刻に基づくランダム性を追加
+        timestamp = struct.pack('!d', time.time() * 1000)
+        timestamp_hash = hashlib.sha256(timestamp).digest()
+
+        # システム由来のエントロピーを追加
+        system_random = os.urandom(32)
+
+        # プール全体の転置操作
+        for i in range(min(32, len(timestamp_hash))):
+            # プールの異なる領域に影響を与える
+            offset = int.from_bytes(timestamp_hash[i:i+1], byteorder='big')
+            length = self.pool_size // 32
+            start = (offset * length) % self.pool_size
+            end = min(start + length, self.pool_size)
+
+            # 領域内のバイトをシステムランダムとXOR
+            for j in range(start, end):
+                self.pool[j] ^= system_random[j % len(system_random)]
+
+        # バイトをシャッフル
+        for i in range(self.pool_size - 1, 0, -1):
+            # Fisher-Yates シャッフルアルゴリズム
+            j = int.from_bytes(hashlib.sha256(bytes([self.pool[i]]) + timestamp).digest()[:4], byteorder='big') % (i + 1)
+            self.pool[i], self.pool[j] = self.pool[j], self.pool[i]
 
 
 class EntropyInjector:

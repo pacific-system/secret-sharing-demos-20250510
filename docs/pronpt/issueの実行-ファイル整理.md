@@ -12,22 +12,29 @@
 『重要な実装が類似のファイルに分散しており、一貫性のある統合された実装になっていない』
 
 [対応内容]
-/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/main_indistinguishable_test.py
-に関して、
-/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/homomorphic_test.py
-このファイルに統合してください。
-ただし下位の性能であったり、要件を犠牲にするような物は統合しないでください
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/key_analyzer.py
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/key_analyzer_enhanced.py
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/key_analyzer_robust.py
+
+鍵解析モジュール
+についての実装が分散しておりどれが本当の実装かわからないので以下の施策を実施
+- 不要なファイルを削除
+- 下位機能は取り込む必要なく、最大化した状態のみ残す
+- 下位の性能であったり、要件を犠牲にするような物は統合しないでください
+- 長大なファイルになる場合は、主たるファイルと副たるファイルの責務の分担が明確にわかるように分割
 
 [対応する上での重要事項]
-テストファイルにだけ実装し、納品物件に機能が実装されていない部分があります
+下記の３つの納品物件に機能が実装されていない部分があります
+例）テストにだけ実装されている
+例）encrypt.pyに実装されているものとは違うバイパス付きでテストに実装されている
 
 - /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/decrypt.py
 - /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/encrypt.py
-  暗号化・復号化の納品物件へ実装漏れが無いようにしてください
+- /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/homomorphic_test.py
+３つの納品物件へ実装漏れが無いようにしてください
 
-統合が完了したら
-/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/main_indistinguishable_test.py
-このファイルは
+
+不要になったファイルは
 /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/\_trash
 このディレクトリ（仮削除）に移動してください
 

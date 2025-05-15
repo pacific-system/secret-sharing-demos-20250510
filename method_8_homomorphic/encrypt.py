@@ -100,7 +100,7 @@ def _lazy_import_indistinguishable():
     global _IndistinguishableWrapper, _analyze_key_type_enhanced
     if _IndistinguishableWrapper is None or _analyze_key_type_enhanced is None:
         try:
-            from indistinguishable import IndistinguishableWrapper, analyze_key_type_enhanced
+            from method_8_homomorphic.indistinguishable import IndistinguishableWrapper, analyze_key_type_enhanced
             _IndistinguishableWrapper = IndistinguishableWrapper
             _analyze_key_type_enhanced = analyze_key_type_enhanced
         except ImportError:

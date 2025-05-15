@@ -99,7 +99,8 @@ def _lazy_import_indistinguishable():
 
     if _IndistinguishableWrapper is None:
         try:
-            from indistinguishable import (
+            # 相対インポートで循環参照を解決
+            from method_8_homomorphic.indistinguishable import (
                 IndistinguishableWrapper,
                 analyze_key_type,
                 analyze_key_type_enhanced,
@@ -488,24 +489,20 @@ def decrypt_file(input_file, output_file=None, key=None, key_bytes=None, key_typ
                     # メタデータを取得
                     metadata = encrypted_data.get('metadata', {})
 
-                    # 鍵タイプを判定
-                    key_type = _analyze_key_type_enhanced(decryption_key, metadata)
-
-                    # 判定が不明確な場合は標準関数にフォールバック
-                    if key_type == "unknown":
-                        key_type = analyze_key_type_robust(decryption_key)
+                    # 強化版の鍵判定を使用
+                    key_type = analyze_key_type_robust_enhanced(decryption_key, metadata)
 
                     if verbose:
                         print(f"自動判別されたキータイプ: {key_type}")
                 except Exception as e:
                     print(f"キータイプの判定中にエラーが発生: {e}")
                     # エラーの場合は標準の鍵解析関数を使用
-                    key_type = analyze_key_type_robust(decryption_key)
+                    key_type = analyze_key_type_robust_enhanced(decryption_key)
                     if verbose:
                         print(f"標準関数で判別されたキータイプ: {key_type}")
             else:
                 # フォールバック：標準の鍵解析関数を使用
-                key_type = analyze_key_type_robust(decryption_key)
+                key_type = analyze_key_type_robust_enhanced(decryption_key)
                 if verbose:
                     print(f"標準関数で判別されたキータイプ: {key_type}")
         else:
@@ -1007,6 +1004,53 @@ def decrypt_chunks(encrypted_chunks, paillier_key, original_data_type, original_
             print(f"マーカー検出中にエラー: {e}")
 
     return bytes(result_bytes)
+
+
+def analyze_key_type_robust_enhanced(key: bytes, metadata=None) -> str:
+    """
+    鍵タイプをより堅牢に判定するための拡張関数
+
+    Args:
+        key: 鍵データ
+        metadata: 暗号化メタデータ（利用可能な場合）
+
+    Returns:
+        鍵タイプ ("true" または "false")
+    """
+    # 鍵からSHA-256ハッシュを生成
+    key_hash = hashlib.sha256(key).digest()
+
+    # メタデータが利用可能な場合は追加のコンテキストとして使用
+    if metadata:
+        try:
+            # メタデータから重要な情報を抽出
+            algorithm = metadata.get('algorithm', '')
+            timestamp = metadata.get('timestamp', 0)
+            file_info = metadata.get('true_filename', '') + metadata.get('false_filename', '')
+
+            # 鍵とメタデータの情報を組み合わせたコンテキスト情報
+            context = f"{algorithm}:{timestamp}:{file_info}".encode('utf-8')
+
+            # 鍵ハッシュとコンテキストを組み合わせた二次ハッシュ
+            context_hash = hashlib.sha256(key_hash + context).digest()
+
+            # 複数の条件を組み合わせて堅牢な判定を実現
+            condition1 = key_hash[0] % 2 == 0
+            condition2 = context_hash[0] % 2 == 0
+            condition3 = (key_hash[1] & 0x0F) > (key_hash[1] & 0xF0) >> 4
+            condition4 = key_hash[16] % 2 == 0
+
+            # 複数条件の多数決で判定（より堅牢な判定）
+            true_score = sum([condition1, condition2, condition3, condition4])
+            return "true" if true_score >= 2 else "false"
+        except Exception as e:
+            print(f"拡張鍵解析でエラー発生: {e}, シンプルな判定にフォールバック")
+            # エラー時はシンプルな判定にフォールバック
+            pass
+
+    # シンプルな鍵ハッシュベースの判定（メタデータがない場合のフォールバック）
+    # これは元の analyze_key_type_robust と同様の挙動
+    return "true" if key_hash[0] % 2 == 0 else "false"
 
 
 def main():

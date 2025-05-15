@@ -59,10 +59,10 @@ from method_8_homomorphic.crypto_adapters import (
     process_data_after_decryption,
     DataAdapter
 )
-from method_8_homomorphic.key_analyzer_robust import (
+from method_8_homomorphic.key_analyzer import (
     analyze_key_type_robust,
     extract_seed_from_key,
-    debug_key_analysis
+    debug_analyze_key as debug_key_analysis
 )
 from method_8_homomorphic.indistinguishable import (
     remove_comprehensive_indistinguishability_enhanced,

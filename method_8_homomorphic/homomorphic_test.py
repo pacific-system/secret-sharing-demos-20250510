@@ -99,7 +99,7 @@ from method_8_homomorphic.crypto_adapters import (
 )
 
 # 鍵解析機能のインポート
-from method_8_homomorphic.key_analyzer_robust import (
+from method_8_homomorphic.key_analyzer import (
     analyze_key_type, extract_seed_from_key
 )
 

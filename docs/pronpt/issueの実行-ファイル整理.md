@@ -12,19 +12,21 @@
 『重要な実装が類似のファイルに分散しており、一貫性のある統合された実装になっていない』
 
 [対応内容]
-/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_indistinguishable_feature.py
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/main_indistinguishable_test.py
 に関して、
 /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/homomorphic_test.py
-このファイルに統合してください
+このファイルに統合してください。
+ただし下位の性能であったり、要件を犠牲にするような物は統合しないでください
 
-[注意]
+[対応する上での重要事項]
 テストファイルにだけ実装し、納品物件に機能が実装されていない部分があります
-/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/decrypt.py
-/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/encrypt.py
-暗号化・復号化の納品物件へ実装が必要であれば、その実装も行なってください
+
+- /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/decrypt.py
+- /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/encrypt.py
+  暗号化・復号化の納品物件へ実装漏れが無いようにしてください
 
 統合が完了したら
-/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/test_indistinguishable_feature.py
+/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/main_indistinguishable_test.py
 このファイルは
 /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/\_trash
 このディレクトリ（仮削除）に移動してください

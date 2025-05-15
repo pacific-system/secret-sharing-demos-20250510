@@ -1399,7 +1399,7 @@ def perform_improved_encryption(true_file, false_file):
         # 暗号化の実行（時間計測）
         start_time = time.time()
 
-        from method_8_homomorphic.indistinguishable_crypto import encrypt_file_with_dual_keys
+        from method_8_homomorphic.indistinguishable_ext import encrypt_file_with_dual_keys
         encrypt_file_with_dual_keys(
             true_file, false_file, encrypted_file,
             key_bits=1024, use_advanced_masks=True
@@ -1547,7 +1547,7 @@ def test_decryption_times(original_results, improved_results):
             output_dir = os.path.dirname(improved_results["encrypted_file"])
             output_file = os.path.join(output_dir, f"decrypted_{key_type}_{TIMESTAMP}.txt")
 
-            from method_8_homomorphic.indistinguishable_crypto import decrypt_file_with_key
+            from method_8_homomorphic.indistinguishable_ext import decrypt_file_with_key
             decrypt_file_with_key(
                 improved_results["encrypted_file"], output_file, key_type=key_type,
                 key_file=improved_results["key_file"]

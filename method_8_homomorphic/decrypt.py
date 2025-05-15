@@ -17,70 +17,54 @@
 ################################################################################
 
 """
-準同型暗号マスキング方式の復号実行ファイル
+準同型暗号マスキング方式の復号スクリプト
 
-このモジュールは、準同型暗号マスキング方式を使用して暗号化されたファイルを復号するための
-コマンドラインツールを提供します。マスク関数を使って暗号化されたファイルを、
-鍵に応じて真または偽の状態に復号します。どちらの鍵が「正規」か「非正規」かは
-ユーザーの意図によって決まります。
+このスクリプトは、準同型暗号マスキング方式で暗号化されたファイルを復号します。
+鍵の種類（真/偽）に応じて、対応するファイル（true.text/false.text）が復元されます。
 """
 
 import os
 import sys
-import time
 import json
 import base64
-import hashlib
-import argparse
 import binascii
+import hashlib
 import random
 import math
-import secrets
+import time
+import argparse
+import struct
 import sympy
-import string
-import traceback
-from typing import Dict, Any, Tuple, List, Optional, Union
+from typing import Dict, List, Any, Tuple, Optional, Union, cast
 
-# 親ディレクトリをインポートパスに追加
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
+# モジュールのインポート
 from method_8_homomorphic.config import (
     KEY_SIZE_BYTES,
     SALT_SIZE,
-    OUTPUT_FORMAT,
-    OUTPUT_EXTENSION,
-    CRYPTO_ALGORITHM,
     PAILLIER_KEY_BITS,
-    ELGAMAL_KEY_BITS,
-    MASK_SEED_SIZE,
-    MAX_CHUNK_SIZE,
-    KDF_ITERATIONS,
-    SECURITY_PARAMETER
+    DEFAULT_CHARSET
 )
 from method_8_homomorphic.homomorphic import (
-    PaillierCrypto, ElGamalCrypto,
-    derive_key_from_password, save_keys, load_keys,
-    deserialize_encrypted_data
+    PaillierCrypto,
+    derive_key_from_password
 )
 from method_8_homomorphic.crypto_mask import (
-    MaskFunctionGenerator, AdvancedMaskFunctionGenerator,
+    MaskFunctionGenerator,
+    AdvancedMaskFunctionGenerator,
+    transform_between_true_false,
     extract_by_key_type
 )
-from method_8_homomorphic.key_analyzer_robust import (
-    analyze_key_type, extract_seed_from_key
-)
 from method_8_homomorphic.crypto_adapters import (
-    process_data_for_encryption, process_data_after_decryption,
-    DataAdapter, TextAdapter, BinaryAdapter
+    process_data_for_encryption,
+    process_data_after_decryption,
+    DataAdapter
 )
-
-# 強化版の依存関係
-from method_8_homomorphic.key_analyzer_enhanced import (
+from method_8_homomorphic.key_analyzer_robust import (
     analyze_key_type_robust,
     extract_seed_from_key,
     debug_key_analysis
 )
-from method_8_homomorphic.indistinguishable_enhanced import (
+from method_8_homomorphic.indistinguishable import (
     remove_comprehensive_indistinguishability_enhanced,
     safe_log10
 )

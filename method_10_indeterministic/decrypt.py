@@ -645,8 +645,6 @@ def decrypt_file(encrypted_path: str, key_path: str, output_path: str = None) ->
     """
     暗号化ファイルを復号する
 
-    メモリ効率と堅牢性を向上させた実装です。
-
     Args:
         encrypted_path: 暗号化ファイルのパス
         key_path: 鍵ファイルのパス
@@ -703,6 +701,10 @@ def decrypt_file(encrypted_path: str, key_path: str, output_path: str = None) ->
         # 実行パスの決定
         print("実行パスを決定中...")
         path_type = determine_execution_path(master_key, metadata)
+
+        # エントロピーデータを解析
+        entropy_info = extract_entropy_data(entropy_data, master_key, salt, path_type)
+        print(f"エントロピー解析: サイズ={entropy_info['analysis'].get('size', 'N/A')}バイト, エントロピー値={entropy_info['analysis'].get('entropy', 'N/A')}")
 
         # 確率的実行エンジンの初期化
         print(f"確率的実行エンジンを初期化中... (パスタイプ: {path_type})")
@@ -818,6 +820,12 @@ def read_encrypted_file(file_path: str) -> Tuple[Dict[str, Any], bytes, bytes]:
             metadata["timestamp"] = timestamp
             metadata["is_text"] = (options & 1) == 1
 
+            # エントロピーブロックサイズの読み込み (4バイト)
+            entropy_size_bytes = f.read(4)
+            if len(entropy_size_bytes) != 4:
+                raise ValueError("ファイル形式が不正です: エントロピーブロックサイズを読み込めません")
+            entropy_size = int.from_bytes(entropy_size_bytes, 'big')
+
             # ファイルがサイズ制限を超える場合は一時ファイルを使用
             if file_size > LARGE_FILE_THRESHOLD:
                 # 残りのデータを一時ファイルにコピー
@@ -825,7 +833,6 @@ def read_encrypted_file(file_path: str) -> Tuple[Dict[str, Any], bytes, bytes]:
                     temp_files.append(temp_file.name)
 
                     # エントロピーデータのコピー
-                    entropy_size = min(file_size - f.tell(), 1024)  # エントロピーデータは最大1KB程度
                     entropy_data = f.read(entropy_size)
                     temp_file.write(entropy_data)
 
@@ -839,18 +846,19 @@ def read_encrypted_file(file_path: str) -> Tuple[Dict[str, Any], bytes, bytes]:
 
                 # 一時ファイルから読み込み
                 with open(temp_file.name, 'rb') as tf:
-                    # 最初の1KBをエントロピーデータとして扱う
-                    entropy_data = entropy_data
+                    # エントロピーデータ部分を既に取得済み
 
                     # 残りをカプセルデータとして読み込む
+                    tf.seek(len(entropy_data))
                     capsule_data = tf.read()
 
                     return metadata, entropy_data, capsule_data
             else:
                 # 小さなファイルはメモリ内で処理
-                # エントロピーデータを読み込む（最大1KB）
-                entropy_size = min(file_size - f.tell(), 1024)
+                # エントロピーデータを読み込む
                 entropy_data = f.read(entropy_size)
+                if len(entropy_data) != entropy_size:
+                    raise ValueError("ファイル形式が不正です: エントロピーデータが不完全です")
 
                 # 残りのデータをカプセルデータとして読み込む
                 capsule_data = f.read()
@@ -1613,6 +1621,87 @@ def calculate_entropy(data: bytes) -> float:
         entropy -= probability * math.log2(probability)
 
     return entropy
+
+
+def extract_entropy_data(entropy_data: bytes, key: bytes, salt: bytes, path_type: str) -> Dict[str, Any]:
+    """
+    エントロピーデータから情報を抽出する
+
+    Args:
+        entropy_data: エントロピーデータ
+        key: 復号鍵
+        salt: ソルト値
+        path_type: 実行パスタイプ（"true" または "false"）
+
+    Returns:
+        抽出された情報の辞書
+    """
+    try:
+        # エントロピー注入モジュールをインポート
+        from .entropy_injector import EntropyInjector
+
+        # 注入器を作成
+        injector = EntropyInjector(key, salt)
+
+        # マーカーを取得
+        markers = injector._injection_markers
+
+        # 抽出結果
+        result = {}
+
+        # データからマーカー位置を特定
+        marker_positions = {}
+        for i, marker in enumerate(markers):
+            pos = entropy_data.find(marker)
+            if pos >= 0:
+                marker_positions[i] = pos
+
+        # マーカー位置でデータをパース
+        if 0 in marker_positions and 1 in marker_positions:
+            # ベースエントロピー領域
+            base_start = marker_positions[0] + len(markers[0])
+            base_end = marker_positions[1]
+            if base_end > base_start:
+                result["base_entropy"] = entropy_data[base_start:base_end]
+
+        # path_type に基づいてハッシュと関連データを抽出
+        if path_type == TRUE_PATH and 1 in marker_positions and 2 in marker_positions:
+            # true パスのハッシュ
+            hash_start = marker_positions[1] + len(markers[1])
+            hash_end = marker_positions[2]
+            if hash_end > hash_start and hash_end - hash_start >= 32:
+                result["path_hash"] = entropy_data[hash_start:hash_start+32]
+
+        elif path_type == FALSE_PATH and 3 in marker_positions and 4 in marker_positions:
+            # false パスのハッシュ
+            hash_start = marker_positions[3] + len(markers[3])
+            hash_end = marker_positions[4]
+            if hash_end > hash_start and hash_end - hash_start >= 32:
+                result["path_hash"] = entropy_data[hash_start:hash_start+32]
+
+        # タイムスタンプの抽出
+        if 6 in marker_positions and 7 in marker_positions:
+            ts_start = marker_positions[6] + len(markers[6])
+            ts_end = marker_positions[7]
+            if ts_end > ts_start and ts_end - ts_start >= 8:
+                result["timestamp"] = int.from_bytes(entropy_data[ts_start:ts_start+8], 'big')
+
+        # エントロピーデータの分析
+        result["analysis"] = analyze_entropy(entropy_data)
+
+        return result
+
+    except ImportError:
+        # モジュールがない場合は基本情報のみ返す
+        return {
+            "analysis": {
+                "size": len(entropy_data),
+                "entropy": calculate_entropy(entropy_data)
+            }
+        }
+    except Exception as e:
+        print(f"エントロピーデータの解析中にエラーが発生しました: {e}", file=sys.stderr)
+        return {"error": str(e)}
 
 
 def main():

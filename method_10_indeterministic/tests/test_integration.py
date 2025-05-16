@@ -16,13 +16,15 @@ import hashlib
 import unittest
 import matplotlib.pyplot as plt
 import numpy as np
+import json
+import base64
 from typing import Dict, List, Tuple, Any
 
 # プロジェクトルートをインポートパスに追加
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 # 内部モジュールのインポート
-from method_10_indeterministic.encrypt import encrypt_files
+from method_10_indeterministic.encrypt import encrypt_file
 from method_10_indeterministic.decrypt import decrypt_file
 from method_10_indeterministic.tests.test_utils import (
     generate_random_key, create_temp_file, cleanup_temp_file,
@@ -52,7 +54,7 @@ def test_encryption_decryption():
         # テスト1: 暗号化と同一鍵での復号
         try:
             # 暗号化
-            key, _ = encrypt_files(true_file, false_file, encrypted_file)
+            key, _ = encrypt_file(true_file, false_file, encrypted_file)
 
             # 同一鍵での復号
             true_output = os.path.join(tempfile.gettempdir(), "test_true_decrypted.txt")

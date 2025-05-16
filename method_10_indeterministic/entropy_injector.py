@@ -170,7 +170,9 @@ class EntropyPool:
             val += (val ^ (val >> 16)) & 0xFFFFFFFF
             val ^= (val * 0x9e3779b9) & 0xFFFFFFFF  # 黄金比に基づく値
 
-            # 処理した値を書き戻す
+            # 処理した値を書き戻す（整数値が範囲内に収まるように修正）
+            # 0xFFFFFFFF (2^32 - 1) に制限して確実に4バイトに収まるようにする
+            val &= 0xFFFFFFFF  # 32ビットに収める
             self.pool[i:i+4] = val.to_bytes(4, byteorder='big')
 
         # ファイナライゼーション - エントロピー拡散を最終的に強化

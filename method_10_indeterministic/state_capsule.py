@@ -85,6 +85,12 @@ class StateCapsule:
         # 解析対策用のダミー機能
         self._anti_analysis_init()
 
+        # シャッフルマップの初期化
+        self._initialize_shuffle_map()
+
+        # ブロックマップの初期化
+        self._initialize_block_map()
+
     def _anti_analysis_init(self):
         """解析対策のための初期化処理"""
         # 解析妨害用のデコイオブジェクト
@@ -142,284 +148,152 @@ class StateCapsule:
         # ブロックサイズをランダム化
         self._block_size_modifier = random.randint(1, 4)
 
-    def _initialize_mappings(self, data_size: int, block_size: int = 64):
+    def _initialize_shuffle_map(self) -> None:
+        """シャッフルマップを初期化する"""
+        # 初期サイズを4KB程度に設定
+        initial_size = 4096
+
+        # エントロピープールを使用してシャッフルマップを生成
+        shuffle_seed = hashlib.sha256(self._capsule_seed + b"shuffle_map").digest()
+        rng = random.Random(shuffle_seed)
+
+        # 初期マッピング（同一マッピング）
+        indices = list(range(initial_size))
+
+        # 解析耐性レベルに応じてシャッフルの強度を変える
+        if self.resistance_level >= AnalysisResistanceLevel.MEDIUM:
+            # 完全シャッフル
+            rng.shuffle(indices)
+        else:
+            # 部分シャッフル（特定のパターンを維持）
+            for i in range(0, initial_size, 64):
+                end = min(i + 64, initial_size)
+                segment = indices[i:end]
+                rng.shuffle(segment)
+                indices[i:end] = segment
+
+        # シャッフルマップの作成
+        self._shuffle_map = {src: dst for src, dst in enumerate(indices)}
+
+    def _expand_shuffle_map(self, size: int) -> None:
         """
-        インターリーブ・シャッフルマッピングを初期化
+        シャッフルマップを指定サイズに拡張する
 
         Args:
-            data_size: 処理するデータのサイズ
-            block_size: ブロックサイズ
+            size: 拡張後のサイズ
         """
-        # 解析耐性レベルに応じてブロックサイズを調整
-        if hasattr(self, '_block_size_modifier'):
-            block_size = block_size * self._block_size_modifier
+        current_size = max(self._shuffle_map.keys()) + 1
+        if size <= current_size:
+            return
 
-        # ブロックマッピングの初期化
-        num_blocks = math.ceil(data_size / block_size)
-        self._block_map = {}
+        # 新しいインデックスのリスト
+        new_indices = list(range(current_size, size))
 
-        # 各ブロックの処理方法を決定
-        for i in range(num_blocks):
-            # ブロック処理方式の決定シード
-            block_seed = hashlib.sha256(self._capsule_seed + f"block_{i}".encode()).digest()
+        # 乱数シードは既存のシャッフルマップに依存
+        seed_material = b''.join([
+            self._capsule_seed,
+            b"expand_shuffle",
+            str(current_size).encode(),
+            str(size).encode()
+        ])
+        expand_seed = hashlib.sha256(seed_material).digest()
+        rng = random.Random(expand_seed)
 
-            # 解析耐性レベルに応じてパターン数を増やす
-            pattern_types = 3 + (self.resistance_level - 1)  # 基本3種類 + 耐性レベルに応じて増加
-            if pattern_types > 10:
-                pattern_types = 10  # 上限は10種類
+        # シャッフル
+        rng.shuffle(new_indices)
 
-            # ブロック処理タイプ [0:(pattern_types-1)]
-            block_type = block_seed[0] % pattern_types
+        # マップに追加
+        for i, idx in enumerate(new_indices):
+            src = current_size + i
+            dst = current_size + idx - current_size
+            self._shuffle_map[src] = dst
 
-            # 基本3パターンに収める（拡張パターンは内部的に基本パターンにマッピング）
-            mapped_type = block_type % 3
+    def _initialize_block_map(self) -> None:
+        """ブロックマップを初期化する"""
+        # ブロック処理タイプを決定する乱数シード
+        block_seed = hashlib.sha256(self._capsule_seed + b"block_map").digest()
+        rng = random.Random(block_seed)
 
-            # インターリーブの粒度（バイト単位or半分単位など）
-            # 解析耐性が高いほど、より複雑なインターリーブパターンを使用
-            max_granularity = 8 + (self.resistance_level * 2)
-            interleave_granularity = max(1, block_seed[1] % max_granularity)
+        # 初期ブロック数（16KB分のブロック）
+        initial_blocks = 256
 
-            # 拡張情報を追加（解析をさらに困難にする）
-            extra_info = {}
-            if self.resistance_level >= AnalysisResistanceLevel.HIGH:
-                extra_info["subtype"] = block_seed[2] % 4
-                extra_info["complexity"] = (block_seed[3] % 100) / 100.0
-                extra_info["iteration"] = 1 + (block_seed[4] % 3)
+        # 解析耐性レベルに応じて、ブロック処理タイプの分布を決定
+        type_distribution = {}
+        granularity_range = {}
 
+        if self.resistance_level == AnalysisResistanceLevel.LOW:
+            # 低耐性: 順次配置が主体
+            type_distribution = {0: 0.7, 1: 0.25, 2: 0.05}
+            granularity_range = (1, 2)
+        elif self.resistance_level == AnalysisResistanceLevel.MEDIUM:
+            # 中耐性: バランスの取れた分布
+            type_distribution = {0: 0.4, 1: 0.3, 2: 0.3}
+            granularity_range = (1, 4)
+        else:
+            # 高耐性: インターリーブ配置が主体
+            type_distribution = {0: 0.2, 1: 0.2, 2: 0.6}
+            granularity_range = (1, 8)
+
+        # ブロックごとに処理タイプを決定
+        for i in range(initial_blocks):
+            # タイプの選択
+            r = rng.random()
+            block_type = 0  # デフォルト
+
+            cumulative = 0
+            for t, prob in type_distribution.items():
+                cumulative += prob
+                if r <= cumulative:
+                    block_type = t
+                    break
+
+            # インターリーブの場合は粒度も決定
+            granularity = 1
+            if block_type == 2:
+                granularity = rng.randint(*granularity_range)
+
+            # ブロックマップに追加
             self._block_map[i] = {
-                "type": mapped_type,
-                "original_type": block_type,  # デバッグ用に元の値も保持
-                "granularity": interleave_granularity,
-                "extra": extra_info
+                "type": block_type,
+                "granularity": granularity
             }
 
-        # シャッフルマッピングの初期化
-        total_size = data_size * 2  # 正規＋非正規
-        self._shuffle_map = {}
-        available_positions = list(range(total_size))
-
-        # シャッフル回数を耐性レベルに応じて調整
-        shuffle_iterations = 1
-        if hasattr(self, '_shuffle_complexity'):
-            shuffle_iterations = self._shuffle_complexity
-
-        # 複数回のシャッフルでさらに攪拌
-        for iteration in range(shuffle_iterations):
-            # シャッフルシードを更新
-            iteration_seed = hashlib.sha256(self._capsule_seed + iteration.to_bytes(4, 'big')).digest()
-
-            # シャッフルマップの生成
-            temp_map = {}
-            available_temp = available_positions.copy()
-
-            for i in range(total_size):
-                # 決定論的なシャッフル（鍵に依存）
-                shuffle_seed = hashlib.sha256(iteration_seed + f"shuffle_{i}".encode()).digest()
-                index = int.from_bytes(shuffle_seed[:4], byteorder='big') % len(available_temp)
-                position = available_temp.pop(index)
-                temp_map[i] = position
-
-            # 最初の反復の場合は直接設定、それ以降は追加シャッフル
-            if iteration == 0:
-                self._shuffle_map = temp_map
-            else:
-                # 前回のマップにさらにシャッフルを適用
-                new_map = {}
-                for src, mid in self._shuffle_map.items():
-                    if mid in temp_map:
-                        dst = temp_map[mid]
-                        new_map[src] = dst
-                    else:
-                        new_map[src] = mid
-                self._shuffle_map = new_map
-
-    def _create_block_interleave(
-        self,
-        true_block: bytes,
-        false_block: bytes,
-        block_info: Dict[str, Any]
-    ) -> bytes:
+    def create_capsule(self, true_data: bytes, false_data: bytes,
+                      true_signature: bytes, false_signature: bytes) -> bytes:
         """
-        ブロックインターリーブ処理
-
-        二つのブロックを指定された方法で混合します。
+        正規パスと非正規パスのデータをカプセル化
 
         Args:
-            true_block: 正規パスのブロック
-            false_block: 非正規パスのブロック
-            block_info: ブロック処理情報
-
-        Returns:
-            混合されたブロック
-        """
-        block_type = block_info["type"]
-
-        # ブロック長の調整（短い方を0でパディング）
-        max_len = max(len(true_block), len(false_block))
-        if len(true_block) < max_len:
-            true_block = true_block.ljust(max_len, b'\x00')
-        if len(false_block) < max_len:
-            false_block = false_block.ljust(max_len, b'\x00')
-
-        # ブロック処理タイプに基づいて処理
-        if block_type == 0:
-            # 正規→非正規
-            return true_block + false_block
-        elif block_type == 1:
-            # 非正規→正規
-            return false_block + true_block
-        else:
-            # インターリーブ
-            granularity = block_info["granularity"]
-            result = bytearray()
-
-            # 指定された粒度でインターリーブ
-            for i in range(0, max_len, granularity):
-                # 正規パスデータ
-                for j in range(granularity):
-                    if i + j < len(true_block):
-                        result.append(true_block[i + j])
-
-                # 非正規パスデータ
-                for j in range(granularity):
-                    if i + j < len(false_block):
-                        result.append(false_block[i + j])
-
-            return bytes(result)
-
-    def _apply_shuffle(self, data: bytes) -> bytes:
-        """
-        シャッフル処理を適用
-
-        Args:
-            data: シャッフルするデータ
-
-        Returns:
-            シャッフルされたデータ
-        """
-        # シャッフル用の配列の初期化
-        shuffled = bytearray(len(data))
-
-        # シャッフルマップに従ってデータを配置
-        for src, dst in self._shuffle_map.items():
-            if src < len(data) and dst < len(shuffled):
-                shuffled[dst] = data[src]
-
-        return bytes(shuffled)
-
-    def _pre_process_signature(self, signature: bytes) -> bytes:
-        """
-        署名データの前処理
-
-        カプセルに署名を埋め込む前に解析困難化処理を行います。
-
-        Args:
-            signature: 署名データ
-
-        Returns:
-            前処理済み署名データ
-        """
-        # 署名長の確保
-        if len(signature) > 256:
-            signature = signature[:256]
-        elif len(signature) < 256:
-            padding = os.urandom(256 - len(signature))
-            signature = signature + padding
-
-        # 署名攪拌（解析対策）
-        signature_key = hmac.new(self._capsule_seed, b"signature", hashlib.sha256).digest()
-        processed = bytearray(len(signature))
-
-        for i in range(len(signature)):
-            key_byte = signature_key[i % len(signature_key)]
-            src_byte = signature[i]
-            # 単純な攪拌（復元可能な処理）
-            processed[i] = (src_byte + key_byte) % 256
-
-        # データ冗長性による解析対策（低レベルな攻撃への対策）
-        if self.resistance_level >= AnalysisResistanceLevel.MEDIUM:
-            checksum = hashlib.sha256(processed).digest()[:16]
-            processed.extend(checksum)
-
-        return bytes(processed)
-
-    def _revert_signature(self, processed: bytes) -> bytes:
-        """
-        署名データの復元処理
-
-        Args:
-            processed: 前処理済み署名データ
-
-        Returns:
-            元の署名データ
-        """
-        # チェックサムの検証
-        data_len = len(processed)
-        if self.resistance_level >= AnalysisResistanceLevel.MEDIUM:
-            data_len = len(processed) - 16
-            data = processed[:data_len]
-            checksum = processed[data_len:]
-            expected = hashlib.sha256(data).digest()[:16]
-            if checksum != expected:
-                # チェックサム検証失敗時はダミー署名を返す
-                return os.urandom(data_len)
-        else:
-            data = processed
-
-        # 署名の復元
-        signature_key = hmac.new(self._capsule_seed, b"signature", hashlib.sha256).digest()
-        original = bytearray(data_len)
-
-        for i in range(data_len):
-            key_byte = signature_key[i % len(signature_key)]
-            proc_byte = data[i]
-            # 攪拌の逆処理
-            original[i] = (proc_byte - key_byte) % 256
-
-        return bytes(original)
-
-    def create_capsule(
-        self,
-        true_data: bytes,
-        false_data: bytes,
-        true_signature: bytes,
-        false_signature: bytes
-    ) -> bytes:
-        """
-        暗号化データの状態カプセル化
-
-        Args:
-            true_data: 正規パスの暗号化データ
-            false_data: 非正規パスの暗号化データ
-            true_signature: 正規パスの署名
-            false_signature: 非正規パスの署名
+            true_data: 正規パスのデータ
+            false_data: 非正規パスのデータ
+            true_signature: 正規データの署名
+            false_signature: 非正規データの署名
 
         Returns:
             カプセル化されたデータ
         """
         # 大規模データの判定
-        large_data = len(true_data) > MAX_TEMP_FILE_SIZE or len(false_data) > MAX_TEMP_FILE_SIZE
+        large_data = (len(true_data) > MAX_TEMP_FILE_SIZE or
+                     len(false_data) > MAX_TEMP_FILE_SIZE)
+
         if large_data:
-            return self._create_large_capsule(true_data, false_data, true_signature, false_signature)
+            return self._create_large_capsule(true_data, false_data,
+                                            true_signature, false_signature)
 
         # 通常サイズのデータ処理
-        return self._create_normal_capsule(true_data, false_data, true_signature, false_signature)
+        return self._create_normal_capsule(true_data, false_data,
+                                          true_signature, false_signature)
 
-    def _create_normal_capsule(
-        self,
-        true_data: bytes,
-        false_data: bytes,
-        true_signature: bytes,
-        false_signature: bytes
-    ) -> bytes:
+    def _create_normal_capsule(self, true_data: bytes, false_data: bytes,
+                              true_signature: bytes, false_signature: bytes) -> bytes:
         """
         通常サイズのデータをカプセル化
 
         Args:
-            true_data: 正規パスの暗号化データ
-            false_data: 非正規パスの暗号化データ
-            true_signature: 正規パスの署名
-            false_signature: 非正規パスの署名
+            true_data: 正規パスのデータ
+            false_data: 非正規パスのデータ
+            true_signature: 正規データの署名
+            false_signature: 非正規データの署名
 
         Returns:
             カプセル化されたデータ
@@ -427,68 +301,86 @@ class StateCapsule:
         # ブロックサイズの決定
         block_size = 64
 
-        # データをブロックに分割
+        # 署名の保護処理
+        protected_true_signature = self._protect_signature(true_signature)
+        protected_false_signature = self._protect_signature(false_signature)
+
+        # 署名部分の準備（最初の署名ブロック）
+        signature_part = protected_true_signature + protected_false_signature
+
+        # データ部分の準備
         true_blocks = [true_data[i:i+block_size] for i in range(0, len(true_data), block_size)]
         false_blocks = [false_data[i:i+block_size] for i in range(0, len(false_data), block_size)]
 
-        # ブロック数を揃える
+        # 短い方のデータにパディングを追加
         max_blocks = max(len(true_blocks), len(false_blocks))
 
-        # 不足ブロックを追加
         if len(true_blocks) < max_blocks:
-            for i in range(max_blocks - len(true_blocks)):
-                seed = self._capsule_seed + f"true_padding_{i}".encode()
-                dummy = hashlib.sha256(seed).digest()[:block_size]
-                true_blocks.append(dummy)
+            # 正規データが短い場合はパディング
+            padding_size = max_blocks - len(true_blocks)
+            for i in range(padding_size):
+                # パディングはランダムデータ
+                true_blocks.append(os.urandom(block_size))
 
         if len(false_blocks) < max_blocks:
-            for i in range(max_blocks - len(false_blocks)):
-                seed = self._capsule_seed + f"false_padding_{i}".encode()
-                dummy = hashlib.sha256(seed).digest()[:block_size]
-                false_blocks.append(dummy)
+            # 非正規データが短い場合はパディング
+            padding_size = max_blocks - len(false_blocks)
+            for i in range(padding_size):
+                # パディングはランダムデータ
+                false_blocks.append(os.urandom(block_size))
 
-        # マッピングの初期化
-        self._initialize_mappings(max_blocks * block_size, block_size)
+        # 最後のブロックがブロックサイズより小さい場合はパディング
+        if true_blocks and len(true_blocks[-1]) < block_size:
+            pad_size = block_size - len(true_blocks[-1])
+            true_blocks[-1] = true_blocks[-1] + os.urandom(pad_size)
 
-        # 署名データの前処理
-        true_sig_processed = self._pre_process_signature(true_signature)
-        false_sig_processed = self._pre_process_signature(false_signature)
+        if false_blocks and len(false_blocks[-1]) < block_size:
+            pad_size = block_size - len(false_blocks[-1])
+            false_blocks[-1] = false_blocks[-1] + os.urandom(pad_size)
 
-        # カプセル化データの初期化
-        capsule = bytearray()
+        # 混合データブロックの構築
+        mixed_blocks = []
 
-        # 署名データを埋め込み
-        capsule.extend(true_sig_processed)
-        capsule.extend(false_sig_processed)
-
-        # ブロック処理
         for i in range(max_blocks):
             block_info = self._block_map.get(i, {"type": 0, "granularity": 1})
-            mixed_block = self._create_block_interleave(true_blocks[i], false_blocks[i], block_info)
-            capsule.extend(mixed_block)
+            true_block = true_blocks[i]
+            false_block = false_blocks[i]
 
-        # カプセル全体にシャッフル適用
-        shuffled_capsule = self._apply_shuffle(capsule)
+            # ブロックタイプに基づいて混合方法を選択
+            if block_info["type"] == 0:
+                # 順次配置 (true, false)
+                mixed_blocks.append(true_block)
+                mixed_blocks.append(false_block)
+            elif block_info["type"] == 1:
+                # 順次配置 (false, true)
+                mixed_blocks.append(false_block)
+                mixed_blocks.append(true_block)
+            else:
+                # インターリーブ配置
+                granularity = block_info.get("granularity", 1)
+                mixed_block = self._interleave_blocks(true_block, false_block, granularity)
+                mixed_blocks.append(mixed_block)
 
-        return shuffled_capsule
+        # カプセルデータの構築
+        capsule_data = signature_part + b''.join(mixed_blocks)
 
-    def _create_large_capsule(
-        self,
-        true_data: bytes,
-        false_data: bytes,
-        true_signature: bytes,
-        false_signature: bytes
-    ) -> bytes:
+        # シャッフル適用
+        shuffled_data = self._apply_shuffle(capsule_data)
+
+        return shuffled_data
+
+    def _create_large_capsule(self, true_data: bytes, false_data: bytes,
+                             true_signature: bytes, false_signature: bytes) -> bytes:
         """
-        大規模データのカプセル化処理
+        大規模データをカプセル化
 
         メモリ効率の良い実装で大容量ファイルを処理します。
 
         Args:
-            true_data: 正規パスの暗号化データ
-            false_data: 非正規パスの暗号化データ
-            true_signature: 正規パスの署名
-            false_signature: 非正規パスの署名
+            true_data: 正規パスのデータ
+            false_data: 非正規パスのデータ
+            true_signature: 正規データの署名
+            false_signature: 非正規データの署名
 
         Returns:
             カプセル化されたデータ
@@ -497,75 +389,108 @@ class StateCapsule:
         temp_files = []
 
         try:
-            # 入力データを一時ファイルに保存
-            with tempfile.NamedTemporaryFile(delete=False, prefix="true_data_") as temp_true:
-                temp_files.append(temp_true.name)
-                temp_true.write(true_data)
+            # 署名の保護処理
+            protected_true_signature = self._protect_signature(true_signature)
+            protected_false_signature = self._protect_signature(false_signature)
 
-            with tempfile.NamedTemporaryFile(delete=False, prefix="false_data_") as temp_false:
-                temp_files.append(temp_false.name)
-                temp_false.write(false_data)
+            # 署名部分
+            signature_part = protected_true_signature + protected_false_signature
 
-            # 出力用一時ファイル
-            temp_output = tempfile.NamedTemporaryFile(delete=False, prefix="capsule_output_")
+            # 一時ファイルの作成
+            temp_true = tempfile.NamedTemporaryFile(delete=False)
+            temp_files.append(temp_true.name)
+            temp_true.write(true_data)
+            temp_true.close()
+
+            temp_false = tempfile.NamedTemporaryFile(delete=False)
+            temp_files.append(temp_false.name)
+            temp_false.write(false_data)
+            temp_false.close()
+
+            # 出力用の一時ファイル
+            temp_output = tempfile.NamedTemporaryFile(delete=False)
             temp_files.append(temp_output.name)
+
+            # 署名部分を出力
+            temp_output.write(signature_part)
+
+            # ブロックサイズの設定
+            block_size = 64
+            buffer_size = 1024 * 1024  # 1MB
+
+            # 両方のファイルからデータを読み込み、混合しながら出力
+            with open(temp_true.name, 'rb') as true_file, \
+                 open(temp_false.name, 'rb') as false_file:
+
+                block_index = 0
+
+                while True:
+                    # 両方のファイルからブロックを読み込む
+                    true_block = true_file.read(block_size)
+                    false_block = false_file.read(block_size)
+
+                    # どちらかのファイルの終了をチェック
+                    if not true_block and not false_block:
+                        break
+
+                    # 最後のブロックがブロックサイズより小さい場合はパディング
+                    if true_block and len(true_block) < block_size:
+                        pad_size = block_size - len(true_block)
+                        true_block = true_block + os.urandom(pad_size)
+
+                    if false_block and len(false_block) < block_size:
+                        pad_size = block_size - len(false_block)
+                        false_block = false_block + os.urandom(pad_size)
+
+                    # 一方のファイルが終了した場合は、ランダムデータで補完
+                    if not true_block:
+                        true_block = os.urandom(block_size)
+                    if not false_block:
+                        false_block = os.urandom(block_size)
+
+                    # ブロックマップ情報を取得
+                    block_info = self._block_map.get(block_index, {"type": 0, "granularity": 1})
+
+                    # ブロックタイプに基づいて混合方法を選択
+                    if block_info["type"] == 0:
+                        # 順次配置 (true, false)
+                        temp_output.write(true_block)
+                        temp_output.write(false_block)
+                    elif block_info["type"] == 1:
+                        # 順次配置 (false, true)
+                        temp_output.write(false_block)
+                        temp_output.write(true_block)
+                    else:
+                        # インターリーブ配置
+                        granularity = block_info.get("granularity", 1)
+                        mixed_block = self._interleave_blocks(true_block, false_block, granularity)
+                        temp_output.write(mixed_block)
+
+                    block_index += 1
+
             temp_output.close()
 
-            # ブロックサイズの決定
-            block_size = 64
+            # シャッフル適用（ファイルベース）
+            shuffled_output = tempfile.NamedTemporaryFile(delete=False)
+            temp_files.append(shuffled_output.name)
 
-            # マッピングの初期化
-            # データサイズを計算
-            true_size = len(true_data)
-            false_size = len(false_data)
-            max_size = max(true_size, false_size)
-            self._initialize_mappings(max_size, block_size)
+            with open(temp_output.name, 'rb') as input_file, \
+                 open(shuffled_output.name, 'wb') as output_file:
 
-            # 署名データの前処理
-            true_sig_processed = self._pre_process_signature(true_signature)
-            false_sig_processed = self._pre_process_signature(false_signature)
+                # バッファ単位でシャッフル処理
+                while True:
+                    buffer_data = input_file.read(buffer_size)
+                    if not buffer_data:
+                        break
 
-            # 出力ファイルに署名を書き込む
-            with open(temp_output.name, 'wb') as f_out:
-                f_out.write(true_sig_processed)
-                f_out.write(false_sig_processed)
+                    shuffled_buffer = self._apply_shuffle(buffer_data)
+                    output_file.write(shuffled_buffer)
 
-            # ブロック単位で処理
-            max_blocks = math.ceil(max_size / block_size)
+            # 最終結果の読み込み
+            with open(shuffled_output.name, 'rb') as f:
+                capsule_data = f.read()
 
-            with open(temp_true.name, 'rb') as f_true, \
-                 open(temp_false.name, 'rb') as f_false, \
-                 open(temp_output.name, 'ab') as f_out:
-
-                for i in range(max_blocks):
-                    # 各ファイルからブロックを読み込む
-                    true_block = f_true.read(block_size)
-                    false_block = f_false.read(block_size)
-
-                    # パディングを適用
-                    if len(true_block) < block_size:
-                        seed = self._capsule_seed + f"true_padding_{i}".encode()
-                        dummy = hashlib.sha256(seed).digest()[:block_size - len(true_block)]
-                        true_block = true_block + dummy
-
-                    if len(false_block) < block_size:
-                        seed = self._capsule_seed + f"false_padding_{i}".encode()
-                        dummy = hashlib.sha256(seed).digest()[:block_size - len(false_block)]
-                        false_block = false_block + dummy
-
-                    # ブロックを処理
-                    block_info = self._block_map.get(i, {"type": 0, "granularity": 1})
-                    mixed_block = self._create_block_interleave(true_block, false_block, block_info)
-                    f_out.write(mixed_block)
-
-            # メモリ効率の良いシャッフル処理
-            self._apply_shuffle_to_file(temp_output.name)
-
-            # 最終結果を読み込む
-            with open(temp_output.name, 'rb') as f:
-                result = f.read()
-
-            return result
+            return capsule_data
 
         finally:
             # 一時ファイルの削除
@@ -576,164 +501,322 @@ class StateCapsule:
                 except Exception as e:
                     print(f"警告: 一時ファイル '{file}' の削除に失敗しました: {e}")
 
-    def _apply_shuffle_to_file(self, file_path: str):
+    def _protect_signature(self, signature: bytes) -> bytes:
         """
-        ファイルに対してシャッフル処理を適用する
+        署名を保護処理する
 
-        メモリ効率を考慮したファイルベースのシャッフル処理を行います。
+        改ざんを検出しやすくするため、チェックサムを追加します。
 
         Args:
-            file_path: シャッフルするファイルのパス
+            signature: 元の署名データ
+
+        Returns:
+            保護処理された署名
         """
-        # 一時ファイルを作成
-        temp_shuffled = tempfile.NamedTemporaryFile(delete=False, prefix="shuffled_")
-        temp_shuffled.close()
+        # 追加のチェックサム計算
+        checksum = hashlib.md5(signature + self.salt).digest()
 
-        try:
-            # ファイルサイズを取得
-            file_size = os.path.getsize(file_path)
+        # 署名データにチェックサムを付加
+        protected = signature + checksum
 
-            # 空のシャッフル先ファイルを作成
-            with open(temp_shuffled.name, 'wb') as f:
-                f.write(b'\x00' * file_size)
+        # 不足分をパディング（標準サイズに揃える）
+        if len(protected) < 272:  # 署名(256) + チェックサム(16)
+            padding_size = 272 - len(protected)
+            protected = protected + os.urandom(padding_size)
 
-            # 元ファイルを開く
-            with open(file_path, 'rb') as source, open(temp_shuffled.name, 'r+b') as target:
-                # バッファ単位でシャッフル
-                buffer_size = min(BUFFER_SIZE, file_size // 10)  # 最大でもファイルの1/10のサイズ
-                if buffer_size < 1024:
-                    buffer_size = 1024  # 最小サイズ保証
+        return protected
 
-                # 読み込み位置の管理
-                source_pos = 0
+    def _interleave_blocks(self, true_block: bytes, false_block: bytes,
+                          granularity: int = 1) -> bytes:
+        """
+        2つのブロックをインターリーブする
 
-                while source_pos < file_size:
-                    # バッファサイズを調整（ファイル末尾では小さくなる）
-                    current_buffer = min(buffer_size, file_size - source_pos)
+        Args:
+            true_block: 正規パスのブロック
+            false_block: 非正規パスのブロック
+            granularity: 粒度（1=バイト単位、n=n バイト単位）
 
-                    # バッファを読み込み
-                    source.seek(source_pos)
-                    buffer = source.read(current_buffer)
+        Returns:
+            インターリーブされたブロック
+        """
+        result = bytearray()
 
-                    # バッファ内の各バイトをシャッフル
-                    for offset in range(len(buffer)):
-                        src_pos = source_pos + offset
-                        if src_pos in self._shuffle_map:
-                            dst_pos = self._shuffle_map[src_pos]
-                            if dst_pos < file_size:
-                                # シャッフル先の位置に書き込み
-                                target.seek(dst_pos)
-                                target.write(bytes([buffer[offset]]))
+        # 粒度を制限（最大16バイト、最小1バイト）
+        granularity = max(1, min(16, granularity))
 
-                    # 次のバッファへ
-                    source_pos += current_buffer
+        # 両方のブロックが同じサイズであることを確認
+        min_len = min(len(true_block), len(false_block))
+        true_part = true_block[:min_len]
+        false_part = false_block[:min_len]
 
-            # 結果を元のファイルにコピー
-            with open(temp_shuffled.name, 'rb') as source, open(file_path, 'wb') as target:
-                # チャンク単位でコピー
-                while True:
-                    chunk = source.read(BUFFER_SIZE)
-                    if not chunk:
-                        break
-                    target.write(chunk)
+        # 粒度単位でインターリーブ
+        for i in range(0, min_len, granularity):
+            end_idx = min(i + granularity, min_len)
+            result.extend(true_part[i:end_idx])
+            result.extend(false_part[i:end_idx])
 
-        finally:
-            # 一時ファイルを削除
-            try:
-                if os.path.exists(temp_shuffled.name):
-                    os.unlink(temp_shuffled.name)
-            except Exception as e:
-                print(f"警告: 一時ファイル '{temp_shuffled.name}' の削除に失敗しました: {e}")
+        # 両ブロックのサイズが異なる場合は、残りを追加
+        if len(true_block) > min_len:
+            result.extend(true_block[min_len:])
+
+        if len(false_block) > min_len:
+            result.extend(false_block[min_len:])
+
+        return bytes(result)
+
+    def _apply_shuffle(self, data: bytes) -> bytes:
+        """
+        シャッフルを適用する
+
+        Args:
+            data: シャッフルするデータ
+
+        Returns:
+            シャッフルされたデータ
+        """
+        # シャッフルマップがデータ長に対応していない場合は拡張
+        if max(self._shuffle_map.keys(), default=0) < len(data) - 1:
+            self._expand_shuffle_map(len(data))
+
+        # データをコピーしてシャッフル
+        data_array = bytearray(data)
+        shuffled = bytearray(len(data))
+
+        # シャッフルマップに従ってデータを配置
+        for src, dst in self._shuffle_map.items():
+            if src < len(data) and dst < len(data):
+                shuffled[dst] = data_array[src]
+
+        return bytes(shuffled)
+
+    def _revert_signature(self, signature_data: bytes) -> bytes:
+        """
+        保護された署名から元の署名を取り出す
+
+        Args:
+            signature_data: 保護された署名データ
+
+        Returns:
+            元の署名
+        """
+        # 署名データの長さチェック
+        if len(signature_data) < 272:  # 最小署名長: 署名(256) + チェックサム(16)
+            raise ValueError("署名データが不正です")
+
+        # 署名とチェックサムの分離
+        signature = signature_data[:256]
+        checksum = signature_data[256:272]
+
+        # チェックサムを検証
+        expected_checksum = hashlib.md5(signature + self.salt).digest()
+
+        if checksum != expected_checksum:
+            # チェックサム不一致（署名改ざんの可能性）
+            print("警告: 署名のチェックサムが一致しません")
+            # それでも署名は返す（上位層で対応）
+
+        return signature
 
     def _extract_block_true(self, mixed_block: bytes, block_info: Dict) -> bytes:
         """
-        混合ブロックから正規データを抽出
+        混合ブロックから正規パスのデータを抽出
 
         Args:
             mixed_block: 混合されたブロック
             block_info: ブロック処理情報
 
         Returns:
-            抽出された正規データ
+            抽出されたデータ
         """
-        # ブロックタイプ抽出
         block_type = block_info.get("type", 0)
-        granularity = block_info.get("granularity", 1)
-        extra = block_info.get("extra", {})
 
-        # ブロックタイプに基づいて抽出処理
+        # ブロックタイプに基づいて抽出方法を選択
         if block_type == 0:
-            # パターン0: 交互配置（インターリーブ）
-            return bytes([mixed_block[i] for i in range(0, len(mixed_block), 2)])
-
+            # 順次配置 (true, false) の場合は前半部分を取得
+            block_size = len(mixed_block) // 2
+            return mixed_block[:block_size]
         elif block_type == 1:
-            # パターン1: 順次配置（true全体 + false全体）
-            return mixed_block[:len(mixed_block)//2]
-
-        elif block_type == 2:
-            # パターン2: 粒度付きのインターリーブ
-            result = bytearray()
-            i = 0
-
-            while i < len(mixed_block):
-                # 正規データチャンク
-                chunk_size = min(granularity, len(mixed_block) - i)
-                result.extend(mixed_block[i:i+chunk_size])
-                i += chunk_size
-
-                # 非正規データチャンクはスキップ
-                i += min(granularity, max(0, len(mixed_block) - i))
-
-            return bytes(result)
-
-        # 未知のタイプの場合はデフォルトの抽出方法
-        return bytes([mixed_block[i] for i in range(0, len(mixed_block), 2)])
+            # 順次配置 (false, true) の場合は後半部分を取得
+            block_size = len(mixed_block) // 2
+            return mixed_block[block_size:]
+        else:
+            # インターリーブ配置の場合
+            granularity = block_info.get("granularity", 1)
+            return self._extract_interleaved_block(mixed_block, True, granularity)
 
     def _extract_block_false(self, mixed_block: bytes, block_info: Dict) -> bytes:
         """
-        混合ブロックから非正規データを抽出
+        混合ブロックから非正規パスのデータを抽出
 
         Args:
             mixed_block: 混合されたブロック
             block_info: ブロック処理情報
 
         Returns:
-            抽出された非正規データ
+            抽出されたデータ
         """
-        # ブロックタイプ抽出
         block_type = block_info.get("type", 0)
-        granularity = block_info.get("granularity", 1)
-        extra = block_info.get("extra", {})
 
-        # ブロックタイプに基づいて抽出処理
+        # ブロックタイプに基づいて抽出方法を選択
         if block_type == 0:
-            # パターン0: 交互配置（インターリーブ）
-            return bytes([mixed_block[i] for i in range(1, len(mixed_block), 2)])
-
+            # 順次配置 (true, false) の場合は後半部分を取得
+            block_size = len(mixed_block) // 2
+            return mixed_block[block_size:]
         elif block_type == 1:
-            # パターン1: 順次配置（true全体 + false全体）
-            midpoint = len(mixed_block)//2
-            return mixed_block[midpoint:]
+            # 順次配置 (false, true) の場合は前半部分を取得
+            block_size = len(mixed_block) // 2
+            return mixed_block[:block_size]
+        else:
+            # インターリーブ配置の場合
+            granularity = block_info.get("granularity", 1)
+            return self._extract_interleaved_block(mixed_block, False, granularity)
 
-        elif block_type == 2:
-            # パターン2: 粒度付きのインターリーブ
-            result = bytearray()
-            i = 0
+    def _extract_interleaved_block(self, mixed_block: bytes, is_true_path: bool, granularity: int = 1) -> bytes:
+        """
+        インターリーブされたブロックからデータを抽出
 
-            while i < len(mixed_block):
-                # 正規データチャンクはスキップ
-                i += min(granularity, max(0, len(mixed_block) - i))
+        Args:
+            mixed_block: インターリーブされたブロック
+            is_true_path: True=正規パス、False=非正規パス
+            granularity: 粒度（インターリーブの単位サイズ）
 
-                # 非正規データチャンク
-                if i < len(mixed_block):
-                    chunk_size = min(granularity, len(mixed_block) - i)
-                    result.extend(mixed_block[i:i+chunk_size])
-                    i += chunk_size
+        Returns:
+            抽出されたデータ
+        """
+        # 粒度を制限（最大16バイト、最小1バイト）
+        granularity = max(1, min(16, granularity))
 
-            return bytes(result)
+        # 結果バッファ
+        result = bytearray()
 
-        # 未知のタイプの場合はデフォルトの抽出方法
-        return bytes([mixed_block[i] for i in range(1, len(mixed_block), 2)])
+        # ブロック長を粒度単位で計算
+        units_count = len(mixed_block) // (granularity * 2)
+
+        # インターリーブパターンから元のデータを抽出
+        for i in range(units_count):
+            start_idx = i * granularity * 2
+
+            # 正規パスまたは非正規パスのどちらを取得するか
+            if is_true_path:
+                # 正規パスは最初のチャンク
+                chunk_start = start_idx
+            else:
+                # 非正規パスは2番目のチャンク
+                chunk_start = start_idx + granularity
+
+            # 粒度分のデータを取得
+            chunk_end = chunk_start + granularity
+            if chunk_end <= len(mixed_block):
+                result.extend(mixed_block[chunk_start:chunk_end])
+
+        # 余りがあれば処理（最後の不完全なブロック）
+        remaining = len(mixed_block) % (granularity * 2)
+        if remaining > 0:
+            last_start = units_count * granularity * 2
+
+            if is_true_path and remaining > granularity:
+                # 正規パスで余りが粒度より大きい場合
+                result.extend(mixed_block[last_start:last_start+granularity])
+            elif not is_true_path and remaining > granularity:
+                # 非正規パスで余りが粒度より大きい場合
+                result.extend(mixed_block[last_start+granularity:])
+            elif is_true_path:
+                # 正規パスで余りが粒度以下の場合
+                result.extend(mixed_block[last_start:])
+
+        return bytes(result)
+
+    def extract_data(self, capsule_data: bytes, is_true_path: bool) -> Tuple[bytes, bytes]:
+        """
+        カプセル化データから指定パスのデータと署名を抽出
+
+        Args:
+            capsule_data: カプセル化されたデータ
+            is_true_path: True=正規パス、False=非正規パス
+
+        Returns:
+            (抽出データ, 署名)のタプル
+        """
+        # カプセルデータから署名とデータを分離
+        if len(capsule_data) < 544:  # 最小長: true_signature(272) + false_signature(272)
+            # カプセルサイズが小さすぎる場合は空データを返す
+            return b"", b""
+
+        # 署名部分とデータ部分を分離
+        signatures_part = capsule_data[:544]  # 署名部分
+        data_part = capsule_data[544:]  # データ部分
+
+        # シャッフル適用前の状態に戻す
+        unshuffled_data = self._revert_shuffle(capsule_data)
+
+        # シャッフル解除後も署名部分とデータ部分を再分離
+        unshuffled_signatures = unshuffled_data[:544]
+        unshuffled_data_part = unshuffled_data[544:]
+
+        # 署名の抽出
+        signature_offset = 0 if is_true_path else 272
+        protected_signature = unshuffled_signatures[signature_offset:signature_offset+272]
+        signature = self._revert_signature(protected_signature)
+
+        # ブロックサイズの取得と確認
+        block_size = 64
+
+        # データブロックの分割
+        blocks = []
+        for i in range(0, len(unshuffled_data_part), block_size * 2):
+            # ブロック終了インデックスの計算（境界チェック）
+            end_idx = min(i + block_size * 2, len(unshuffled_data_part))
+
+            # ブロック抽出
+            if end_idx - i >= block_size:
+                block = unshuffled_data_part[i:end_idx]
+                blocks.append(block)
+
+        # 抽出されたデータブロックの組み立て
+        extracted_data = bytearray()
+
+        for i, block in enumerate(blocks):
+            # ブロック処理情報を取得
+            block_info = self._block_map.get(i, {"type": 0, "granularity": 1})
+
+            # 指定されたパス（正規または非正規）のデータを抽出
+            if is_true_path:
+                extracted_block = self._extract_block_true(block, block_info)
+            else:
+                extracted_block = self._extract_block_false(block, block_info)
+
+            # 抽出されたデータを追加
+            extracted_data.extend(extracted_block)
+
+        return bytes(extracted_data), signature
+
+    def _revert_shuffle(self, shuffled_data: bytes) -> bytes:
+        """
+        シャッフルを元に戻す
+
+        Args:
+            shuffled_data: シャッフルされたデータ
+
+        Returns:
+            元のデータ
+        """
+        # シャッフルマップがデータ長に対応していない場合は拡張
+        if max(self._shuffle_map.keys(), default=0) < len(shuffled_data) - 1:
+            self._expand_shuffle_map(len(shuffled_data))
+
+        # シャッフルマップの逆マップを作成
+        inverse_map = {dst: src for src, dst in self._shuffle_map.items()}
+
+        # データをコピーしてシャッフル解除
+        shuffled_array = bytearray(shuffled_data)
+        unshuffled = bytearray(len(shuffled_data))
+
+        # 逆マップに従ってデータを配置
+        for dst, src in inverse_map.items():
+            if src < len(shuffled_data) and dst < len(shuffled_data):
+                unshuffled[src] = shuffled_array[dst]
+
+        return bytes(unshuffled)
 
 
 class CapsuleAnalyzer:

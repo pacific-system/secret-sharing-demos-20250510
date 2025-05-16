@@ -155,24 +155,30 @@ class EntropyPool:
             next_idx = (i + 1) % self.pool_size
 
             # 非線形な変換（XOR、加算、乗算を組み合わせる）
-            self.pool[i] = (self.pool[i] ^
-                           ((self.pool[prev_idx] + self.pool[next_idx]) % 256) ^
-                           ((self.pool[i] * pool_hash[i % len(pool_hash)]) % 256))
+            # 0xFF でバイト範囲に制限して確実に1バイトに収まるようにする
+            prev_next_sum = (self.pool[prev_idx] + self.pool[next_idx]) & 0xFF
+            pool_hash_val = pool_hash[i % len(pool_hash)]
+            mult_result = (self.pool[i] * pool_hash_val) & 0xFF
+
+            self.pool[i] = (self.pool[i] ^ prev_next_sum ^ mult_result) & 0xFF
 
         # 4バイト単位での非線形変換
         for i in range(0, self.pool_size - 4, 4):
             # 4バイトを32ビット整数として解釈
             val = int.from_bytes(self.pool[i:i+4], byteorder='big')
 
-            # ビット回転などの非線形変換を適用
-            val = ((val << 13) | (val >> 19)) & 0xFFFFFFFF
-            val ^= ((val << 9) | (val >> 23)) & 0xFFFFFFFF
-            val += (val ^ (val >> 16)) & 0xFFFFFFFF
-            val ^= (val * 0x9e3779b9) & 0xFFFFFFFF  # 黄金比に基づく値
+            # ビット回転などの非線形変換を適用（オーバーフロー対策済み）
+            val = ((val << 13) | ((val & 0xFFFFFFFF) >> 19)) & 0xFFFFFFFF
+            val ^= ((val << 9) | ((val & 0xFFFFFFFF) >> 23)) & 0xFFFFFFFF
 
-            # 処理した値を書き戻す（整数値が範囲内に収まるように修正）
-            # 0xFFFFFFFF (2^32 - 1) に制限して確実に4バイトに収まるようにする
-            val &= 0xFFFFFFFF  # 32ビットに収める
+            # 加算もオーバーフロー対策
+            temp = (val ^ ((val & 0xFFFFFFFF) >> 16)) & 0xFFFFFFFF
+            val = (val + temp) & 0xFFFFFFFF
+
+            # 乗算もオーバーフロー対策
+            val = (val ^ ((val * 0x9e3779b9) & 0xFFFFFFFF)) & 0xFFFFFFFF
+
+            # 処理した値を書き戻す（4バイトに収まるように制限）
             self.pool[i:i+4] = val.to_bytes(4, byteorder='big')
 
         # ファイナライゼーション - エントロピー拡散を最終的に強化

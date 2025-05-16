@@ -1919,7 +1919,9 @@ def encrypt(true_file_path: str, false_file_path: str, output_path: Optional[str
             "true_path_length": len(true_path),
             "false_path_length": len(false_path),
             "true_entropy": calculate_entropy(true_data),
-            "false_entropy": calculate_entropy(false_data)
+            "false_entropy": calculate_entropy(false_data),
+            "entropy_block_size": len(entropy_data),
+            "block_size": 64
         }
 
         # JSON形式に変換

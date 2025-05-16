@@ -605,7 +605,14 @@ def decrypt_file(input_file, output_file=None, key=None, key_bytes=None, key_typ
         # マスク関数をパラメータから生成
         # 現時点では実際のアンマスク処理は行わず、チャンクをそのまま返す
         def unmask_function(ciphertext: int) -> int:
-            return ciphertext
+            # アンマスク処理を実装
+            # 注：キータイプに応じて異なるマスク関数を適用する必要があります
+            if key_type == 'true':
+                # 真の鍵用のアンマスク関数
+                return mask_gen.unmask_true(ciphertext)
+            else:
+                # 偽の鍵用のアンマスク関数
+                return mask_gen.unmask_false(ciphertext)
 
         # 復号処理
         if verbose:
@@ -668,7 +675,6 @@ def decrypt_file(input_file, output_file=None, key=None, key_bytes=None, key_typ
                     int_chunk = chunk
 
                 # 暗号文に対してマスク関数を適用して変換
-                # simplification: skip unmasking for now
                 demasked_chunk = unmask_function(int_chunk)
 
                 # 復号

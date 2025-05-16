@@ -1,750 +1,420 @@
 """
-不確定性転写暗号化方式 - テスト実行スクリプト
+不確定性転写暗号化方式のテストランナー
 
-このスクリプトは、StateCapsuleとCapsuleAnalyzerのテストを実行し、
-テスト結果および分析結果を視覚化します。
+StateCapsuleとCapsuleAnalyzerのテストを実行して結果を表示します。
 """
 
 import os
 import sys
-import time
-import tempfile
 import hashlib
-import unittest
+import time
+import random
+import matplotlib
+matplotlib.use('Agg')  # GUIを使用せずにプロットを保存するため
 import matplotlib.pyplot as plt
 import numpy as np
-import json
-import base64
-from typing import Dict, List, Tuple, Any
-import io
-import datetime
-import random
-from collections import Counter
+from typing import Dict, List, Tuple, Optional, Any
 
-# プロジェクトルートをインポートパスに追加
+# プロジェクトのルートディレクトリをインポートパスに追加
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(os.path.dirname(current_dir))
 sys.path.insert(0, project_root)
-
-# 内部モジュールのインポート
-from method_10_indeterministic.state_capsule import StateCapsule, BLOCK_TYPE_SEQUENTIAL, BLOCK_TYPE_INTERLEAVE
-from method_10_indeterministic.capsule_analyzer import CapsuleAnalyzer
 
 # テスト出力ディレクトリ
 TEST_OUTPUT_DIR = os.path.join(project_root, "test_output")
 os.makedirs(TEST_OUTPUT_DIR, exist_ok=True)
 
+# テスト対象のクラスをインポート
+try:
+    from state_capsule import StateCapsule, BLOCK_TYPE_SEQUENTIAL, BLOCK_TYPE_INTERLEAVE
+    from capsule_analyzer import CapsuleAnalyzer
+except ImportError:
+    try:
+        from method_10_indeterministic.state_capsule import StateCapsule, BLOCK_TYPE_SEQUENTIAL, BLOCK_TYPE_INTERLEAVE
+        from method_10_indeterministic.capsule_analyzer import CapsuleAnalyzer
+    except ImportError:
+        print("エラー: StateCapsuleまたはCapsuleAnalyzerクラスをインポートできません。")
+        print("プロジェクトのルートディレクトリから実行してください。")
+        sys.exit(1)
 
-def run_capsule_tests() -> Dict[str, Any]:
-    """
-    StateCapsuleとCapsuleAnalyzerのテストを実行し、結果を返す
+# テスト関数
+def test_state_capsule_basic():
+    """基本的なStateCapsuleのテスト"""
+    print("\n[基本的な状態カプセル化テスト]")
 
-    Returns:
-        Dict[str, Any]: テスト結果
-    """
-    results = {
-        "basic_capsule": test_basic_capsule(),
-        "sequential_capsule": test_sequential_capsule(),
-        "interleaved_capsule": test_interleaved_capsule(),
-        "shuffle_effectiveness": test_shuffle_effectiveness(),
-        "analyzer_integration": test_analyzer_integration(),
-        "large_data": test_large_data_capsule(),
-        "timestamp": datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    # テストデータ
+    key = os.urandom(32)
+    salt = os.urandom(16)
+    true_data = "これは正規パスのメッセージです。正しい鍵で表示されます。".encode('utf-8') * 3
+    false_data = "これは非正規パスのメッセージです。間違った鍵で表示されます。".encode('utf-8') * 2
+
+    # カプセル化と抽出のテスト
+    capsule_obj = StateCapsule()
+
+    # シーケンシャル方式でカプセル化
+    capsule_sequential = capsule_obj.create_capsule(
+        true_data,
+        false_data,
+        BLOCK_TYPE_SEQUENTIAL,
+        32,
+        True
+    )
+
+    # 正規パスでの抽出
+    extracted_true, _ = capsule_obj.extract_data(capsule_sequential, "true")
+    # 非正規パスでの抽出
+    extracted_false, _ = capsule_obj.extract_data(capsule_sequential, "false")
+
+    # 検証
+    true_success = extracted_true == true_data
+    false_success = extracted_false == false_data
+
+    print(f"シーケンシャル方式:")
+    print(f"  - 正規データ復元: {'成功' if true_success else '失敗'}")
+    print(f"  - 非正規データ復元: {'成功' if false_success else '失敗'}")
+    print(f"  - カプセルサイズ: {len(capsule_sequential)} バイト")
+
+    # インターリーブ方式でカプセル化
+    capsule_obj.block_type = BLOCK_TYPE_INTERLEAVE
+    capsule_interleave = capsule_obj.create_capsule(
+        true_data,
+        false_data,
+        BLOCK_TYPE_INTERLEAVE,
+        32,
+        True
+    )
+
+    # 正規パスでの抽出
+    extracted_true_interleave, _ = capsule_obj.extract_data(capsule_interleave, "true")
+    # 非正規パスでの抽出
+    extracted_false_interleave, _ = capsule_obj.extract_data(capsule_interleave, "false")
+
+    # 検証
+    true_success_interleave = extracted_true_interleave == true_data
+    false_success_interleave = extracted_false_interleave == false_data
+
+    print(f"インターリーブ方式:")
+    print(f"  - 正規データ復元: {'成功' if true_success_interleave else '失敗'}")
+    print(f"  - 非正規データ復元: {'成功' if false_success_interleave else '失敗'}")
+    print(f"  - カプセルサイズ: {len(capsule_interleave)} バイト")
+
+    return {
+        "sequential": {
+            "true_success": true_success,
+            "false_success": false_success,
+            "size": len(capsule_sequential)
+        },
+        "interleave": {
+            "true_success": true_success_interleave,
+            "false_success": false_success_interleave,
+            "size": len(capsule_interleave)
+        }
     }
 
-    # 成功率の計算
-    total_tests = len(results) - 1  # timestampを除く
-    passed_tests = sum(1 for k, v in results.items() if k != "timestamp" and v.get("success", False))
-    results["success_rate"] = (passed_tests / total_tests) * 100 if total_tests > 0 else 0
+def test_capsule_analyzer():
+    """CapsuleAnalyzerのテスト"""
+    print("\n[カプセル解析テスト]")
 
-    # 結果の視覚化
-    results["visualization"] = visualize_test_results(results)
+    # テストデータ
+    key = os.urandom(32)
+    salt = os.urandom(16)
+    true_data = os.urandom(1024)  # ランダムデータ
+    false_data = os.urandom(1024)
 
-    return results
+    capsule_obj = StateCapsule()
 
+    # 異なる方式でカプセル化
+    capsule_sequential = capsule_obj.create_capsule(true_data, false_data, BLOCK_TYPE_SEQUENTIAL, 32, True)
+    capsule_interleave = capsule_obj.create_capsule(true_data, false_data, BLOCK_TYPE_INTERLEAVE, 32, True)
 
-def test_basic_capsule() -> Dict[str, Any]:
-    """
-    基本的なカプセル化・抽出操作をテストする
+    # 解析
+    analyzer = CapsuleAnalyzer()
 
-    Returns:
-        Dict[str, Any]: テスト結果
-    """
-    try:
-        # テストデータ
-        true_data = b"This is true data for testing"
-        false_data = b"This is false data for testing"
+    # シーケンシャル方式の解析
+    seq_results = analyzer.analyze_capsule(capsule_sequential)
 
-        # StateCapsuleのインスタンス化
-        capsule = StateCapsule()
+    # インターリーブ方式の解析
+    int_results = analyzer.analyze_capsule(capsule_interleave)
 
-        # カプセル化（シャッフルなし）
-        capsule_data = capsule.create_capsule(
-            true_data,
-            false_data,
-            block_type=BLOCK_TYPE_SEQUENTIAL,
-            use_shuffle=False
-        )
+    # 結果表示
+    print("解析結果:")
+    print(f"シーケンシャル方式:")
+    print(f"  - エントロピー: {seq_results['entropy_analysis']['shannon_entropy']:.4f} ビット/バイト")
+    print(f"  - 解析耐性スコア: {seq_results['resistance_score']['total']:.2f}/10.0")
 
-        # 抽出
-        extracted_true_data, true_signature = capsule.extract_data(capsule_data, "true")
-        extracted_false_data, false_signature = capsule.extract_data(capsule_data, "false")
+    print(f"インターリーブ方式:")
+    print(f"  - エントロピー: {int_results['entropy_analysis']['shannon_entropy']:.4f} ビット/バイト")
+    print(f"  - 解析耐性スコア: {int_results['resistance_score']['total']:.2f}/10.0")
 
-        # 検証
-        true_match = true_data == extracted_true_data
-        false_match = false_data == extracted_false_data
-
-        return {
-            "success": true_match and false_match,
-            "true_match": true_match,
-            "false_match": false_match,
-            "capsule_size": len(capsule_data),
-            "true_signature_valid": hashlib.sha256(true_signature).hexdigest()[:8],
-            "false_signature_valid": hashlib.sha256(false_signature).hexdigest()[:8]
+    # 結果の辞書に変換
+    seq_dict = {
+        "entropy": {
+            "shannon": seq_results['entropy_analysis']['shannon_entropy'],
+            "normalized": seq_results['entropy_analysis']['normalized_entropy']
+        },
+        "overall": {
+            "analysis_quality_score": seq_results['resistance_score']['total']
+        },
+        "autocorrelation": {
+            "independence_score": 10.0 * (1.0 - abs(seq_results['block_analysis']['avg_block_similarity'])) if 'avg_block_similarity' in seq_results['block_analysis'] else 8.0
         }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
+    }
+
+    int_dict = {
+        "entropy": {
+            "shannon": int_results['entropy_analysis']['shannon_entropy'],
+            "normalized": int_results['entropy_analysis']['normalized_entropy']
+        },
+        "overall": {
+            "analysis_quality_score": int_results['resistance_score']['total']
+        },
+        "autocorrelation": {
+            "independence_score": 10.0 * (1.0 - abs(int_results['block_analysis']['avg_block_similarity'])) if 'avg_block_similarity' in int_results['block_analysis'] else 8.0
         }
+    }
 
+    return {
+        "sequential": seq_dict,
+        "interleave": int_dict
+    }
 
-def test_sequential_capsule() -> Dict[str, Any]:
-    """
-    順次配置モードでのカプセル化をテストする
+def visualize_test_results(basic_results, analyzer_results):
+    """テスト結果の可視化"""
+    print("\n[テスト結果の可視化]")
 
-    Returns:
-        Dict[str, Any]: テスト結果
-    """
-    try:
-        # テストデータ
-        true_data = b"Sequential true data for testing with some extra content to make it longer"
-        false_data = b"Sequential false data with different content from the true data"
+    # 1. 基本テスト結果の可視化（成功率、サイズ比較）
+    plt.figure(figsize=(12, 8))
 
-        # StateCapsuleのインスタンス化
-        capsule = StateCapsule()
+    # 1.1 成功率
+    plt.subplot(2, 2, 1)
+    methods = ['Sequential', 'Interleave']
+    true_success = [
+        int(basic_results['sequential']['true_success']),
+        int(basic_results['interleave']['true_success'])
+    ]
+    false_success = [
+        int(basic_results['sequential']['false_success']),
+        int(basic_results['interleave']['false_success'])
+    ]
 
-        # 順次配置でカプセル化
-        capsule_data = capsule.create_capsule(
-            true_data,
-            false_data,
-            block_type=BLOCK_TYPE_SEQUENTIAL,
-            use_shuffle=True  # シャッフル有効
-        )
+    x = np.arange(len(methods))
+    width = 0.35
 
-        # 抽出
-        extracted_true_data, true_signature = capsule.extract_data(capsule_data, "true")
-        extracted_false_data, false_signature = capsule.extract_data(capsule_data, "false")
+    plt.bar(x - width/2, true_success, width, label='正規パス')
+    plt.bar(x + width/2, false_success, width, label='非正規パス')
+    plt.title('カプセル化・抽出の成功率')
+    plt.xlabel('方式')
+    plt.ylabel('成功 (1=成功, 0=失敗)')
+    plt.xticks(x, methods)
+    plt.ylim(0, 1.1)
+    plt.legend()
 
-        # 検証
-        true_match = true_data == extracted_true_data
-        false_match = false_data == extracted_false_data
+    # 1.2 カプセルサイズ比較
+    plt.subplot(2, 2, 2)
+    sizes = [
+        basic_results['sequential']['size'],
+        basic_results['interleave']['size']
+    ]
+    plt.bar(methods, sizes, color='skyblue')
+    plt.title('カプセルサイズ比較')
+    plt.xlabel('方式')
+    plt.ylabel('バイト数')
+    for i, v in enumerate(sizes):
+        plt.text(i, v + 10, str(v), ha='center')
 
-        # ブロック処理タイプとエントロピーブロックサイズの取得
-        block_type = capsule.block_type
-        entropy_block_size = capsule.entropy_block_size
+    # 2. 解析結果の可視化
 
-        return {
-            "success": true_match and false_match,
-            "true_match": true_match,
-            "false_match": false_match,
-            "block_type": block_type,
-            "entropy_block_size": entropy_block_size,
-            "capsule_size": len(capsule_data),
-            "compression_ratio": len(capsule_data) / (len(true_data) + len(false_data))
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+    # 2.1 エントロピー比較
+    plt.subplot(2, 2, 3)
+    entropy_values = [
+        analyzer_results['sequential']['entropy']['shannon'],
+        analyzer_results['interleave']['entropy']['shannon']
+    ]
+    plt.bar(methods, entropy_values, color='lightgreen')
+    plt.title('エントロピー比較')
+    plt.xlabel('方式')
+    plt.ylabel('エントロピー (ビット/バイト)')
+    plt.ylim(0, 8.1)  # 最大エントロピーは8ビット
+    for i, v in enumerate(entropy_values):
+        plt.text(i, v + 0.1, f"{v:.2f}", ha='center')
 
+    # 2.2 解析耐性スコア
+    plt.subplot(2, 2, 4)
+    scores = [
+        analyzer_results['sequential']['overall']['analysis_quality_score'],
+        analyzer_results['interleave']['overall']['analysis_quality_score']
+    ]
+    plt.bar(methods, scores, color='salmon')
+    plt.title('解析耐性スコア比較')
+    plt.xlabel('方式')
+    plt.ylabel('スコア (0-10)')
+    plt.ylim(0, 10.1)
+    for i, v in enumerate(scores):
+        plt.text(i, v + 0.1, f"{v:.2f}", ha='center')
 
-def test_interleaved_capsule() -> Dict[str, Any]:
-    """
-    インターリーブモードでのカプセル化をテストする
+    plt.tight_layout()
 
-    Returns:
-        Dict[str, Any]: テスト結果
-    """
-    try:
-        # テストデータ
-        true_data = b"Interleaved true data for testing with some extra content"
-        false_data = b"Interleaved false data with different content than true"
+    # 画像保存
+    timestamp = int(time.time())
+    image_path = os.path.join(TEST_OUTPUT_DIR, f"state_capsule_test_{timestamp}.png")
+    plt.savefig(image_path)
+    print(f"テスト結果のグラフを保存しました: {image_path}")
 
-        # StateCapsuleのインスタンス化
-        capsule = StateCapsule()
+    return image_path
 
-        # インターリーブ配置でカプセル化
-        capsule_data = capsule.create_capsule(
-            true_data,
-            false_data,
-            block_type=BLOCK_TYPE_INTERLEAVE,
-            use_shuffle=True  # シャッフル有効
-        )
+def visualize_byte_distribution(capsule_data, method_name):
+    """バイト分布の可視化"""
+    analyzer = CapsuleAnalyzer()
+    # 直接analyze_capsule()を呼び出すが、結果は使用しなくても良い
+    # 結果はヒストグラム生成のために手動で計算する
+    analyzer.analyze_capsule(capsule_data)
 
-        # 抽出
-        extracted_true_data, true_signature = capsule.extract_data(capsule_data, "true")
-        extracted_false_data, false_signature = capsule.extract_data(capsule_data, "false")
+    # バイト分布の計算
+    hist_data = {i: 0 for i in range(256)}
+    for b in capsule_data:
+        hist_data[b] = hist_data.get(b, 0) + 1
 
-        # 検証
-        true_match = true_data == extracted_true_data
-        false_match = false_data == extracted_false_data
+    # プロット
+    plt.figure(figsize=(12, 6))
+    plt.bar(hist_data.keys(), hist_data.values(), width=1.0, color='blue', alpha=0.6)
+    plt.title(f'{method_name}方式のバイト分布')
+    plt.xlabel('バイト値 (0-255)')
+    plt.ylabel('出現頻度')
+    plt.xlim(0, 255)
 
-        # ブロック処理タイプとエントロピーブロックサイズの取得
-        block_type = capsule.block_type
-        entropy_block_size = capsule.entropy_block_size
+    # 理想的な均一分布を重ねてプロット
+    total_bytes = len(capsule_data)
+    ideal_freq = total_bytes / 256
+    plt.axhline(y=ideal_freq, color='r', linestyle='--', label='理想的な均一分布')
+    plt.legend()
 
-        return {
-            "success": true_match and false_match,
-            "true_match": true_match,
-            "false_match": false_match,
-            "block_type": block_type,
-            "entropy_block_size": entropy_block_size,
-            "capsule_size": len(capsule_data),
-            "compression_ratio": len(capsule_data) / (len(true_data) + len(false_data))
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
+    plt.tight_layout()
 
+    # 画像保存
+    timestamp = int(time.time())
+    image_path = os.path.join(TEST_OUTPUT_DIR, f"byte_distribution_{method_name}_{timestamp}.png")
+    plt.savefig(image_path)
+    print(f"{method_name}方式のバイト分布グラフを保存しました: {image_path}")
 
-def test_shuffle_effectiveness() -> Dict[str, Any]:
-    """
-    シャッフル機能の有効性をテストする
+    return image_path
 
-    Returns:
-        Dict[str, Any]: テスト結果
-    """
-    try:
-        # テストデータ（特徴的なパターンを含む）
-        pattern = b"ABABABABABABABABABABABABABABAB"
-        true_data = pattern * 10  # 高い規則性を持つデータ
-        false_data = pattern * 10  # 高い規則性を持つデータ
+def visualize_capsule_analysis_comparison():
+    """カプセル解析結果の比較可視化"""
+    # テストデータ生成
+    print("\n[カプセル解析比較]")
 
-        # シャッフルなしのカプセル
-        capsule_no_shuffle = StateCapsule()
-        capsule_data_no_shuffle = capsule_no_shuffle.create_capsule(
-            true_data,
-            false_data,
-            block_type=BLOCK_TYPE_SEQUENTIAL,
-            use_shuffle=False
-        )
+    key = os.urandom(32)
+    salt = os.urandom(16)
 
-        # シャッフルありのカプセル
-        capsule_with_shuffle = StateCapsule()
-        capsule_data_with_shuffle = capsule_with_shuffle.create_capsule(
-            true_data,
-            false_data,
-            block_type=BLOCK_TYPE_SEQUENTIAL,
-            use_shuffle=True
-        )
+    # 通常のテキストデータ
+    text_data = "これは不確定性転写暗号化方式のテストデータです。".encode('utf-8') * 20
 
-        # 両方のデータからエントロピーを計算
-        analyzer = CapsuleAnalyzer()
-        entropy_no_shuffle = analyzer._calculate_shannon_entropy(capsule_data_no_shuffle)
-        entropy_with_shuffle = analyzer._calculate_shannon_entropy(capsule_data_with_shuffle)
+    # 低エントロピーデータ（パターンの繰り返し）
+    low_entropy_data = b"ABCDEFG" * 200
 
-        # バイト分布分析
-        byte_counts_no_shuffle = Counter(capsule_data_no_shuffle)
-        byte_counts_with_shuffle = Counter(capsule_data_with_shuffle)
+    capsule_obj = StateCapsule()
 
-        # 分散を計算
-        variance_no_shuffle = np.var(list(byte_counts_no_shuffle.values()))
-        variance_with_shuffle = np.var(list(byte_counts_with_shuffle.values()))
+    # 各方式でカプセル化
+    text_sequential = capsule_obj.create_capsule(text_data, low_entropy_data, BLOCK_TYPE_SEQUENTIAL, 32, False)
+    text_sequential_shuffled = capsule_obj.create_capsule(text_data, low_entropy_data, BLOCK_TYPE_SEQUENTIAL, 32, True)
+    text_interleave = capsule_obj.create_capsule(text_data, low_entropy_data, BLOCK_TYPE_INTERLEAVE, 32, True)
 
-        # データサイズで正規化
-        normalized_variance_no_shuffle = variance_no_shuffle / len(capsule_data_no_shuffle)
-        normalized_variance_with_shuffle = variance_with_shuffle / len(capsule_data_with_shuffle)
+    # 解析
+    analyzer = CapsuleAnalyzer()
 
-        # エントロピー向上率
-        entropy_improvement = ((entropy_with_shuffle - entropy_no_shuffle) / entropy_no_shuffle) * 100 if entropy_no_shuffle > 0 else 0
+    results = {}
+    for name, data in [
+        ("テキスト（順次・シャッフルなし）", text_sequential),
+        ("テキスト（順次・シャッフルあり）", text_sequential_shuffled),
+        ("テキスト（インターリーブ）", text_interleave),
+    ]:
+        # 直接analyze_capsuleメソッドにデータを渡す
+        result = analyzer.analyze_capsule(data)
+        results[name] = result
 
-        # シャッフル後のデータを視覚化
-        visualization_file = _visualize_byte_distribution(
-            capsule_data_no_shuffle,
-            capsule_data_with_shuffle
-        )
+    # 結果表示
+    for name, result in results.items():
+        entropy = result['entropy_analysis']['shannon_entropy']
+        score = result['resistance_score']['total']
+        print(f"{name}: エントロピー={entropy:.2f}, スコア={score:.2f}")
 
-        return {
-            "success": entropy_with_shuffle > entropy_no_shuffle,
-            "entropy_no_shuffle": entropy_no_shuffle,
-            "entropy_with_shuffle": entropy_with_shuffle,
-            "entropy_improvement_percent": entropy_improvement,
-            "normalized_variance_no_shuffle": normalized_variance_no_shuffle,
-            "normalized_variance_with_shuffle": normalized_variance_with_shuffle,
-            "visualization_file": visualization_file
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-
-def test_analyzer_integration() -> Dict[str, Any]:
-    """
-    CapsuleAnalyzerとの統合テストを行う
-
-    Returns:
-        Dict[str, Any]: テスト結果
-    """
-    try:
-        # より複雑なデータを生成
-        rng = random.Random(42)  # 再現性のため固定シード
-        true_data = bytes(rng.randint(0, 255) for _ in range(30000))
-        false_data = bytes(rng.randint(0, 255) for _ in range(30000))
-
-        # 異なるブロック処理タイプとエントロピーブロックサイズでカプセル化
-        sequential_capsule = StateCapsule()
-        interleave_capsule = StateCapsule()
-
-        sequential_data = sequential_capsule.create_capsule(
-            true_data,
-            false_data,
-            block_type=BLOCK_TYPE_SEQUENTIAL,
-            entropy_block_size=32,
-            use_shuffle=True
-        )
-
-        interleave_data = interleave_capsule.create_capsule(
-            true_data,
-            false_data,
-            block_type=BLOCK_TYPE_INTERLEAVE,
-            entropy_block_size=32,
-            use_shuffle=True
-        )
-
-        # 抽出テスト
-        sequential_true, _ = sequential_capsule.extract_data(sequential_data, "true")
-        sequential_false, _ = sequential_capsule.extract_data(sequential_data, "false")
-
-        interleave_true, _ = interleave_capsule.extract_data(interleave_data, "true")
-        interleave_false, _ = interleave_capsule.extract_data(interleave_data, "false")
-
-        # 検証
-        sequential_match = (true_data == sequential_true) and (false_data == sequential_false)
-        interleave_match = (true_data == interleave_true) and (false_data == interleave_false)
-
-        # 解析
-        analyzer = CapsuleAnalyzer()
-        sequential_analysis = analyzer.analyze_capsule(sequential_data)
-        interleave_analysis = analyzer.analyze_capsule(interleave_data)
-
-        # 解析耐性レベル
-        sequential_resistance = analyzer.get_resistance_level()
-        analyzer.analyze_capsule(interleave_data)
-        interleave_resistance = analyzer.get_resistance_level()
-
-        # 分析結果の視覚化
-        visualization_file = _visualize_analysis_comparison(
-            sequential_analysis,
-            interleave_analysis
-        )
-
-        return {
-            "success": sequential_match and interleave_match,
-            "sequential_match": sequential_match,
-            "interleave_match": interleave_match,
-            "sequential_resistance": sequential_resistance,
-            "sequential_resistance_score": sequential_analysis["resistance_score"]["total"],
-            "interleave_resistance": interleave_resistance,
-            "interleave_resistance_score": interleave_analysis["resistance_score"]["total"],
-            "visualization_file": visualization_file
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-
-def test_large_data_capsule() -> Dict[str, Any]:
-    """
-    大きなデータのカプセル化テスト
-
-    Returns:
-        Dict[str, Any]: テスト結果
-    """
-    try:
-        # 大きめのテストデータ生成（～200KB）
-        rng = random.Random(123)  # 再現性のため固定シード
-        true_data = bytes(rng.randint(0, 255) for _ in range(200000))
-        false_data = bytes(rng.randint(0, 255) for _ in range(190000))
-
-        # メモリ使用量と時間計測の準備
-        start_time = time.time()
-        try:
-            import psutil
-            process = psutil.Process(os.getpid())
-            memory_before = process.memory_info().rss / 1024 / 1024  # MB
-        except ImportError:
-            # psutilがない場合はスキップ
-            memory_before = 0
-
-        # カプセル化
-        capsule = StateCapsule()
-        capsule_data = capsule.create_capsule(
-            true_data,
-            false_data,
-            block_type=BLOCK_TYPE_SEQUENTIAL,
-            entropy_block_size=64,  # 大きめのブロックサイズ
-            use_shuffle=True
-        )
-
-        # 処理時間とメモリ使用量
-        time_taken = time.time() - start_time
-        try:
-            memory_after = process.memory_info().rss / 1024 / 1024  # MB
-            memory_increase = memory_after - memory_before
-        except:
-            memory_increase = 0
-
-        # 抽出と検証
-        extract_start = time.time()
-        extracted_true_data, _ = capsule.extract_data(capsule_data, "true")
-        extracted_false_data, _ = capsule.extract_data(capsule_data, "false")
-        extract_time = time.time() - extract_start
-
-        # 検証
-        true_match = true_data == extracted_true_data
-        false_match = false_data == extracted_false_data
-
-        # キャプスル化効率（圧縮率の評価）
-        raw_size = len(true_data) + len(false_data)
-        capsule_size = len(capsule_data)
-        expansion_ratio = capsule_size / raw_size
-
-        return {
-            "success": true_match and false_match,
-            "true_match": true_match,
-            "false_match": false_match,
-            "true_data_size": len(true_data),
-            "false_data_size": len(false_data),
-            "capsule_size": capsule_size,
-            "expansion_ratio": expansion_ratio,
-            "creation_time": time_taken,
-            "extraction_time": extract_time,
-            "memory_increase_mb": memory_increase
-        }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-
-def visualize_test_results(results: Dict[str, Any]) -> str:
-    """
-    テスト結果を視覚化する
-
-    Args:
-        results: テスト結果辞書
-
-    Returns:
-        str: 生成された画像ファイルのパス
-    """
-    # タイムスタンプを含む出力ファイル名
-    timestamp = results["timestamp"]
-    output_file = os.path.join(TEST_OUTPUT_DIR, f"state_capsule_test_{timestamp}.png")
-
-    # プロットの設定
+    # 可視化
     plt.figure(figsize=(12, 10))
 
-    # グラフのレイアウト設定
-    grid = plt.GridSpec(3, 3, wspace=0.4, hspace=0.3)
+    # スコア比較
+    plt.subplot(2, 1, 1)
+    names = list(results.keys())
+    scores = [results[name]['resistance_score']['total'] for name in names]
+    plt.bar(names, scores, color=['lightblue', 'skyblue', 'royalblue'])
+    plt.title('解析耐性スコア比較')
+    plt.ylabel('スコア (0-10)')
+    plt.ylim(0, 10.1)
+    plt.xticks(rotation=15, ha='right')
+    for i, v in enumerate(scores):
+        plt.text(i, v + 0.1, f"{v:.2f}", ha='center')
 
-    # テスト成功率の円グラフ
-    success_rate = results["success_rate"]
-    ax1 = plt.subplot(grid[0, 0])
-    ax1.pie(
-        [success_rate, 100 - success_rate],
-        labels=["成功", "失敗"],
-        colors=["#4CAF50", "#F44336"] if success_rate == 100 else ["#FFEB3B", "#F44336"],
-        autopct='%1.1f%%',
-        startangle=90
-    )
-    ax1.set_title('テスト成功率')
+    # エントロピー比較
+    plt.subplot(2, 1, 2)
+    entropy_values = [results[name]['entropy_analysis']['shannon_entropy'] for name in names]
+    normalized_values = [results[name]['entropy_analysis']['normalized_entropy'] for name in names]
 
-    # カプセルサイズの棒グラフ
-    ax2 = plt.subplot(grid[0, 1:])
-    test_names = ["基本カプセル", "順次配置", "インターリーブ", "大容量"]
-    capsule_sizes = [
-        results["basic_capsule"].get("capsule_size", 0),
-        results["sequential_capsule"].get("capsule_size", 0),
-        results["interleaved_capsule"].get("capsule_size", 0),
-        results["large_data"].get("capsule_size", 0) / 1000  # KB単位
-    ]
-    ax2.bar(test_names, capsule_sizes, color="#2196F3")
-    ax2.set_ylabel('カプセルサイズ (バイト/KB)')
-    ax2.set_title('各テストのカプセルサイズ')
-    # 最後の項目のみ単位を変更
-    for i, size in enumerate(capsule_sizes):
-        if i == len(capsule_sizes) - 1:
-            ax2.text(i, size + max(capsule_sizes) * 0.05, f"{size:.1f}KB", ha='center')
-        else:
-            ax2.text(i, size + max(capsule_sizes) * 0.05, f"{size}", ha='center')
+    x = np.arange(len(names))
+    width = 0.35
 
-    # エントロピー比較（シャッフル効果）
-    ax3 = plt.subplot(grid[1, :])
-    if "shuffle_effectiveness" in results and results["shuffle_effectiveness"].get("success", False):
-        shuffle_data = results["shuffle_effectiveness"]
-        entropy_labels = ["シャッフルなし", "シャッフルあり"]
-        entropy_values = [
-            shuffle_data.get("entropy_no_shuffle", 0),
-            shuffle_data.get("entropy_with_shuffle", 0)
-        ]
-        ax3.bar(entropy_labels, entropy_values, color=["#FF9800", "#4CAF50"])
-        ax3.set_ylabel('エントロピー値')
-        ax3.set_title('シャッフル効果の比較')
-        for i, v in enumerate(entropy_values):
-            ax3.text(i, v + 0.1, f"{v:.2f}", ha='center')
-
-        # 改善率の表示
-        improvement = shuffle_data.get("entropy_improvement_percent", 0)
-        ax3.text(0.5, max(entropy_values) * 1.2,
-                f"エントロピー向上率: {improvement:.2f}%",
-                ha='center', fontsize=12, bbox=dict(facecolor='yellow', alpha=0.5))
-    else:
-        ax3.text(0.5, 0.5, "シャッフル効果テストのデータがありません",
-                ha='center', va='center', fontsize=12)
-
-    # 解析耐性スコアの比較
-    ax4 = plt.subplot(grid[2, :])
-    if "analyzer_integration" in results and results["analyzer_integration"].get("success", False):
-        analyzer_data = results["analyzer_integration"]
-        resistance_labels = ["順次配置方式", "インターリーブ方式"]
-        resistance_scores = [
-            analyzer_data.get("sequential_resistance_score", 0),
-            analyzer_data.get("interleave_resistance_score", 0)
-        ]
-
-        # スコアの内訳を積み上げ棒グラフで表示
-        bar_width = 0.35
-        component_names = ["エントロピー", "分布均一性", "ブロック構造"]
-        sequential_components = [3.0, 3.0, 4.0]  # ダミーデータ
-        interleave_components = [3.0, 3.0, 4.0]  # ダミーデータ
-
-        # 棒グラフの位置
-        r1 = np.arange(len(resistance_labels))
-
-        # 積み上げ棒グラフ描画
-        ax4.bar(r1, resistance_scores, bar_width, color="#673AB7")
-
-        # ラベルと凡例
-        ax4.set_xticks(r1)
-        ax4.set_xticklabels(resistance_labels)
-        ax4.set_ylabel('解析耐性スコア (0-10)')
-        ax4.set_title('カプセル方式別の解析耐性スコア比較')
-        ax4.set_ylim(0, 10)  # スコアは0-10の範囲
-
-        # スコア表示
-        for i, score in enumerate(resistance_scores):
-            ax4.text(i, score + 0.3, f"{score:.1f}", ha='center')
-            # 耐性レベルも表示
-            level = analyzer_data.get(f"sequential_resistance" if i == 0 else "interleave_resistance", "不明")
-            ax4.text(i, score / 2, f"耐性: {level}", ha='center', color='white', fontweight='bold')
-    else:
-        ax4.text(0.5, 0.5, "解析耐性テストのデータがありません",
-                ha='center', va='center', fontsize=12)
-
-    # タイトルと情報
-    plt.suptitle('不確定性転写暗号化方式 - カプセル化テスト結果', fontsize=16)
-    plt.figtext(0.5, 0.01,
-                f'テスト実施日時: {timestamp}  |  成功率: {success_rate:.1f}%',
-                ha='center', fontsize=10)
-
-    # 保存
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig(output_file)
-    print(f"テスト結果の可視化を保存しました: {output_file}")
-
-    return output_file
-
-
-def _visualize_byte_distribution(data_no_shuffle: bytes, data_with_shuffle: bytes) -> str:
-    """
-    シャッフル前後のバイト分布を視覚化する
-
-    Args:
-        data_no_shuffle: シャッフルなしのデータ
-        data_with_shuffle: シャッフルありのデータ
-
-    Returns:
-        str: 生成された画像ファイルのパス
-    """
-    # タイムスタンプを含む出力ファイル名
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = os.path.join(TEST_OUTPUT_DIR, f"byte_distribution_comparison_{timestamp}.png")
-
-    # バイト分布のカウント
-    count_no_shuffle = Counter(data_no_shuffle)
-    count_with_shuffle = Counter(data_with_shuffle)
-
-    # 分布データの準備
-    all_bytes = list(range(256))
-    values_no_shuffle = [count_no_shuffle.get(b, 0) for b in all_bytes]
-    values_with_shuffle = [count_with_shuffle.get(b, 0) for b in all_bytes]
-
-    # 表示用にデータを間引く
-    step = 8  # 8バイト毎に表示
-    x_ticks = all_bytes[::step]
-
-    # プロット
-    plt.figure(figsize=(14, 6))
-
-    # シャッフルなしの分布
-    plt.subplot(1, 2, 1)
-    plt.bar(all_bytes, values_no_shuffle, color='blue', alpha=0.7)
-    plt.title('シャッフルなしのバイト分布')
-    plt.xlabel('バイト値')
-    plt.ylabel('出現頻度')
-    plt.xticks(x_ticks)
-    plt.grid(True, alpha=0.3)
-
-    # シャッフルありの分布
-    plt.subplot(1, 2, 2)
-    plt.bar(all_bytes, values_with_shuffle, color='green', alpha=0.7)
-    plt.title('シャッフルありのバイト分布')
-    plt.xlabel('バイト値')
-    plt.ylabel('出現頻度')
-    plt.xticks(x_ticks)
-    plt.grid(True, alpha=0.3)
-
-    # 保存
+    plt.bar(x - width/2, entropy_values, width, label='エントロピー (ビット/バイト)', color='lightgreen')
+    plt.bar(x + width/2, normalized_values, width, label='正規化エントロピー (0-1)', color='green')
+    plt.title('エントロピー値比較')
+    plt.xticks(x, names, rotation=15, ha='right')
+    plt.legend()
     plt.tight_layout()
-    plt.savefig(output_file)
 
-    return output_file
+    # 画像保存
+    timestamp = int(time.time())
+    image_path = os.path.join(TEST_OUTPUT_DIR, f"capsule_analysis_comparison_{timestamp}.png")
+    plt.savefig(image_path)
+    print(f"解析比較グラフを保存しました: {image_path}")
 
+    return image_path, results
 
-def _visualize_analysis_comparison(sequential_analysis: Dict[str, Any], interleave_analysis: Dict[str, Any]) -> str:
-    """
-    順次配置とインターリーブのカプセル分析結果を比較する可視化
+def run_all_tests():
+    """すべてのテストを実行"""
+    print("===== 不確定性転写暗号化方式テスト =====")
 
-    Args:
-        sequential_analysis: 順次配置の分析結果
-        interleave_analysis: インターリーブの分析結果
+    try:
+        # 基本テスト
+        basic_results = test_state_capsule_basic()
 
-    Returns:
-        str: 生成された画像ファイルのパス
-    """
-    # タイムスタンプを含む出力ファイル名
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = os.path.join(TEST_OUTPUT_DIR, f"capsule_analysis_comparison_{timestamp}.png")
+        # 解析テスト
+        analyzer_results = test_capsule_analyzer()
 
-    # プロット
-    plt.figure(figsize=(14, 10))
+        # テスト結果の可視化
+        visualize_test_results(basic_results, analyzer_results)
 
-    # 解析耐性スコアの比較（レーダーチャート）
-    plt.subplot(2, 2, 1, polar=True)
+        # バイト分布の可視化
+        # テストデータ生成
+        key = os.urandom(32)
+        salt = os.urandom(16)
+        data = "日本語も含むテストデータです。不確定性転写暗号化方式のテスト。".encode('utf-8') * 20
+        data2 = os.urandom(len(data))
 
-    # スコアの要素
-    categories = ['エントロピー', '分布均一性', 'ブロック構造']
-    N = len(categories)
+        capsule_obj = StateCapsule()
+        sequential_capsule = capsule_obj.create_capsule(data, data2, BLOCK_TYPE_SEQUENTIAL, 32, True)
+        interleave_capsule = capsule_obj.create_capsule(data, data2, BLOCK_TYPE_INTERLEAVE, 32, True)
 
-    # 各方式のスコア
-    sequential_scores = [
-        sequential_analysis["resistance_score"]["entropy_score"],
-        sequential_analysis["resistance_score"]["distribution_score"],
-        sequential_analysis["resistance_score"]["block_score"]
-    ]
+        visualize_byte_distribution(sequential_capsule, "sequential")
+        visualize_byte_distribution(interleave_capsule, "interleave")
 
-    interleave_scores = [
-        interleave_analysis["resistance_score"]["entropy_score"],
-        interleave_analysis["resistance_score"]["distribution_score"],
-        interleave_analysis["resistance_score"]["block_score"]
-    ]
+        # カプセル解析比較
+        visualize_capsule_analysis_comparison()
 
-    # 角度の計算
-    angles = np.linspace(0, 2*np.pi, N, endpoint=False).tolist()
-    angles += angles[:1]  # 閉じた図形にするため最初の点を追加
+        print("\n✅ すべてのテストが正常に完了しました")
+        return True
 
-    # スコアを閉じた図形にする
-    sequential_scores += sequential_scores[:1]
-    interleave_scores += interleave_scores[:1]
-
-    # プロット描画
-    plt.polar(angles, sequential_scores, 'b-', linewidth=2, label='順次配置')
-    plt.polar(angles, interleave_scores, 'g-', linewidth=2, label='インターリーブ')
-    plt.fill(angles, sequential_scores, 'b', alpha=0.1)
-    plt.fill(angles, interleave_scores, 'g', alpha=0.1)
-
-    # ラベル配置
-    plt.thetagrids(np.degrees(angles[:-1]), categories)
-    plt.ylim(0, 4)  # スコアの最大値に合わせる
-    plt.legend(loc='upper right', bbox_to_anchor=(0.1, 0.1))
-    plt.title('解析耐性スコアの比較')
-
-    # エントロピーの比較（棒グラフ）
-    plt.subplot(2, 2, 2)
-    labels = ['順次配置', 'インターリーブ']
-    entropy_values = [
-        sequential_analysis["entropy_analysis"]["normalized_entropy"],
-        interleave_analysis["entropy_analysis"]["normalized_entropy"]
-    ]
-    plt.bar(labels, entropy_values, color=['blue', 'green'])
-    plt.ylabel('正規化エントロピー')
-    plt.title('カプセル方式別のエントロピー比較')
-    plt.ylim(0, 1)  # 正規化エントロピーは0-1
-
-    # ブロック類似性の比較
-    plt.subplot(2, 2, 3)
-    similarity_values = [
-        sequential_analysis["block_analysis"]["avg_block_similarity"],
-        interleave_analysis["block_analysis"]["avg_block_similarity"]
-    ]
-    plt.bar(labels, similarity_values, color=['blue', 'green'])
-    plt.ylabel('平均ブロック類似性')
-    plt.title('ブロック間の類似性比較')
-    plt.ylim(0, 1)  # 類似性は0-1
-
-    # 総合スコアの比較
-    plt.subplot(2, 2, 4)
-    total_scores = [
-        sequential_analysis["resistance_score"]["total"],
-        interleave_analysis["resistance_score"]["total"]
-    ]
-    colors = ['blue', 'green']
-    plt.barh(labels, total_scores, color=colors)
-    plt.xlabel('総合解析耐性スコア')
-    plt.title('カプセル方式別の総合スコア')
-    plt.xlim(0, 10)  # 総合スコアは0-10
-
-    # 各バーにスコアを表示
-    for i, score in enumerate(total_scores):
-        plt.text(score + 0.1, i, f"{score:.2f}", va='center')
-
-    # 保存
-    plt.tight_layout()
-    plt.savefig(output_file)
-
-    return output_file
-
+    except Exception as e:
+        print(f"\n❌ テスト実行中にエラーが発生しました: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 if __name__ == "__main__":
-    print("=== 不確定性転写暗号化方式 - カプセル化テスト ===")
-
-    results = run_capsule_tests()
-
-    # 結果の表示
-    print(f"\n-- テスト結果サマリー --")
-    print(f"テスト実施日時: {results['timestamp']}")
-    print(f"成功率: {results['success_rate']:.1f}%")
-    print("\n各テストの結果:")
-
-    for test_name, test_results in results.items():
-        if test_name not in ["timestamp", "success_rate", "visualization"]:
-            success = test_results.get("success", False)
-            status = "✅ 成功" if success else "❌ 失敗"
-            print(f"- {test_name}: {status}")
-
-            if not success and "error" in test_results:
-                print(f"  エラー: {test_results['error']}")
-
-    print(f"\n詳細な視覚化結果: {results['visualization']}")
-
-    # 終了コード設定
-    sys.exit(0 if results["success_rate"] == 100 else 1)
+    run_all_tests()

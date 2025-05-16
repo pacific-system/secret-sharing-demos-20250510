@@ -27,6 +27,10 @@ except ImportError:
     KEY_SIZE_BYTES = 32
     MIN_ENTROPY = 7.0
 
+# ブロック処理タイプの定義
+BLOCK_TYPE_SEQUENTIAL = 0  # 正規→非正規の順次配置
+BLOCK_TYPE_INTERLEAVE = 1  # バイト単位のインターリーブ配置
+
 # バッファサイズの設定 (8MB)
 BUFFER_SIZE = 8 * 1024 * 1024
 
@@ -54,18 +58,24 @@ class StateCapsule:
     メモリ効率が良く、大規模なファイルも処理できます。
     """
 
-    def __init__(self, key: bytes, salt: Optional[bytes] = None, resistance_level: int = AnalysisResistanceLevel.MEDIUM):
+    def __init__(self, key: bytes = None, salt: Optional[bytes] = None, resistance_level: int = AnalysisResistanceLevel.MEDIUM):
         """
         カプセル化機構の初期化
 
         Args:
-            key: マスター鍵
+            key: マスター鍵（省略可能）
             salt: ソルト値（省略時はランダム生成）
             resistance_level: 解析耐性レベル
         """
-        self.key = key
+        self.key = key if key is not None else os.urandom(KEY_SIZE_BYTES)
         self.salt = salt or os.urandom(16)
         self.resistance_level = resistance_level
+
+        # ブロック処理タイプ（デフォルトは順次配置）
+        self.block_type = BLOCK_TYPE_SEQUENTIAL
+
+        # エントロピーブロックサイズ（デフォルトは32バイト）
+        self.entropy_block_size = 32
 
         # エントロピー強化（解析対策）
         timestamp = int(time.time() * 1000).to_bytes(8, 'big')
@@ -258,20 +268,31 @@ class StateCapsule:
                 "granularity": granularity
             }
 
-    def create_capsule(self, true_data: bytes, false_data: bytes,
-                      true_signature: bytes, false_signature: bytes) -> bytes:
+    def create_capsule(
+        self,
+        true_data: bytes,
+        false_data: bytes,
+        block_type: int = BLOCK_TYPE_SEQUENTIAL,
+        entropy_block_size: int = 32,
+        use_shuffle: bool = True
+    ) -> bytes:
         """
         正規パスと非正規パスのデータをカプセル化
 
         Args:
             true_data: 正規パスのデータ
             false_data: 非正規パスのデータ
-            true_signature: 正規データの署名
-            false_signature: 非正規データの署名
+            block_type: ブロック処理タイプ（BLOCK_TYPE_SEQUENTIAL または BLOCK_TYPE_INTERLEAVE）
+            entropy_block_size: エントロピーブロックサイズ
+            use_shuffle: シャッフル機能を使用するかどうか
 
         Returns:
             カプセル化されたデータ
         """
+        # ブロック処理タイプとエントロピーブロックサイズを保存
+        self.block_type = block_type
+        self.entropy_block_size = entropy_block_size
+
         # 大規模データの判定
         large_data = (len(true_data) > MAX_TEMP_FILE_SIZE or
                      len(false_data) > MAX_TEMP_FILE_SIZE)
@@ -279,6 +300,10 @@ class StateCapsule:
         if large_data:
             return self._create_large_capsule(true_data, false_data,
                                             true_signature, false_signature)
+
+        # 署名の生成
+        true_signature = self._create_signature(true_data)
+        false_signature = self._create_signature(false_data)
 
         # 通常サイズのデータ処理
         return self._create_normal_capsule(true_data, false_data,
@@ -301,11 +326,31 @@ class StateCapsule:
         # ブロックサイズの決定
         block_size = 64
 
+        # ヘッダーの作成 (マーカー, バージョン, ブロック処理タイプ, エントロピーブロックサイズ)
+        marker = b'STCAPS'  # StateCapsule マーカー
+        version = b'1.0'
+        block_type_bytes = self.block_type.to_bytes(1, 'big')
+        entropy_block_size_bytes = self.entropy_block_size.to_bytes(1, 'big')
+
+        # フラグとその他の情報
+        flags = 0x01 if self.resistance_level >= AnalysisResistanceLevel.MEDIUM else 0x00
+        flags_bytes = flags.to_bytes(1, 'big')
+
+        # 現在時刻 (解析対策)
+        timestamp = int(time.time()).to_bytes(4, 'big')
+
+        # ヘッダー用署名 (改ざん対策)
+        header_material = marker + version + block_type_bytes + entropy_block_size_bytes + flags_bytes + timestamp
+        header_signature = hmac.new(self.key, header_material, hashlib.sha256).digest()
+
+        # ヘッダー全体
+        header = header_material + header_signature
+
         # 署名の保護処理
         protected_true_signature = self._protect_signature(true_signature)
         protected_false_signature = self._protect_signature(false_signature)
 
-        # 署名部分の準備（最初の署名ブロック）
+        # 署名部分の準備
         signature_part = protected_true_signature + protected_false_signature
 
         # データ部分の準備
@@ -341,28 +386,42 @@ class StateCapsule:
         # 混合データブロックの構築
         mixed_blocks = []
 
-        for i in range(max_blocks):
-            block_info = self._block_map.get(i, {"type": 0, "granularity": 1})
-            true_block = true_blocks[i]
-            false_block = false_blocks[i]
+        # ブロック処理タイプに応じた処理を行う
+        if self.block_type == BLOCK_TYPE_SEQUENTIAL:
+            # 順次配置 - 正規データ全体の後に非正規データ全体
+            for i in range(max_blocks):
+                mixed_blocks.append(true_blocks[i])
+            for i in range(max_blocks):
+                mixed_blocks.append(false_blocks[i])
+        elif self.block_type == BLOCK_TYPE_INTERLEAVE:
+            # インターリーブ配置 - 正規/非正規のブロックを交互に配置
+            for i in range(max_blocks):
+                mixed_blocks.append(true_blocks[i])
+                mixed_blocks.append(false_blocks[i])
+        else:
+            # カスタム配置 (下位互換性のため、以前の実装を使用)
+            for i in range(max_blocks):
+                block_info = self._block_map.get(i, {"type": 0, "granularity": 1})
+                true_block = true_blocks[i]
+                false_block = false_blocks[i]
 
-            # ブロックタイプに基づいて混合方法を選択
-            if block_info["type"] == 0:
-                # 順次配置 (true, false)
-                mixed_blocks.append(true_block)
-                mixed_blocks.append(false_block)
-            elif block_info["type"] == 1:
-                # 順次配置 (false, true)
-                mixed_blocks.append(false_block)
-                mixed_blocks.append(true_block)
-            else:
-                # インターリーブ配置
-                granularity = block_info.get("granularity", 1)
-                mixed_block = self._interleave_blocks(true_block, false_block, granularity)
-                mixed_blocks.append(mixed_block)
+                # ブロックタイプに基づいて混合方法を選択
+                if block_info["type"] == 0:
+                    # 順次配置 (true, false)
+                    mixed_blocks.append(true_block)
+                    mixed_blocks.append(false_block)
+                elif block_info["type"] == 1:
+                    # 順次配置 (false, true)
+                    mixed_blocks.append(false_block)
+                    mixed_blocks.append(true_block)
+                else:
+                    # インターリーブ配置
+                    granularity = block_info.get("granularity", 1)
+                    mixed_block = self._interleave_blocks(true_block, false_block, granularity)
+                    mixed_blocks.append(mixed_block)
 
-        # カプセルデータの構築
-        capsule_data = signature_part + b''.join(mixed_blocks)
+        # カプセルデータの構築 (ヘッダー + 署名 + 混合ブロック)
+        capsule_data = header + signature_part + b''.join(mixed_blocks)
 
         # シャッフル適用
         shuffled_data = self._apply_shuffle(capsule_data)
@@ -737,56 +796,105 @@ class StateCapsule:
         Returns:
             (抽出データ, 署名)のタプル
         """
-        # カプセルデータから署名とデータを分離
-        if len(capsule_data) < 544:  # 最小長: true_signature(272) + false_signature(272)
+        # カプセルデータのサイズを確認
+        min_size = 52 + 544  # ヘッダー(52) + 署名部分(544)
+        if len(capsule_data) < min_size:
             # カプセルサイズが小さすぎる場合は空データを返す
+            print(f"警告: カプセルサイズが小さすぎます ({len(capsule_data)} < {min_size})")
             return b"", b""
-
-        # 署名部分とデータ部分を分離
-        signatures_part = capsule_data[:544]  # 署名部分
-        data_part = capsule_data[544:]  # データ部分
 
         # シャッフル適用前の状態に戻す
         unshuffled_data = self._revert_shuffle(capsule_data)
 
-        # シャッフル解除後も署名部分とデータ部分を再分離
-        unshuffled_signatures = unshuffled_data[:544]
-        unshuffled_data_part = unshuffled_data[544:]
+        # ヘッダーの抽出と解析
+        header = unshuffled_data[:52]
+
+        # ヘッダーからブロック処理タイプとエントロピーブロックサイズを取得
+        if len(header) >= 52:
+            try:
+                marker = header[:6]
+                version = header[6:9]
+                block_type_byte = header[9:10]
+                entropy_block_size_byte = header[10:11]
+                flags_byte = header[11:12]
+                timestamp = header[12:16]
+                header_signature = header[16:52]
+
+                # 値の解析
+                self.block_type = int.from_bytes(block_type_byte, 'big')
+                self.entropy_block_size = int.from_bytes(entropy_block_size_byte, 'big')
+
+                # ヘッダー署名の検証
+                header_material = marker + version + block_type_byte + entropy_block_size_byte + flags_byte + timestamp
+                expected_signature = hmac.new(self.key, header_material, hashlib.sha256).digest()
+
+                if header_signature != expected_signature:
+                    print("警告: ヘッダー署名が一致しません")
+            except Exception as e:
+                print(f"警告: ヘッダー解析中にエラーが発生しました: {e}")
+
+        # 署名部分とデータ部分を分離
+        signatures_part = unshuffled_data[52:52+544]  # 署名部分
+        data_part = unshuffled_data[52+544:]  # データ部分
 
         # 署名の抽出
         signature_offset = 0 if is_true_path else 272
-        protected_signature = unshuffled_signatures[signature_offset:signature_offset+272]
+        protected_signature = signatures_part[signature_offset:signature_offset+272]
         signature = self._revert_signature(protected_signature)
 
         # ブロックサイズの取得と確認
         block_size = 64
 
-        # データブロックの分割
-        blocks = []
-        for i in range(0, len(unshuffled_data_part), block_size * 2):
-            # ブロック終了インデックスの計算（境界チェック）
-            end_idx = min(i + block_size * 2, len(unshuffled_data_part))
-
-            # ブロック抽出
-            if end_idx - i >= block_size:
-                block = unshuffled_data_part[i:end_idx]
-                blocks.append(block)
-
-        # 抽出されたデータブロックの組み立て
+        # ブロック処理タイプに基づいた抽出
         extracted_data = bytearray()
 
-        for i, block in enumerate(blocks):
-            # ブロック処理情報を取得
-            block_info = self._block_map.get(i, {"type": 0, "granularity": 1})
-
-            # 指定されたパス（正規または非正規）のデータを抽出
+        if self.block_type == BLOCK_TYPE_SEQUENTIAL:
+            # 順次配置 - 正規データブロックは前半、非正規データブロックは後半
             if is_true_path:
-                extracted_block = self._extract_block_true(block, block_info)
+                # 正規データは前半部分
+                half_size = len(data_part) // 2
+                extracted_data.extend(data_part[:half_size])
             else:
-                extracted_block = self._extract_block_false(block, block_info)
+                # 非正規データは後半部分
+                half_size = len(data_part) // 2
+                extracted_data.extend(data_part[half_size:])
 
-            # 抽出されたデータを追加
-            extracted_data.extend(extracted_block)
+        elif self.block_type == BLOCK_TYPE_INTERLEAVE:
+            # インターリーブ配置 - 偶数インデックスは正規、奇数インデックスは非正規
+            blocks = []
+            for i in range(0, len(data_part), block_size):
+                end_idx = min(i + block_size, len(data_part))
+                if end_idx - i >= 1:  # 最低1バイトあるブロックのみ追加
+                    blocks.append(data_part[i:end_idx])
+
+            # 正規/非正規ブロックの抽出
+            start_idx = 0 if is_true_path else 1
+            for i in range(start_idx, len(blocks), 2):
+                if i < len(blocks):
+                    extracted_block = self._extract_block_true(blocks[i], self._block_map.get(i, {"type": 0, "granularity": 1}))
+                    extracted_data.extend(extracted_block)
+
+        else:
+            # カスタム配置（下位互換性のため）
+            blocks = []
+            for i in range(0, len(data_part), block_size * 2):
+                end_idx = min(i + block_size * 2, len(data_part))
+                if end_idx - i >= block_size:  # 最低ブロックサイズ分あるブロックのみ追加
+                    blocks.append(data_part[i:end_idx])
+
+            # 抽出されたデータブロックの組み立て
+            for i, block in enumerate(blocks):
+                # ブロック処理情報を取得
+                block_info = self._block_map.get(i, {"type": 0, "granularity": 1})
+
+                # 指定されたパス（正規または非正規）のデータを抽出
+                if is_true_path:
+                    extracted_block = self._extract_block_true(block, block_info)
+                else:
+                    extracted_block = self._extract_block_false(block, block_info)
+
+                # 抽出されたデータを追加
+                extracted_data.extend(extracted_block)
 
         return bytes(extracted_data), signature
 
@@ -1146,7 +1254,8 @@ def test_state_capsule():
 
         # カプセル化
         start_time = time.time()
-        capsule_data = capsule_obj.create_capsule(true_data, false_data, true_sig, false_sig)
+        capsule_data = capsule_obj.create_capsule(true_data, false_data,
+                                                  BLOCK_TYPE_SEQUENTIAL, 32, True)
         duration = time.time() - start_time
 
         print(f"カプセル化完了: データサイズ {len(capsule_data)} バイト, 処理時間 {duration:.3f} 秒")

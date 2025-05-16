@@ -188,9 +188,10 @@ class IntegrationTests(unittest.TestCase):
 
         # 暗号文サイズと解析耐性の比較
         analyzer = CapsuleAnalyzer()
-        sequential_analysis = analyzer.analyze_capsule(sequential_encrypted)
-        analyzer.analyze_capsule(interleaved_encrypted)
-        interleaved_resistance = analyzer.get_resistance_level()
+        analyzer.set_capsule(sequential_encrypted)
+        sequential_analysis = analyzer.analyze()
+        analyzer.set_capsule(interleaved_encrypted)
+        interleaved_analysis = analyzer.analyze()
 
         # 結果の可視化
         self._compare_and_visualize(sequential_encrypted, interleaved_encrypted)
@@ -206,7 +207,8 @@ class IntegrationTests(unittest.TestCase):
 
         # 解析器でカプセルを分析
         analyzer = CapsuleAnalyzer()
-        analysis_results = analyzer.analyze_capsule(encrypted_data)
+        analyzer.set_capsule(encrypted_data)
+        analysis_results = analyzer.analyze()
 
         # 解析結果の可視化
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -217,49 +219,43 @@ class IntegrationTests(unittest.TestCase):
 
         # エントロピー分布の可視化
         plt.subplot(2, 2, 1)
-        entropy_per_block = analysis_results["entropy_analysis"]["entropy_per_block"]
-        plt.plot(entropy_per_block, 'g-')
-        plt.title('ブロック別エントロピー分布')
-        plt.xlabel('ブロック番号')
-        plt.ylabel('正規化エントロピー')
+        entropy_value = analysis_results["entropy"]["shannon"]
+        plt.bar(["エントロピー"], [entropy_value], color='green')
+        plt.title('エントロピー分析')
+        plt.ylabel('ビット/バイト')
         plt.grid(True, alpha=0.3)
 
         # バイト分布の可視化
         plt.subplot(2, 2, 2)
-        distribution = analysis_results["byte_distribution"]["distribution"]
+        distribution = analyzer.histogram
         byte_values = list(range(256))
-        byte_counts = [distribution.get(str(b), 0) for b in byte_values]
+        byte_counts = [distribution.get(b, 0) for b in byte_values]
         plt.bar(byte_values[::4], byte_counts[::4], color='blue', alpha=0.7)  # 4バイト毎に表示
         plt.title('バイト値分布')
         plt.xlabel('バイト値')
         plt.ylabel('出現頻度')
         plt.grid(True, alpha=0.3)
 
-        # ヘッダー情報の表示
+        # 基本情報の表示
         plt.subplot(2, 2, 3)
-        header_info = analysis_results["header"]
         plt.axis('off')
+        basic_info = analysis_results["basic"]
         header_text = (
-            f"ブロック処理タイプ: {'順次配置' if header_info['block_type'] == BLOCK_TYPE_SEQUENTIAL else 'インターリーブ'}\n"
-            f"エントロピーブロックサイズ: {header_info['entropy_block_size']}バイト\n"
-            f"署名検証: {'成功' if header_info['signature_valid'] else '失敗'}\n"
-            f"バージョン: {header_info['version']}"
+            f"ファイルサイズ: {basic_info['size']}バイト\n"
+            f"ユニークバイト数: {basic_info['unique_bytes']}\n"
+            f"最小バイト値: {basic_info['min']}\n"
+            f"最大バイト値: {basic_info['max']}"
         )
         plt.text(0.5, 0.5, header_text, ha='center', va='center', fontsize=12)
 
         # 解析耐性スコアの表示
         plt.subplot(2, 2, 4)
-        resistance_score = analysis_results["resistance_score"]
-        categories = ['エントロピー', '分布均一性', 'ブロック構造']
-        scores = [
-            resistance_score["entropy_score"],
-            resistance_score["distribution_score"],
-            resistance_score["block_score"]
-        ]
-        plt.bar(categories, scores, color=['green', 'blue', 'purple'])
-        plt.title(f'解析耐性スコア (合計: {resistance_score["total"]:.2f}/10)')
-        plt.ylabel('スコア')
-        plt.ylim(0, 4)
+        overall_score = analysis_results["overall"]["analysis_quality_score"]
+        plt.bar(["解析耐性スコア"], [overall_score], color='purple')
+        plt.title(f'解析耐性スコア')
+        plt.ylabel('スコア (0-10)')
+        plt.ylim(0, 10)
+        plt.text(0, overall_score + 0.3, f"{overall_score:.2f}", ha='center')
 
         # 全体のタイトル
         plt.suptitle('不確定性転写暗号化方式 - 統合テスト分析結果', fontsize=16)
@@ -276,8 +272,14 @@ class IntegrationTests(unittest.TestCase):
 
         # 解析
         analyzer = CapsuleAnalyzer()
-        sequential_analysis = analyzer.analyze_capsule(sequential_data)
-        interleaved_analysis = analyzer.analyze_capsule(interleaved_data)
+
+        # 順次配置の解析
+        analyzer.set_capsule(sequential_data)
+        sequential_analysis = analyzer.analyze()
+
+        # インターリーブの解析
+        analyzer.set_capsule(interleaved_data)
+        interleaved_analysis = analyzer.analyze()
 
         # 可視化用の図を作成
         plt.figure(figsize=(12, 8))
@@ -294,8 +296,8 @@ class IntegrationTests(unittest.TestCase):
         # エントロピーの比較
         plt.subplot(2, 2, 2)
         entropy_values = [
-            sequential_analysis["entropy_analysis"]["normalized_entropy"],
-            interleaved_analysis["entropy_analysis"]["normalized_entropy"]
+            sequential_analysis["entropy"]["normalized"],
+            interleaved_analysis["entropy"]["normalized"]
         ]
         plt.bar(['順次配置', 'インターリーブ'], entropy_values, color=['blue', 'green'])
         plt.title('正規化エントロピーの比較')
@@ -307,8 +309,8 @@ class IntegrationTests(unittest.TestCase):
         # 解析耐性スコアの比較
         plt.subplot(2, 2, 3)
         scores = [
-            sequential_analysis["resistance_score"]["total"],
-            interleaved_analysis["resistance_score"]["total"]
+            sequential_analysis["overall"]["analysis_quality_score"],
+            interleaved_analysis["overall"]["analysis_quality_score"]
         ]
         plt.bar(['順次配置', 'インターリーブ'], scores, color=['blue', 'green'])
         plt.title('解析耐性スコアの比較')
@@ -317,18 +319,18 @@ class IntegrationTests(unittest.TestCase):
         for i, score in enumerate(scores):
             plt.text(i, score + 0.3, f"{score:.2f}", ha='center')
 
-        # ブロック類似性の比較
+        # 自己相関分析の比較
         plt.subplot(2, 2, 4)
-        similarities = [
-            sequential_analysis["block_analysis"]["avg_block_similarity"],
-            interleaved_analysis["block_analysis"]["avg_block_similarity"]
+        correlation_values = [
+            sequential_analysis["autocorrelation"]["independence_score"],
+            interleaved_analysis["autocorrelation"]["independence_score"]
         ]
-        plt.bar(['順次配置', 'インターリーブ'], similarities, color=['blue', 'green'])
-        plt.title('ブロック間類似性の比較')
-        plt.ylabel('平均類似性 (0-1)')
-        plt.ylim(0, 1)
-        for i, sim in enumerate(similarities):
-            plt.text(i, sim + 0.05, f"{sim:.3f}", ha='center')
+        plt.bar(['順次配置', 'インターリーブ'], correlation_values, color=['blue', 'green'])
+        plt.title('独立性スコアの比較')
+        plt.ylabel('独立性スコア (0-10)')
+        plt.ylim(0, 10)
+        for i, val in enumerate(correlation_values):
+            plt.text(i, val + 0.3, f"{val:.2f}", ha='center')
 
         # 全体のタイトル
         plt.suptitle('不確定性転写暗号化方式 - ブロック処理方式の比較', fontsize=16)

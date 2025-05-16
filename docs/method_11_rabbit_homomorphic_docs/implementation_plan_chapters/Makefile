@@ -6,8 +6,7 @@
 IMPLEMENTATION_CHAPTERS := 01_overview_and_profile.md \
 	02_architecture_and_structure.md \
 	03_implementation_details.md \
-	04_quality_and_security.md \
-	05_complexity_justification.md
+	04_quality_and_security.md
 
 # ターゲットファイル
 IMPLEMENTATION_TARGET := ../implementation_plan.md

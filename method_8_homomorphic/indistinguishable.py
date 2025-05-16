@@ -1,6 +1,54 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+import os
+import sys
+import json
+import math
+import random
+import secrets
+import hashlib
+import base64
+import binascii
+from typing import Dict, List, Tuple, Any, Optional, Union, Callable
+import numpy as np
+
+# 同じディレクトリ内のモジュールをインポート
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
+# 既存コードの前にインポート文を追加
+try:
+    from indistinguishable_ext import (
+        safe_log10,
+        randomize_ciphertext,
+        batch_randomize_ciphertexts,
+        add_statistical_noise,
+        add_redundancy
+    )
+except ImportError:
+    print("警告: indistinguishable_ext モジュールのインポート失敗")
+
+    # フォールバック実装
+    def safe_log10(value):
+        try:
+            return math.log10(value) if value > 0 else 0
+        except OverflowError:
+            return value.bit_length() * math.log10(2)
+
+    def randomize_ciphertext(paillier, ciphertext):
+        return ciphertext
+
+    def batch_randomize_ciphertexts(paillier, ciphertexts):
+        return ciphertexts
+
+    def add_statistical_noise(ciphertexts, intensity=0.05, paillier=None):
+        return ciphertexts, []
+
+    def add_redundancy(ciphertexts, redundancy_factor=1, paillier=None):
+        return ciphertexts, {}
+
 """
 識別不能性（Indistinguishable）機能 - 統合セキュリティ強化版
 
@@ -878,3 +926,90 @@ class IndistinguishableWrapper:
             time.sleep(min_execution_time - elapsed)
 
         return result
+
+# apply_comprehensive_indistinguishability関数をファイルの末尾に追加
+def apply_comprehensive_indistinguishability(
+    ciphertexts, metadata, key_type, paillier, noise_intensity=0.05, redundancy_factor=1
+):
+    """
+    総合的な識別不能性を適用する
+
+    Args:
+        ciphertexts: 識別不能性を適用する暗号文
+        metadata: メタデータ辞書（更新される）
+        key_type: 鍵タイプ ("true" または "false")
+        paillier: PaillierCryptoインスタンス
+        noise_intensity: ノイズの強度（0.0～1.0）
+        redundancy_factor: 冗長性の係数（1以上の整数）
+
+    Returns:
+        識別不能性が適用された暗号文と更新されたメタデータ
+    """
+    # 1. シャッフルとインターリーブのシード生成
+    shuffle_seed = os.urandom(16)
+    interleave_seed = os.urandom(16)
+
+    # 2. 統計的ノイズの付加
+    noisy_ciphertexts, noise_values = add_statistical_noise(
+        ciphertexts, intensity=noise_intensity, paillier=paillier
+    )
+
+    # 3. 冗長性の追加
+    redundant_ciphertexts, redundancy_metadata = add_redundancy(
+        noisy_ciphertexts, redundancy_factor=redundancy_factor, paillier=paillier
+    )
+
+    # 4. 暗号文のシャッフル
+    shuffled_ciphertexts = shuffle_ciphertexts(redundant_ciphertexts, seed=shuffle_seed)
+
+    # 5. インターリーブ（他のタイプの暗号文と交互配置）のためのメタデータ作成
+    interleave_metadata = {
+        "shuffle_seed": shuffle_seed.hex(),
+        "interleave_seed": interleave_seed.hex(),
+        "mapping": []
+    }
+
+    # 6. メタデータに情報を保存（復号時に必要）
+    key_specific_metadata = {
+        f"{key_type}_noise_values": noise_values,
+        f"{key_type}_redundancy": redundancy_metadata,
+        "interleave": interleave_metadata
+    }
+
+    # 総合メタデータに追加
+    indist_key = f"{key_type}_indist_metadata"
+    if "indistinguishable_metadata" not in metadata:
+        metadata["indistinguishable_metadata"] = {}
+
+    metadata["indistinguishable_metadata"][indist_key] = key_specific_metadata
+
+    return shuffled_ciphertexts, metadata
+
+# ciphertextをシャッフルする関数（識別不能性の一部）
+def shuffle_ciphertexts(ciphertexts, seed=None):
+    """
+    暗号文をシャッフル
+
+    Args:
+        ciphertexts: シャッフルする暗号文のリスト
+        seed: 乱数シード（オプション）
+
+    Returns:
+        シャッフルされた暗号文のリスト
+    """
+    if not ciphertexts:
+        return []
+
+    # シャッフル用乱数ジェネレータの初期化
+    if seed:
+        random.seed(int.from_bytes(seed, byteorder='big'))
+
+    # リストのコピーを作成し、シャッフル
+    shuffled = ciphertexts.copy()
+    random.shuffle(shuffled)
+
+    # 元の乱数シードに戻す
+    if seed:
+        random.seed()
+
+    return shuffled

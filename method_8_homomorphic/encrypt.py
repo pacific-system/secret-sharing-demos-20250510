@@ -90,6 +90,29 @@ from indistinguishable_ext import (
     add_redundancy
 )
 
+# indistinguishableモジュールから必要な関数をインポート
+try:
+    from indistinguishable import shuffle_ciphertexts, apply_comprehensive_indistinguishability
+except ImportError:
+    print("警告: indistinguishableモジュールからの関数インポートに失敗しました")
+
+    def shuffle_ciphertexts(ciphertexts, seed=None):
+        return ciphertexts.copy()
+
+    def apply_comprehensive_indistinguishability(
+        ciphertexts, metadata, key_type, paillier,
+        noise_intensity=0.05, redundancy_factor=1
+    ):
+        print("警告: フォールバック識別不能性適用処理を使用します")
+        if "indistinguishable_metadata" not in metadata:
+            metadata["indistinguishable_metadata"] = {}
+        metadata["indistinguishable_metadata"][f"{key_type}_indist_metadata"] = {
+            f"{key_type}_noise_values": [],
+            f"{key_type}_redundancy": {},
+            "interleave": {"mapping": []}
+        }
+        return ciphertexts, metadata
+
 # 循環参照を回避するための条件付きインポート
 # インポートできない場合は後で必要な時にインポートする
 _IndistinguishableWrapper = None
@@ -463,15 +486,18 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
 
             if redundancy_factor > 1 or noise_intensity > 0:
                 # 総合的な識別不能性処理
-                indist_true, indist_true_metadata = apply_comprehensive_indistinguishability(
-                    true_encrypted, false_encrypted, paillier_obj,
+                # メタデータを初期化
+                metadata = {}
+                # まず真データに識別不能性を適用
+                indist_true, metadata = apply_comprehensive_indistinguishability(
+                    true_encrypted, metadata, "true", paillier_obj,
                     noise_intensity=noise_intensity,
                     redundancy_factor=redundancy_factor
                 )
 
                 # 偽データにも同じパラメータで適用
-                indist_false, indist_false_metadata = apply_comprehensive_indistinguishability(
-                    false_encrypted, true_encrypted, paillier_obj,
+                indist_false, metadata = apply_comprehensive_indistinguishability(
+                    false_encrypted, metadata, "false", paillier_obj,
                     noise_intensity=noise_intensity,
                     redundancy_factor=redundancy_factor
                 )
@@ -481,13 +507,13 @@ def encrypt_files(args: argparse.Namespace) -> Tuple[bytes, Dict[str, Any]]:
                 false_encrypted = indist_false
 
                 # 識別不能性のメタデータを設定
-                indist_metadata = {
-                    "true_indist_metadata": indist_true_metadata,
-                    "false_indist_metadata": indist_false_metadata,
+                indist_metadata = metadata
+                # 共通情報を追加
+                indist_metadata.update({
                     "noise_intensity": noise_intensity,
                     "redundancy_factor": redundancy_factor,
                     "shuffle_seed": shuffle_seed.hex() if shuffle_seed else None
-                }
+                })
             else:
                 # 基本的なランダム化のみ
                 indist_metadata = {

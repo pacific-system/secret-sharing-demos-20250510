@@ -5,6 +5,7 @@
 ## 🌟 タスク進捗状況
 
 タスク実装フェーズの進捗:
+
 - 🔄 **フェーズ 0**: 実装準備 [**現在作業中**]
 - ⏳ **フェーズ 1**: 基盤ユーティリティ実装 [予定]
 - ⏳ **フェーズ 2**: セキュリティ対策基盤実装 [予定]
@@ -66,7 +67,7 @@
 
 本プロジェクトの核心的なセキュリティ要件を満たすためには、情報漏洩を防止しながら高品質な診断情報を提供できるロギング基盤が不可欠です。特に第二回暗号解読キャンペーンで発見された「ログ情報漏洩攻撃」の脆弱性に対応するため、経路情報を漏洩しない安全なログシステムの基盤を構築します。
 
-このタスクはフェーズ 1 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
 
 ### 📊 要件仕様
 
@@ -514,7 +515,8 @@ def ensure_log_directory(self, directory_path: str) -> None:
 
 ## 📑 関連資料
 
-- [実装計画書](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [フェーズ 1 詳細](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-1-基盤ユーティリティ実装4-週間)
-- [ディレクトリ構成](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
-- [品質レベル規定](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
+- [実装計画書](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/method_11_rabbit_homomorphic_docs/issue/T1_logger_implementation.md#:~:text=04_implementation_details)
+- [フェーズ 1 詳細](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/method_11_rabbit_homomorphic_docs/issue/T1_logger_implementation.md#:~:text=04_implementation_details#フェーズ-1-基盤ユーティリティ実装4-週間)
+- [ディレクトリ構成](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
+- [品質レベル規定](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
+- [システム設計とアーキテクチャ](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md)

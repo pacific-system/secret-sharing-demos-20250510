@@ -1045,3 +1045,66 @@ gantt
 - 🔒 2025-05-13: フェーズ 2「準同型暗号マスキング方式」のセキュリティ監査が完了しました
 - 🔍 2025-05-12: フェーズ 1「Rabbit 暗号化方式」の実装評価が完了しました
 - 🛠️ 2025-05-10: プロジェクト構造の整備とロードマップの作成が完了しました
+
+# GitHub MCP サーバーセットアップ
+
+このリポジトリでは Model Context Protocol (MCP)サーバーを GitHub と連携して使用するための設定を行いました。
+
+## セットアップ手順
+
+1. **GitHub Personal Access Token の取得**
+
+   - [GitHub の Personal access tokens 設定ページ](https://github.com/settings/tokens)にアクセス
+   - 「Generate new token」をクリック
+   - 必要なスコープ（`repo`）を選択
+   - トークンを生成してコピー
+
+2. **VS Code での使用方法**
+   - VS Code を開く
+   - コマンドパレット（Ctrl+Shift+P または Cmd+Shift+P）を開く
+   - `MCP: Add Server`を選択
+   - GitHub を選択し、先ほど生成したトークンを入力
+
+## 利用可能な機能
+
+- リポジトリの作成・検索
+- ファイルの作成・更新・取得
+- イシューの作成・更新・コメント
+- プルリクエストの作成・マージ
+- コードの検索
+- その他多数の GitHub 操作
+
+## 注意事項
+
+- 個人アクセストークンは安全に管理してください
+- `.vscode/mcp.json`に設定が保存されています
+
+詳細は[GitHub MCP Server の公式ドキュメント](https://github.com/github/github-mcp-server)を参照してください。
+
+# GitHub MCP サーバー
+
+このディレクトリは GitHub MCP サーバーの実行環境です。Model Context Protocol (MCP)を使用して GitHub の操作を行うことができます。
+
+## 概要
+
+- **目的**: GitHub リポジトリの操作を MCP サーバー経由で実行
+- **対応機能**: リポジトリ作成、ファイル操作、イシュー管理、PR 作成など
+- **接続方法**: VS Code, Cursor などの対応アプリケーションから接続
+
+## サーバー起動方法
+
+```bash
+# 環境変数の設定とサーバー起動
+export GITHUB_PERSONAL_ACCESS_TOKEN="your_token_here" && npx -y @modelcontextprotocol/server-github
+```
+
+## 利用方法
+
+1. サーバー起動後、対応アプリケーションから MCP サーバーに接続
+2. GitHub 操作をリクエスト
+3. MCP サーバーが GitHub API を呼び出し、結果を返却
+
+## 注意事項
+
+- 個人アクセストークンは安全に管理してください
+- トークンには必要最小限の権限のみを付与することをお勧めします

@@ -515,8 +515,8 @@ def ensure_log_directory(self, directory_path: str) -> None:
 
 ## 📑 関連資料
 
-- [実装計画書](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [フェーズ 1 詳細](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-1-基盤ユーティリティ実装4-週間)
-- [ディレクトリ構成](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
-- [品質レベル規定](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
-- [システム設計とアーキテクチャ](https://github.com/pacific-system/secret-sharing-demos-20250510/blob/main/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`

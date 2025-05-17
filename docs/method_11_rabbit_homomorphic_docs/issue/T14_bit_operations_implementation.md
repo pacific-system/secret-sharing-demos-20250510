@@ -41,6 +41,8 @@
 
 本タスク（T14）ではビット操作機能を実装します。前タスク（T12、T13）で実装したバイト操作基盤やエンディアン変換と連携し、暗号処理に必要な低レベルビット操作ユーティリティを提供します。これらの操作は暗号アルゴリズムの効率的な実装に不可欠であり、特にラビットストリーム暗号や準同型暗号での処理において重要な役割を果たします。
 
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
+
 **本タスク（T14）の作業カウント**:
 
 - 📝 **実装作業**: 9 件
@@ -500,9 +502,10 @@ def apply_bit_mask(data: bytes, mask: bytes) -> bytes:
 
 ## 📑 関連資料
 
-- [実装計画書](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [フェーズ 1 詳細](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-1-基盤ユーティリティ実装4-週間)
-- [ディレクトリ構成](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
-- [品質レベル規定](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
-- [前タスク：エンディアン変換実装（T13）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T13_endian_converter_implementation.md)
-- [前々タスク：バイト操作基盤実装（T12）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T12_byte_array_implementation.md)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T13**: `/docs/method_11_rabbit_homomorphic_docs/issue/T13_endian_converter_implementation.md`
+- **前々タスク：T12**: `/docs/method_11_rabbit_homomorphic_docs/issue/T12_byte_array_implementation.md`

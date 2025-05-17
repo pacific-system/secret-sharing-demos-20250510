@@ -67,7 +67,7 @@
 
 高度な暗号システムにおいては、開発時、テスト時、運用時で適切なログ出力制御が必要です。特に第二回暗号解読キャンペーンで発見された「ログ情報漏洩攻撃」の脆弱性に対応するためには、ログレベルに応じた情報の適切なフィルタリングとセキュリティレベルの管理が不可欠です。
 
-このタスクは、フェーズ 1 の基盤ユーティリティ実装の一部として、ロギング基盤をより強化し、柔軟なログ制御を提供します。これにより、診断情報の詳細度を状況に応じて制御しながらも、機密情報の漏洩を防止する体制を構築します。
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
 
 ### 📊 要件仕様
 
@@ -490,8 +490,9 @@ def apply_level_specific_rules(level: Union[str, int], message: str, metadata: D
 
 ## 📑 関連資料
 
-- [実装計画書](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [フェーズ 1 詳細](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-1-基盤ユーティリティ実装4-週間)
-- [ディレクトリ構成](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
-- [品質レベル規定](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
-- [前タスク：ロギング基盤実装（T1）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T1_logger_implementation.md)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク**: `/docs/method_11_rabbit_homomorphic_docs/issue/T1_logger_implementation.md`

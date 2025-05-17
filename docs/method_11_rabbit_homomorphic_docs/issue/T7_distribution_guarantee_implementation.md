@@ -67,7 +67,7 @@
 
 量子乱数源は理論上は完全なランダム性を持ちますが、実際のハードウェア実装や環境要因によって微小なバイアスが発生する可能性があります。暗号システム、特に準同型暗号処理では、乱数の均一な分布が攻撃耐性に直結します。第二回暗号解読キャンペーンで発見された「統計的偏りを利用した部分鍵復元攻撃の可能性」への対策として、乱数の分布均一性を厳密に保証する機能が必要です。
 
-このタスクは、フェーズ 1 の基盤ユーティリティ実装の一部として、量子乱数システムの分布均一性を保証し、暗号処理で使用される乱数の統計的特性を最適化する機能を提供します。これにより、鍵生成、暗号化処理、マスキング処理などにおける予測不可能性と均一性を確保します。
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
 
 ### 📊 要件仕様
 
@@ -503,8 +503,9 @@ def log_distribution_metrics(metrics: Dict[str, Any], log_level: str = 'INFO') -
 
 ## 📑 関連資料
 
-- [実装計画書](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [フェーズ 1 詳細](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-1-基盤ユーティリティ実装4-週間)
-- [ディレクトリ構成](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
-- [品質レベル規定](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
-- [前タスク：エントロピー検証実装（T6）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T6_entropy_verifier_implementation.md)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T6**: `/docs/method_11_rabbit_homomorphic_docs/issue/T6_entropy_verifier_implementation.md`

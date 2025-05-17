@@ -557,6 +557,16 @@ python -m unittest discover -s tests/test_cases/vulnerability_prevention_tests
 
 ## 📑 関連資料
 
-- [実装計画書](link_to_implementation_plan)
-- [第二回暗号解読キャンペーンレポート](link_to_report)
-- [脆弱性対策方針書](link_to_vulnerability_countermeasures)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+
+- **フェーズ 2 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-2-セキュリティ対策基盤実装3-週間`
+
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+
+- **前タスク**: `/docs/method_11_rabbit_homomorphic_docs/issue/T31_memory_access_implementation.md`
+
+- **次タスク**: `/docs/method_11_rabbit_homomorphic_docs/issue/T33_power_analysis_implementation.md`

@@ -68,7 +68,7 @@
 
 ラビット+準同型マスキング暗号プロセッサの品質と堅牢性を保証するためには、様々な条件下での動作を検証する必要があります。テストデータ生成機能は、システムの各コンポーネントやエンドツーエンドテストのための多様で再現可能なテストデータを提供します。
 
-このタスクはフェーズ 1 の基盤ユーティリティ実装において、テスト基盤（T8）と連携して動作する重要なコンポーネントです。生成されるテストデータは、単体テストから統合テスト、セキュリティテストまで、すべてのテストレベルで利用されます。特に、暗号処理の正確性や安全性を検証するための特殊なデータパターンの生成は、本プロジェクトの品質保証において極めて重要です。
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
 
 ### 📊 要件仕様
 
@@ -571,10 +571,13 @@ def generate_large_data(data_type: str, size: int,
 
 ## 📑 関連資料
 
-- [テスト基盤構築指示書（T8）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T8_test_framework_implementation.md)
-- [量子乱数関連タスク（T5-T7）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T5_quantum_random_implementation.md)
-- [実装計画書](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [ディレクトリ構成と納品物件](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T8**: `/docs/method_11_rabbit_homomorphic_docs/issue/T8_test_framework_implementation.md`
+- **量子乱数関連（T5-T7）**: `/docs/method_11_rabbit_homomorphic_docs/issue/T5_quantum_random_implementation.md`
 
 ### テスト実行コマンド例
 

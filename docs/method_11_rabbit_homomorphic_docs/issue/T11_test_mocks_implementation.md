@@ -66,7 +66,9 @@
 
 ### 🔍 背景と目的
 
-プロジェクト内の多くのコンポーネントは量子乱数生成、時間関数、暗号機能といった外部依存を持ちます。これらの依存性は単体テストを困難にし、テスト実行時間の増加や再現性の低下、環境依存の問題を引き起こす可能性があります。テスト用モックを実装することで、これらの外部依存を制御可能な形で置き換え、決定論的かつ高速なテスト実行を可能にします。
+ラビット+準同型マスキング暗号プロセッサの品質と堅牢性を保証するためには、テスト結果の徹底的な分析が必要です。本タスクではテスト基盤（T8）と連携し、テスト結果を多角的に分析するための機能を実装します。
+
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
 
 ### 📊 要件仕様
 
@@ -565,10 +567,14 @@ def reset_crypto_mock() -> None:
 
 シンプルでも強力なモックを実装して、テストをスムーズにしましょう！✨
 
-## 📌 関連資料
+## 📑 関連資料
 
-- `tests/test_framework.py`: テストフレームワーク実装（T8）
-- `tests/test_utils/generators/`: テストデータ生成機能（T9）
-- `tests/test_utils/analyzers/`: テスト結果分析ツール（T10）
-- `utils/quantum/quantum_random.py`: 量子乱数実装（モック対象）
-- `utils/logging/logger.py`: ロギング基盤（テスト関連コンポーネント）
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T10**: `/docs/method_11_rabbit_homomorphic_docs/issue/T10_test_results_analyzers_implementation.md`
+- **テスト基盤：T8**: `/docs/method_11_rabbit_homomorphic_docs/issue/T8_test_framework_implementation.md`
+- **テストデータ生成：T9**: `/docs/method_11_rabbit_homomorphic_docs/issue/T9_test_data_generators_implementation.md`
+- **量子乱数実装：T5**: `/docs/method_11_rabbit_homomorphic_docs/issue/T5_quantum_random_implementation.md`

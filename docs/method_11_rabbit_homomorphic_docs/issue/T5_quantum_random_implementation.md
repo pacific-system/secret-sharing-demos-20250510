@@ -67,7 +67,7 @@
 
 高度な暗号システム、特に相補文書推測攻撃に対する防御機構を持つ Tri-Fusion アーキテクチャにおいては、決定論的な乱数ではなく真の量子乱数が不可欠です。第二回暗号解読キャンペーンで発見された「固定シード値使用による予測可能な鍵導出の脆弱性」への対策として、固定シード値を完全に排除し、量子乱数源を導入することが必要です。
 
-このタスクは、フェーズ 1 の基盤ユーティリティ実装の重要部分として、システム全体の安全性を支える予測不可能な乱数生成基盤を提供します。後続の多くのタスク（T15:鍵管理、T19:量子乱数ソルト生成、T52:ラビット量子乱数統合など）がこの機能に依存するため、高品質かつ堅牢な実装が求められます。
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
 
 ### 📊 要件仕様
 
@@ -505,8 +505,9 @@ def _fallback_to_crypto_secure_random(length: int) -> bytes:
 
 ## 📑 関連資料
 
-- [実装計画書](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [フェーズ 1 詳細](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-1-基盤ユーティリティ実装4-週間)
-- [ディレクトリ構成](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
-- [品質レベル規定](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
-- [前タスク：ログアーカイブ管理実装（T4）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T4_archive_manager_implementation.md)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T4**: `/docs/method_11_rabbit_homomorphic_docs/issue/T4_archive_manager_implementation.md`

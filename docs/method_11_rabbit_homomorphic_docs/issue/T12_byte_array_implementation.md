@@ -67,6 +67,8 @@
 
 ラビット＋準同型マスキング暗号プロセッサでは、暗号操作の基盤として効率的かつ安全なバイト操作が不可欠です。本タスクで実装するバイト操作基盤は、後続のタスクで実装される様々な暗号機能（ラビットストリーム、準同型暗号、量子耐性レイヤーなど）の基礎となります。また、サイドチャネル攻撃対策として一定時間でのバイト操作を可能にし、タイミング攻撃やキャッシュ攻撃に対する防御の基盤を提供します。
 
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
+
 ### 📊 要件仕様
 
 1. 効率的かつ安全なバイト配列操作を提供すること
@@ -503,6 +505,9 @@ python -m unittest discover -s tests
 
 ## 📑 関連資料
 
-- [実装計画書](link_to_implementation_plan)
-- [バイト操作に関する技術ドキュメント](link_to_byte_operations_doc)
-- [サイドチャネル攻撃対策ガイドライン](link_to_side_channel_guidelines)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T11**: `/docs/method_11_rabbit_homomorphic_docs/issue/T11_test_mocks_implementation.md`

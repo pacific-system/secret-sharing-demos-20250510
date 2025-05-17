@@ -66,7 +66,7 @@
 
 ラビット＋準同型マスキング暗号プロセッサは、さまざまなプラットフォームで動作することが想定されています。このような分散環境では、異なるアーキテクチャ間でのエンディアン（バイトオーダー）の違いが暗号処理の一貫性を損なう可能性があります。本タスクで実装するエンディアン変換機能は、これらのプラットフォーム差異を吸収し、どの環境でも同じ暗号結果を生成できるようにするための基盤となります。
 
-フェーズ 1 の重要なユーティリティとして、このエンディアン変換機能は後続の暗号コア実装（ラビットストリーム、準同型暗号、量子耐性レイヤーなど）で必要とされる基礎的なバイト処理を支援します。また、バイナリデータの交換や永続化においても重要な役割を果たします。
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
 
 ### 📊 要件仕様
 
@@ -475,8 +475,9 @@ def ensure_cross_platform_compatibility(data: bytes, data_format: dict) -> bytes
 
 ## 📑 関連資料
 
-- [実装計画書](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [フェーズ 1 詳細](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-1-基盤ユーティリティ実装4-週間)
-- [ディレクトリ構成](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
-- [品質レベル規定](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
-- [前タスク：バイト操作基盤実装（T12）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T12_byte_array_implementation.md)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T12**: `/docs/method_11_rabbit_homomorphic_docs/issue/T12_byte_array_implementation.md`

@@ -67,7 +67,7 @@
 
 量子乱数は暗号システムの中核となる予測不可能性を提供しますが、その品質を継続的に監視・検証することが不可欠です。特に Tri-Fusion アーキテクチャにおいては、真の乱数性を保証するためのエントロピー評価が暗号強度に直結します。第二回暗号解読キャンペーンで発見された「固定シード値使用による予測可能な鍵導出の脆弱性」への対策として導入された量子乱数システムが、期待される高品質を維持していることを確認する機構が必要です。
 
-このタスクは、フェーズ 1 の基盤ユーティリティ実装の一部として、量子乱数生成システムの品質保証機能を提供します。これにより、鍵管理や暗号処理など、乱数品質に依存する多くのコンポーネントの安全性を担保します。
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
 
 ### 📊 要件仕様
 
@@ -496,8 +496,9 @@ def track_entropy_history(result: Dict[str, Any], max_history_records: int = 100
 
 ## 📑 関連資料
 
-- [実装計画書](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [フェーズ 1 詳細](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-1-基盤ユーティリティ実装4-週間)
-- [ディレクトリ構成](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
-- [品質レベル規定](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
-- [前タスク：量子乱数基本機能実装（T5）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T5_quantum_random_implementation.md)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T5**: `/docs/method_11_rabbit_homomorphic_docs/issue/T5_quantum_random_implementation.md`

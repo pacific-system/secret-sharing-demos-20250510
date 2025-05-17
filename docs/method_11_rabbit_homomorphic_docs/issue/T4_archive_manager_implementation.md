@@ -67,7 +67,7 @@
 
 高度な暗号システムの運用においては、ログファイルの適切な管理が不可欠です。特に第二回暗号解読キャンペーンで発見された「ログ情報漏洩攻撃」への対策として、ログファイルのライフサイクル全体を安全に管理し、長期間にわたる履歴を保持しながらもディスク容量を最適化する必要があります。
 
-このタスクは、フェーズ 1 の基盤ユーティリティ実装の最終段階として、ロギングシステム全体を完成させる重要な役割を担います。前タスクで実装された基盤機能とシームレスに連携し、タイムスタンプ付きログファイルの履歴管理と長期保存を実現します。
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
 
 ### 📊 要件仕様
 
@@ -512,10 +512,11 @@ def restore_archived_log(self, archive_id: str, destination: str = None) -> str:
 
 ## 📑 関連資料
 
-- [実装計画書](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [フェーズ 1 詳細](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-1-基盤ユーティリティ実装4-週間)
-- [ディレクトリ構成](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
-- [品質レベル規定](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
-- [前タスク：ロギング基盤実装（T1）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T1_logger_implementation.md)
-- [前タスク：ログレベル管理実装（T2）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T2_log_levels_implementation.md)
-- [前タスク：ログ出力ルーティング実装（T3）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T3_output_router_implementation.md)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T1**: `/docs/method_11_rabbit_homomorphic_docs/issue/T1_logger_implementation.md`
+- **前タスク：T2**: `/docs/method_11_rabbit_homomorphic_docs/issue/T2_log_levels_implementation.md`
+- **前タスク：T3**: `/docs/method_11_rabbit_homomorphic_docs/issue/T3_output_router_implementation.md`

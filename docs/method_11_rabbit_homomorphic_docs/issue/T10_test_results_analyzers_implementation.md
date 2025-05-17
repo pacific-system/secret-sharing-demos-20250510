@@ -68,7 +68,7 @@
 
 ラビット+準同型マスキング暗号プロセッサの品質と堅牢性を保証するためには、テスト結果の徹底的な分析が必要です。本タスクではテスト基盤（T8）と連携し、テスト結果を多角的に分析するための機能を実装します。
 
-このタスクはフェーズ 1 の基盤ユーティリティ実装において、テスト基盤（T8）およびテストデータ生成機能（T9）と連携して、包括的なテスト環境を完成させる重要なコンポーネントです。特に暗号処理の品質を検証するための詳細な分析機能は、本プロジェクトのセキュリティ品質保証において不可欠です。
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
 
 ### 📊 要件仕様
 
@@ -557,6 +557,10 @@ python -m unittest discover -s tests/test_test_utils/test_analyzers
 
 ## 📑 関連資料
 
-- [実装計画書](link_to_implementation_plan)
-- [テスト基盤実装指示書（T8）](link_to_t8_issue)
-- [テストデータ生成機能実装指示書（T9）](link_to_t9_issue)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T9**: `/docs/method_11_rabbit_homomorphic_docs/issue/T9_test_data_generators_implementation.md`
+- **テスト基盤：T8**: `/docs/method_11_rabbit_homomorphic_docs/issue/T8_test_framework_implementation.md`

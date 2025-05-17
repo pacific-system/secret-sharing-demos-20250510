@@ -72,6 +72,8 @@
 
 また、鍵管理システムは後続の安全鍵導出（T19-T21）の基盤となるだけでなく、三暗号方式の状態管理（T46）や各暗号エンジン（T50, T54, T59）の初期化にも不可欠です。本タスクでは、これらの上位コンポーネントが必要とする安全かつ柔軟な鍵管理基盤を構築します。
 
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
+
 ### 📊 要件仕様
 
 1. NIST SP 800-57 相当の鍵管理強度を実現すること
@@ -675,10 +677,11 @@ class KeyHandle:
 
 ## 📑 関連資料
 
-- [実装計画書](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
-- [フェーズ 1 詳細](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-1-基盤ユーティリティ実装4-週間)
-- [ディレクトリ構成](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md)
-- [品質レベル規定](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md)
-- [前タスク：ビット操作実装（T14）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T14_bit_operations_implementation.md)
-- [量子乱数基本機能実装（T5）](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/issue/T5_quantum_random_implementation.md)
-- [次タスク：鍵保存・読込機能実装（T16）の予定タスク説明](/Users/macbook/shamir-secret-sharing-demo/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md)
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T14**: `/docs/method_11_rabbit_homomorphic_docs/issue/T14_bit_operations_implementation.md`
+- **量子乱数基本機能：T5**: `/docs/method_11_rabbit_homomorphic_docs/issue/T5_quantum_random_implementation.md`
+- **次タスク：T16 の予定タスク説明**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`

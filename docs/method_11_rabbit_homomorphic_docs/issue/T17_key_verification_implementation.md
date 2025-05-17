@@ -71,6 +71,8 @@
 
 特に、伝統的なエントロピー評価だけでなく、格子基底の直交性や同型写像の非周期性といった高度な数学的特性も検証し、Tri-Fusion アーキテクチャの核心部分における鍵の適合性を確認します。また、鍵の強度を客観的に評価し、具体的な数値として表すことで、システム管理者やセキュリティ担当者が適切な判断を行うための指標を提供します。
 
+このタスクはフェーズ 0 の最初に位置し、他のすべてのコンポーネントから利用される基盤機能を提供します。安全かつ効率的なロギング機能は、開発、デバッグ、運用の全段階で暗号処理の正確性検証と問題診断に不可欠です。
+
 ### 📊 要件仕様
 
 1. T15（鍵管理基本機能）と T16（鍵保存・読込機能）と連携し、鍵の品質と強度を評価できること
@@ -930,6 +932,17 @@ def analyze_key_statistics(key_data: bytes, tests: list = None) -> dict:
 4. 統計分析結果の視覚化と解釈ガイド
 
 検証ツールとテストスクリプトがこの目的のために提供されます。
+
+## 📑 関連資料
+
+- **実装計画書**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
+- **フェーズ 0 詳細**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md#フェーズ-0-実装準備4-週間`
+- **ディレクトリ構成**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/02_directory_structure_and_deliverables.md`
+- **品質レベル規定**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/05_quality_and_security.md`
+- **システム設計とアーキテクチャ**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/03_system_design_and_architecture.md`
+- **前タスク：T16**: `/docs/method_11_rabbit_homomorphic_docs/issue/T16_key_storage_implementation.md`
+- **前々タスク：T15**: `/docs/method_11_rabbit_homomorphic_docs/issue/T15_key_manager_implementation.md`
+- **次タスク：T18 の予定タスク説明**: `/docs/method_11_rabbit_homomorphic_docs/implementation_plan_chapters/04_implementation_details.md`
 
 ---
 

@@ -422,7 +422,7 @@ def apply_level_specific_rules(level: Union[str, int], message: str, metadata: D
 
    ### 課題・問題点
 
-   - [課題の簡潔な説明と影響範囲]
+   - [課題の詳細な説明と影響範囲]
    ```
 
 3. **コメント投稿方法**：

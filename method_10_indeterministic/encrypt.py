@@ -11,6 +11,7 @@ import sys
 import time
 import json
 import base64
+import hmac
 import argparse
 import hashlib
 import secrets
@@ -1170,7 +1171,7 @@ def _encrypt_block(block: bytes, engine: ProbabilisticExecutionEngine,
 
 def inject_entropy(true_data: bytes, false_data: bytes, key: bytes, salt: bytes) -> bytes:
     """
-    複数のエントロピーソースから状態注入を行いセキュリティを向上させる
+    true_dataとfalse_dataにエントロピーを注入する
 
     Args:
         true_data: 暗号化された正規データ
@@ -1821,16 +1822,16 @@ def _get_deterministic_int(seed: bytes, salt: str, min_val: int, max_val: int) -
 
 def encrypt(true_file_path: str, false_file_path: str, output_path: Optional[str] = None, save_key: bool = False) -> Tuple[bytes, str]:
     """
-    不確定性転写暗号化方式で暗号化を実行する
+    ファイルを不確定性転写暗号化方式で暗号化する
 
     Args:
-        true_file_path: 正規ファイルのパス
-        false_file_path: 非正規ファイルのパス
-        output_path: 出力ファイルのパス（省略時は自動生成）
-        save_key: 鍵をファイルに保存するかどうか
+        true_file_path: 正規の平文ファイルパス
+        false_file_path: 非正規の平文ファイルパス
+        output_path: 出力ファイルパス（省略時は自動生成）
+        save_key: 鍵をファイルに保存するか
 
     Returns:
-        (マスター鍵, 出力ファイルパス)
+        (マスター鍵, 暗号化ファイルパス)
     """
     try:
         # 入力ファイルの存在確認
@@ -1840,124 +1841,165 @@ def encrypt(true_file_path: str, false_file_path: str, output_path: Optional[str
         if not os.path.exists(false_file_path):
             raise FileNotFoundError(f"非正規ファイル '{false_file_path}' が見つかりません")
 
-        # 出力パスのデフォルト設定
+        # 出力パスが指定されていない場合は自動生成
         if not output_path:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-            output_path = f"output_{timestamp}{OUTPUT_EXTENSION}"
+            timestamp = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+            output_path = f"encrypted_{timestamp}.bin"
+
+        # メモリ効率良く読み込み
+        print(f"ファイル '{true_file_path}' を読み込み中...")
+        true_data, is_text = read_file(true_file_path)
+        if not true_data:
+            raise ValueError(f"ファイル '{true_file_path}' は空またはアクセスできません")
+
+        print(f"ファイル '{false_file_path}' を読み込み中...")
+        false_data, _ = read_file(false_file_path)
+        if not false_data:
+            raise ValueError(f"ファイル '{false_file_path}' は空またはアクセスできません")
 
         # マスター鍵の生成
         master_key = generate_master_key()
 
         # ソルト値の生成
-        salt = os.urandom(16)
+        salt = os.urandom(8)
 
-        # 一時的なデータとメタデータの初期化
-        true_data = bytearray()
-        false_data = bytearray()
-        true_is_text = False
-        false_is_text = False
-
-        # 正規ファイルの読み込み
-        try:
-            with open(true_file_path, 'rb') as f:
-                true_data = f.read()
-
-            print(f"ファイル '{true_file_path}' はUTF-8テキストとして認識されました（サイズ: {len(true_data)} バイト）")
-            true_is_text = True
-        except Exception as e:
-            print(f"ファイル '{true_file_path}' の読み込みエラー: {e}", file=sys.stderr)
-            raise
-
-        # 非正規ファイルの読み込み
-        try:
-            with open(false_file_path, 'rb') as f:
-                false_data = f.read()
-
-            print(f"ファイル '{false_file_path}' はUTF-8テキストとして認識されました（サイズ: {len(false_data)} バイト）")
-            false_is_text = True
-        except Exception as e:
-            print(f"ファイル '{false_file_path}' の読み込みエラー: {e}", file=sys.stderr)
-            raise
-
-        # 暗号化処理の実行
-        # 正規パスの初期化
+        # 確率的実行エンジンを初期化
+        print("確率的実行エンジンを初期化中...")
         true_engine = create_engine_from_key(master_key, TRUE_PATH, salt)
-
-        # 非正規パスの初期化
         false_engine = create_engine_from_key(master_key, FALSE_PATH, salt)
 
-        # ファイルの暗号化
-        print("正規データを暗号化中...")
+        # 状態遷移パスの取得
+        print("状態遷移パスを計算中...")
+        true_path = true_engine.run_execution()
+        false_path = false_engine.run_execution()
+
+        # 状態依存の暗号化
+        print(f"正規データ（{len(true_data)} バイト）を暗号化中...")
         true_encrypted = state_based_encrypt(true_data, true_engine, TRUE_PATH)
 
-        print("非正規データを暗号化中...")
+        print(f"非正規データ（{len(false_data)} バイト）を暗号化中...")
         false_encrypted = state_based_encrypt(false_data, false_engine, FALSE_PATH)
 
-        # 実行パスの署名を取得
-        true_signature = true_engine.get_execution_signature()
-        false_signature = false_engine.get_execution_signature()
+        # データの署名（認証用）
+        print("データの署名を計算中...")
+        true_signature = hmac.new(master_key, true_encrypted, hashlib.sha256).digest()
+        false_signature = hmac.new(master_key, false_encrypted, hashlib.sha256).digest()
 
-        # 状態エントロピー注入
-        print("状態エントロピー注入中...")
+        # カプセル化（暗号文の包含）
+        print("データをカプセル化中...")
+        if max(len(true_encrypted), len(false_encrypted)) > 10 * 1024 * 1024:  # 10MB
+            print("大規模データ用のカプセル化メソッドを使用...")
+            capsule_data = _create_large_capsule(
+                true_encrypted, false_encrypted,
+                true_signature, false_signature,
+                master_key, salt
+            )
+        else:
+            # 標準的なカプセル化
+            capsule_data = _create_capsule(
+                true_encrypted, false_encrypted,
+                true_signature, false_signature,
+                master_key, salt
+            )
+
+        # エントロピー注入
+        print("エントロピーを注入中...")
         entropy_data = inject_entropy(true_encrypted, false_encrypted, master_key, salt)
 
-        # 状態データのカプセル化
-        print("状態カプセル化中...")
-        capsule = _create_large_capsule(true_encrypted, false_encrypted, true_signature, false_signature, master_key, salt)
-
-        # メタデータの作成
+        # メタデータの準備
         metadata = {
-            "format": "indeterministic",
-            "version": "1.0",
+            "version": "1.0.0",
             "timestamp": int(time.time()),
-            "salt": base64.b64encode(salt).decode('ascii'),
-            "content_length": max(len(true_data), len(false_data)),
-            "states": STATE_MATRIX_SIZE,
-            "transitions": STATE_TRANSITIONS,
-            "checksum": hashlib.sha256(capsule).hexdigest()
+            "true_size": len(true_data),
+            "false_size": len(false_data),
+            "is_text": is_text,
+            "salt": base64.b64encode(salt).decode('utf-8'),
+            "platform": platform.platform(),
+            "true_states": len(true_engine.states),
+            "false_states": len(false_engine.states),
+            "true_path_length": len(true_path),
+            "false_path_length": len(false_path),
+            "true_entropy": calculate_entropy(true_data),
+            "false_entropy": calculate_entropy(false_data),
+            "entropy_block_size": len(entropy_data),
+            "block_size": 64
         }
 
-        # 出力ファイルの作成
+        # JSON形式に変換
+        metadata_json = json.dumps(metadata).encode('utf-8')
+
+        # ファイルヘッダーの作成
+        file_marker = b"INDETERM" + salt
+        version = (1).to_bytes(2, 'big')  # バージョン1
+        options = (1 if is_text else 0).to_bytes(2, 'big')  # オプション（テキストかバイナリか）
+        timestamp_bytes = int(time.time()).to_bytes(8, 'big')
+        metadata_size = len(metadata_json).to_bytes(4, 'big')
+
+        # エントロピーデータサイズを追加
+        entropy_size = len(entropy_data).to_bytes(4, 'big')
+
+        # 出力ファイルに書き込み
+        print(f"暗号化ファイルを '{output_path}' に書き込み中...")
         with open(output_path, 'wb') as f:
-            # ファイルマーカーの書き込み (INDETERM + salt の最初の8バイト)
-            f.write(b"INDETERM" + salt[:8])
+            # ヘッダー
+            f.write(file_marker)        # 16バイト
+            f.write(version)           # 2バイト
+            f.write(options)           # 2バイト
+            f.write(timestamp_bytes)    # 8バイト
+            f.write(metadata_size)      # 4バイト
+            f.write(metadata_json)      # 可変長
 
-            # バージョン情報 (2バイト)
-            f.write((1).to_bytes(2, 'big'))
+            # エントロピーデータサイズを追加
+            f.write(entropy_size)       # 4バイト
 
-            # オプションフラグ (2バイト)
-            options = 0
-            if true_is_text: options |= 1
-            if false_is_text: options |= 2
-            f.write(options.to_bytes(2, 'big'))
+            # エントロピーデータ
+            f.write(entropy_data)       # 可変長
 
-            # タイムスタンプ (8バイト)
-            f.write(int(time.time()).to_bytes(8, 'big'))
+            # カプセル化データ
+            f.write(capsule_data)       # 可変長
 
-            # メタデータの書き込み
-            metadata_json = json.dumps(metadata).encode('utf-8')
-            f.write(len(metadata_json).to_bytes(4, 'big'))
-            f.write(metadata_json)
+        # 鍵情報の生成
+        key_data = {
+            "master_key": base64.b64encode(master_key).decode('utf-8'),
+            "timestamp": int(time.time()),
+            "encrypted_file": os.path.basename(output_path)
+        }
 
-            # エントロピーデータの書き込み
-            f.write(entropy_data)
+        # 鍵情報をJSON形式で保存
+        key_json = json.dumps(key_data, indent=2).encode('utf-8')
 
-            # カプセル化データの書き込み
-            f.write(capsule)
-
-        print(f"暗号化完了: '{output_path}' に暗号文を書き込みました。")
-
-        # 鍵の保存（オプション）
+        # 鍵ファイルの保存（オプション）
+        key_file_path = None
         if save_key:
-            key_file = f"{os.path.splitext(output_path)[0]}.key"
-            with open(key_file, 'wb') as f:
-                f.write(master_key)
-            print(f"鍵を保存しました: {key_file}")
+            key_file_path = f"{output_path}.key"
+            with open(key_file_path, 'wb') as f:
+                f.write(key_json)
+
+            # 鍵ファイルのパーミッション設定（所有者のみ読み書き可能）
+            try:
+                os.chmod(key_file_path, 0o600)  # rw-------
+            except Exception as e:
+                print(f"警告: 鍵ファイルのパーミッション設定に失敗しました: {e}", file=sys.stderr)
+
+            print(f"鍵ファイルを '{key_file_path}' に保存しました")
+
+        # 暗号化ファイルのパーミッション設定
+        try:
+            os.chmod(output_path, 0o644)  # rw-r--r--
+        except Exception as e:
+            print(f"警告: 暗号化ファイルのパーミッション設定に失敗しました: {e}", file=sys.stderr)
+
+        # 成功メッセージ
+        print(f"暗号化が完了しました: '{output_path}' ({os.path.getsize(output_path)/1024:.1f} KB)")
+        print(f"エントロピーデータサイズ: {len(entropy_data)/1024:.1f} KB")
+        print(f"カプセルデータサイズ: {len(capsule_data)/1024:.1f} KB")
 
         return master_key, output_path
 
     except Exception as e:
         print(f"暗号化エラー: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         raise
 
 

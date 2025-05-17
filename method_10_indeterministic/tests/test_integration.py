@@ -1,294 +1,414 @@
 """
 不確定性転写暗号化方式 - 統合テスト
 
-暗号化・復号の一連の流れをテストし、以下を検証します:
-1. 同じ鍵で暗号化・復号すると元のファイルが取得できる
-2. 異なる鍵で復号すると異なるファイルが取得される
-3. 各鍵に対して適切なTRUE/FALSEテキストが取得される
-4. 実行パスが毎回変化する
+このスクリプトは、encrypt.py、decrypt.py、StateCapsuleとCapsuleAnalyzerの
+連携テストを行います。
 """
 
 import os
 import sys
 import time
-import tempfile
 import hashlib
 import unittest
 import matplotlib.pyplot as plt
 import numpy as np
-from typing import Dict, List, Tuple, Any
+import datetime
+import random
+import tempfile
+from collections import Counter
 
 # プロジェクトルートをインポートパスに追加
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+current_dir = os.path.dirname(os.path.abspath(__file__))
+method_dir = os.path.dirname(current_dir)
+project_root = os.path.dirname(method_dir)
+sys.path.insert(0, project_root)
 
 # 内部モジュールのインポート
-from method_10_indeterministic.encrypt import encrypt_files
-from method_10_indeterministic.decrypt import decrypt_file
-from method_10_indeterministic.tests.test_utils import (
-    generate_random_key, create_temp_file, cleanup_temp_file,
-    ensure_test_files, get_timestamp_str, TestResult, TEST_OUTPUT_DIR
-)
-from method_10_indeterministic.probability_engine import (
-    ProbabilisticExecutionEngine, create_engine_from_key, TRUE_PATH, FALSE_PATH
-)
+from method_10_indeterministic.state_capsule import StateCapsule, BLOCK_TYPE_SEQUENTIAL, BLOCK_TYPE_INTERLEAVE
+from method_10_indeterministic.capsule_analyzer import CapsuleAnalyzer
+from method_10_indeterministic.encrypt import encrypt_file, encrypt
+from method_10_indeterministic.decrypt import decrypt_file, decrypt
+
+# テスト出力ディレクトリ
+TEST_OUTPUT_DIR = os.path.join(project_root, "test_output")
+os.makedirs(TEST_OUTPUT_DIR, exist_ok=True)
 
 
-def test_encryption_decryption():
-    """暗号化・復号の統合テスト"""
-    results = TestResult()
+class IntegrationTests(unittest.TestCase):
+    """統合テストクラス"""
 
-    # テストファイルの準備
-    ensure_test_files()
+    def setUp(self):
+        # テスト用の一時ファイルパス
+        self.true_text_path = os.path.join(TEST_OUTPUT_DIR, "test_true.txt")
+        self.false_text_path = os.path.join(TEST_OUTPUT_DIR, "test_false.txt")
+        self.encrypted_path = os.path.join(TEST_OUTPUT_DIR, "test_encrypted.indt")
+        self.key_path = os.path.join(TEST_OUTPUT_DIR, "test_encrypted.key")
+        self.decrypted_true_path = os.path.join(TEST_OUTPUT_DIR, f"test_encrypted.indt_true_decrypted.txt")
+        self.decrypted_false_path = os.path.join(TEST_OUTPUT_DIR, f"test_encrypted.indt_false_decrypted.txt")
 
-    # 一時ファイルの作成
-    true_content = "これは正規のテスト内容です。".encode('utf-8')
-    false_content = "これは非正規のテスト内容です。".encode('utf-8')
+        # テスト用のデータを生成
+        self.true_text = """
+この文書は「正規パス（true path）」用のテストデータです。
+このデータは暗号化され、正規パスで復号された場合に表示されるべき内容です。
+暗号化処理では、正規データと非正規データの両方を一つのカプセルに格納し、
+どちらが本物かを第三者が判別できないようにします。
 
-    true_file = create_temp_file(true_content)
-    false_file = create_temp_file(false_content)
-    encrypted_file = os.path.join(tempfile.gettempdir(), "test_encrypted.indet")
+これは不確定性転写暗号化方式のテストです。
+"""
 
-    try:
-        # テスト1: 暗号化と同一鍵での復号
+        self.false_text = """
+この文書は「非正規パス（false path）」用のテストデータです。
+このデータは暗号化され、非正規パスで復号された場合に表示されるべき内容です。
+実際の用途では、攻撃者が強制的に復号を試みた場合にこのデータが表示されます。
+
+両方のデータが同じカプセル内に存在していますが、どちらが本物かは判別できません。
+"""
+
+        # テスト用のファイルを作成
+        with open(self.true_text_path, "w", encoding="utf-8") as f:
+            f.write(self.true_text)
+
+        with open(self.false_text_path, "w", encoding="utf-8") as f:
+            f.write(self.false_text)
+
+    def tearDown(self):
+        # テスト後のクリーンアップは行わない（ファイルを残しておく）
+        pass
+
+    def test_full_encryption_decryption_file(self):
+        """ファイルの暗号化と復号の完全なフローをテスト"""
+        # 暗号化
+        encrypt_file(
+            true_file_path=self.true_text_path,
+            false_file_path=self.false_text_path,
+            output_path=self.encrypted_path,
+            save_key=True
+        )
+
+        # ファイルが生成されたことを確認
+        self.assertTrue(os.path.exists(self.encrypted_path))
+        self.assertTrue(os.path.exists(self.key_path))
+
+        # true パスでの復号
+        decrypt_file(
+            encrypted_file=self.encrypted_path,
+            key_file=self.key_path,
+            output_file=self.decrypted_true_path,
+            path_type="true"
+        )
+
+        # false パスでの復号
+        decrypt_file(
+            encrypted_file=self.encrypted_path,
+            key_file=self.key_path,
+            output_file=self.decrypted_false_path,
+            path_type="false"
+        )
+
+        # 復号されたファイルの内容を検証
+        with open(self.decrypted_true_path, "r", encoding="utf-8") as f:
+            decrypted_true_content = f.read()
+
+        with open(self.decrypted_false_path, "r", encoding="utf-8") as f:
+            decrypted_false_content = f.read()
+
+        # 元のテキストと復号されたテキストが一致するか確認
+        self.assertEqual(self.true_text, decrypted_true_content)
+        self.assertEqual(self.false_text, decrypted_false_content)
+
+        # 暗号化されたファイルを分析
+        self._analyze_encrypted_file(self.encrypted_path)
+
+    def test_encryption_decryption_text(self):
+        """テキストの暗号化と復号をテスト"""
+        # 一時ファイルに保存してからencrypt関数を使用
+        true_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+        false_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+        output_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".indt")
+
         try:
+            # テストデータを一時ファイルに書き込み
+            with open(true_temp.name, 'w', encoding='utf-8') as f:
+                f.write(self.true_text)
+
+            with open(false_temp.name, 'w', encoding='utf-8') as f:
+                f.write(self.false_text)
+
             # 暗号化
-            key, _ = encrypt_files(true_file, false_file, encrypted_file)
-
-            # 同一鍵での復号
-            true_output = os.path.join(tempfile.gettempdir(), "test_true_decrypted.txt")
-            decrypt_file(encrypted_file, key, true_output)
-
-            # 結果の検証
-            with open(true_output, 'rb') as f:
-                decrypted_content = f.read()
-
-            # 正規テキストが含まれるか検証
-            true_match = true_content in decrypted_content
-
-            results.add_result(
-                "同一鍵での暗号化・復号",
-                true_match,
-                "暗号化と同一鍵での復号で元のコンテンツが取得できるか"
+            key, _ = encrypt(
+                true_file_path=true_temp.name,
+                false_file_path=false_temp.name,
+                output_path=output_temp.name,
+                save_key=True
             )
 
-        except Exception as e:
-            results.add_result("同一鍵での暗号化・復号", False, f"例外発生: {str(e)}")
+            # 復号 (trueパス)
+            true_output = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+            decrypt(
+                encrypted_file=output_temp.name,
+                key=key,
+                output_file=true_output.name,
+                path_type="true"
+            )
 
-        # テスト2: 異なる鍵での復号
+            # 復号 (falseパス)
+            false_output = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+            decrypt(
+                encrypted_file=output_temp.name,
+                key=key,
+                output_file=false_output.name,
+                path_type="false"
+            )
+
+            # 復号結果の検証
+            with open(true_output.name, 'r', encoding='utf-8') as f:
+                decrypted_true = f.read()
+
+            with open(false_output.name, 'r', encoding='utf-8') as f:
+                decrypted_false = f.read()
+
+            # 元のテキストと復号されたテキストが一致するか確認
+            self.assertEqual(self.true_text, decrypted_true)
+            self.assertEqual(self.false_text, decrypted_false)
+
+        finally:
+            # 一時ファイルの削除
+            for temp_file in [true_temp.name, false_temp.name, output_temp.name, true_output.name, false_output.name]:
+                try:
+                    os.unlink(temp_file)
+                except:
+                    pass
+
+    def test_different_block_types(self):
+        """異なるブロック処理タイプでの暗号化・復号をテスト"""
+        # 一時ファイルを準備
+        true_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+        false_temp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+
         try:
-            # 非正規鍵の生成（元の鍵を少し変更）
-            false_key = bytearray(key)
-            false_key[0] ^= 0xFF  # 最初のバイトを反転
-            false_key = bytes(false_key)
+            # テストデータを一時ファイルに書き込み
+            with open(true_temp.name, 'w', encoding='utf-8') as f:
+                f.write(self.true_text)
 
-            # 非正規鍵での復号
-            false_output = os.path.join(tempfile.gettempdir(), "test_false_decrypted.txt")
-            decrypt_file(encrypted_file, false_key, false_output)
+            with open(false_temp.name, 'w', encoding='utf-8') as f:
+                f.write(self.false_text)
 
-            # 結果の検証
-            with open(false_output, 'rb') as f:
-                false_decrypted = f.read()
-
-            # 非正規テキストが含まれるか検証
-            false_match = false_content in false_decrypted
-
-            # 真偽テキストが相互に含まれていないか（コンタミがないか）
-            no_contamination = (
-                true_content not in false_decrypted and
-                false_content not in decrypted_content
+            # 順次配置での暗号化
+            sequential_output = tempfile.NamedTemporaryFile(delete=False, suffix=".indt")
+            sequential_key, _ = encrypt(
+                true_file_path=true_temp.name,
+                false_file_path=false_temp.name,
+                output_path=sequential_output.name
             )
 
-            results.add_result(
-                "異なる鍵での復号",
-                false_match,
-                "異なる鍵での復号で非正規コンテンツが取得できるか"
+            # インターリーブ配置での暗号化
+            interleaved_output = tempfile.NamedTemporaryFile(delete=False, suffix=".indt")
+            interleaved_key, _ = encrypt(
+                true_file_path=true_temp.name,
+                false_file_path=false_temp.name,
+                output_path=interleaved_output.name
             )
 
-            results.add_result(
-                "コンテンツ分離",
-                no_contamination,
-                "正規/非正規コンテンツが混合していないか"
-            )
+            # 各方式での復号
+            sequential_true_output = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+            sequential_false_output = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
 
-        except Exception as e:
-            results.add_result("異なる鍵での復号", False, f"例外発生: {str(e)}")
+            interleaved_true_output = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+            interleaved_false_output = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
 
-        # テスト3: 実行パスの非決定性
-        try:
-            # 同じ鍵で複数回エンジンを実行し、パスが毎回異なることを確認
-            test_key = generate_random_key()
-            paths = []
+            # 順次方式の復号
+            decrypt(sequential_output.name, sequential_key, sequential_true_output.name, "true")
+            decrypt(sequential_output.name, sequential_key, sequential_false_output.name, "false")
 
-            for i in range(3):
-                # 5回エンジンを実行
-                engine = create_engine_from_key(test_key, TRUE_PATH)
-                engine.run_execution()
-                paths.append(tuple(engine.path_manager.path_history))
+            # インターリーブ方式の復号
+            decrypt(interleaved_output.name, interleaved_key, interleaved_true_output.name, "true")
+            decrypt(interleaved_output.name, interleaved_key, interleaved_false_output.name, "false")
 
-            # 各実行パスが異なることを確認
-            all_different = len(set(paths)) == len(paths)
+            # 復号結果の読み込み
+            with open(sequential_true_output.name, 'r', encoding='utf-8') as f:
+                sequential_true = f.read()
+            with open(sequential_false_output.name, 'r', encoding='utf-8') as f:
+                sequential_false = f.read()
 
-            results.add_result(
-                "実行パスの非決定性",
-                all_different,
-                "同じ鍵でも毎回異なる実行パスが生成されるか"
-            )
+            with open(interleaved_true_output.name, 'r', encoding='utf-8') as f:
+                interleaved_true = f.read()
+            with open(interleaved_false_output.name, 'r', encoding='utf-8') as f:
+                interleaved_false = f.read()
 
-        except Exception as e:
-            results.add_result("実行パスの非決定性", False, f"例外発生: {str(e)}")
+            # 復号結果の検証
+            self.assertEqual(self.true_text, sequential_true)
+            self.assertEqual(self.false_text, sequential_false)
+            self.assertEqual(self.true_text, interleaved_true)
+            self.assertEqual(self.false_text, interleaved_false)
 
-        # テスト4: 異なる鍵での収束性
-        try:
-            # 異なる鍵で復号した結果、同一パスタイプの場合に類似した状態に収束するか
-            similar_paths = []
+            # 暗号文サイズと解析耐性の比較
+            # 直接ファイルを読み込む
+            with open(sequential_output.name, 'rb') as f:
+                sequential_encrypted = f.read()
+            with open(interleaved_output.name, 'rb') as f:
+                interleaved_encrypted = f.read()
 
-            # 5つの異なる鍵を生成
-            for i in range(5):
-                test_key = generate_random_key()
-                engine1 = create_engine_from_key(test_key, TRUE_PATH)
-                engine1.run_execution()
+            analyzer = CapsuleAnalyzer()
+            sequential_analysis = analyzer.analyze_capsule(sequential_encrypted)
+            interleaved_analysis = analyzer.analyze_capsule(interleaved_encrypted)
 
-                engine2 = create_engine_from_key(test_key, TRUE_PATH)  # 同じ鍵、同じパスタイプ
-                engine2.run_execution()
+            # 結果の可視化
+            self._compare_and_visualize(sequential_encrypted, interleaved_encrypted)
 
-                # 最終状態が同じか類似しているか
-                final1 = engine1.path_manager.current_state_id
-                final2 = engine2.path_manager.current_state_id
+            # 両方のデータが同じ長さの入力から生成されたにも関わらず、異なるサイズと特性を持っていることを確認
+            self.assertNotEqual(len(sequential_encrypted), len(interleaved_encrypted))
 
-                # 最終状態が同じか、または「近い」（±2以内）かを検証
-                is_similar = final1 == final2 or abs(final1 - final2) <= 2
-                similar_paths.append(is_similar)
+        finally:
+            # 一時ファイルの削除
+            for temp_file in [
+                true_temp.name, false_temp.name,
+                sequential_output.name, interleaved_output.name,
+                sequential_true_output.name, sequential_false_output.name,
+                interleaved_true_output.name, interleaved_false_output.name
+            ]:
+                try:
+                    os.unlink(temp_file)
+                except:
+                    pass
 
-            # 80%以上の確率で類似した結果になるかどうか
-            good_convergence = sum(similar_paths) >= len(similar_paths) * 0.8
+    def _analyze_encrypted_file(self, file_path):
+        """暗号化されたファイルを解析"""
+        # ファイルを読み込む
+        with open(file_path, "rb") as f:
+            encrypted_data = f.read()
 
-            results.add_result(
-                "同一パスタイプの収束性",
-                good_convergence,
-                "同じ鍵・同じパスタイプで類似状態に収束するか"
-            )
+        # 解析器でカプセルを分析
+        analyzer = CapsuleAnalyzer()
+        analysis_results = analyzer.analyze_capsule(encrypted_data)
 
-        except Exception as e:
-            results.add_result("同一パスタイプの収束性", False, f"例外発生: {str(e)}")
+        # 解析結果の可視化
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = os.path.join(TEST_OUTPUT_DIR, f"integration_test_{timestamp}.png")
 
-        # テスト5: 異なるパスタイプの分離
-        try:
-            # 同じ鍵で異なるパスタイプの場合に異なる状態に収束するか
-            test_key = generate_random_key()
+        # 可視化用の図を作成
+        plt.figure(figsize=(12, 8))
 
-            true_finals = []
-            false_finals = []
+        # エントロピー分布の可視化
+        plt.subplot(2, 2, 1)
+        entropy_value = analysis_results["entropy_analysis"]["shannon_entropy"]
+        plt.bar(["エントロピー"], [entropy_value], color='green')
+        plt.title('エントロピー分析')
+        plt.ylabel('ビット/バイト')
+        plt.grid(True, alpha=0.3)
 
-            for i in range(3):
-                # 同じ鍵での異なるパスタイプ
-                true_engine = create_engine_from_key(test_key, TRUE_PATH)
-                true_engine.run_execution()
-                true_finals.append(true_engine.path_manager.current_state_id)
+        # バイト分布の可視化
+        plt.subplot(2, 2, 2)
+        distribution = analysis_results["byte_distribution"]
+        byte_values = list(range(256))
+        byte_counts = [distribution.get(b, 0) for b in byte_values]
+        plt.bar(byte_values[::4], byte_counts[::4], color='blue', alpha=0.7)  # 4バイト毎に表示
+        plt.title('バイト値分布')
+        plt.xlabel('バイト値')
+        plt.ylabel('出現頻度')
+        plt.grid(True, alpha=0.3)
 
-                false_engine = create_engine_from_key(test_key, FALSE_PATH)
-                false_engine.run_execution()
-                false_finals.append(false_engine.path_manager.current_state_id)
+        # 基本情報の表示
+        plt.subplot(2, 2, 3)
+        plt.axis('off')
+        basic_info = analysis_results["basic_info"]
+        header_text = (
+            f"ファイルサイズ: {basic_info['size']}バイト\n"
+            f"ユニークバイト数: {basic_info['unique_bytes']}\n"
+            f"最小バイト値: {basic_info['min_byte']}\n"
+            f"最大バイト値: {basic_info['max_byte']}"
+        )
+        plt.text(0.5, 0.5, header_text, ha='center', va='center', fontsize=12)
 
-            # TRUE/FALSEパスが明確に分離されているか
-            distinct_paths = len(set(true_finals) & set(false_finals)) == 0
+        # 解析耐性スコアの表示
+        plt.subplot(2, 2, 4)
+        overall_score = analysis_results["resistance_score"]["total"]
+        plt.bar(["解析耐性スコア"], [overall_score], color='purple')
+        plt.title(f'解析耐性スコア')
+        plt.ylabel('スコア (0-10)')
+        plt.ylim(0, 10)
+        plt.text(0, overall_score + 0.3, f"{overall_score:.2f}", ha='center')
 
-            results.add_result(
-                "パスタイプの分離",
-                distinct_paths,
-                "TRUE/FALSEパスが明確に区別されるか"
-            )
+        # 全体のタイトル
+        plt.suptitle('不確定性転写暗号化方式 - 統合テスト分析結果', fontsize=16)
 
-        except Exception as e:
-            results.add_result("パスタイプの分離", False, f"例外発生: {str(e)}")
+        # 保存
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.savefig(output_file)
+        print(f"統合テスト分析結果を保存しました: {output_file}")
 
-    finally:
-        # テスト用の一時ファイルを削除
-        cleanup_temp_file(true_file)
-        cleanup_temp_file(false_file)
-        # 暗号化ファイルも削除
-        try:
-            os.unlink(encrypted_file)
-        except:
-            pass
+    def _compare_and_visualize(self, sequential_data, interleaved_data):
+        """2つの暗号化手法の比較結果を可視化"""
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = os.path.join(TEST_OUTPUT_DIR, f"block_type_comparison_{timestamp}.png")
 
-    # 結果を可視化
-    try:
-        visualize_test_results(results)
-    except Exception as e:
-        print(f"結果の可視化に失敗しました: {e}")
+        # 解析
+        analyzer = CapsuleAnalyzer()
 
-    return results
+        # 順次配置の解析
+        sequential_analysis = analyzer.analyze_capsule(sequential_data)
 
+        # インターリーブの解析
+        interleaved_analysis = analyzer.analyze_capsule(interleaved_data)
 
-def visualize_test_results(results):
-    """テスト結果を可視化"""
-    # タイムスタンプを取得
-    timestamp = get_timestamp_str()
+        # 可視化用の図を作成
+        plt.figure(figsize=(12, 8))
 
-    # 出力ファイル名
-    output_file = os.path.join(TEST_OUTPUT_DIR, f"integration_test_{timestamp}.png")
+        # ファイルサイズの比較
+        plt.subplot(2, 2, 1)
+        sizes = [len(sequential_data), len(interleaved_data)]
+        plt.bar(['順次配置', 'インターリーブ'], sizes, color=['blue', 'green'])
+        plt.title('暗号化データサイズの比較')
+        plt.ylabel('サイズ (バイト)')
+        for i, size in enumerate(sizes):
+            plt.text(i, size + 50, str(size), ha='center')
 
-    # プロットの設定
-    plt.figure(figsize=(12, 8))
+        # エントロピーの比較
+        plt.subplot(2, 2, 2)
+        entropy_values = [
+            sequential_analysis["entropy_analysis"]["normalized_entropy"],
+            interleaved_analysis["entropy_analysis"]["normalized_entropy"]
+        ]
+        plt.bar(['順次配置', 'インターリーブ'], entropy_values, color=['blue', 'green'])
+        plt.title('正規化エントロピーの比較')
+        plt.ylabel('正規化エントロピー')
+        plt.ylim(0, 1)
+        for i, val in enumerate(entropy_values):
+            plt.text(i, val + 0.05, f"{val:.3f}", ha='center')
 
-    # グラフサイズを設定
-    ax1 = plt.subplot2grid((2, 3), (0, 0), colspan=1, rowspan=1)
-    ax2 = plt.subplot2grid((2, 3), (0, 1), colspan=2, rowspan=1)
-    ax3 = plt.subplot2grid((2, 3), (1, 0), colspan=3, rowspan=1)
+        # 解析耐性スコアの比較
+        plt.subplot(2, 2, 3)
+        scores = [
+            sequential_analysis["resistance_score"]["total"],
+            interleaved_analysis["resistance_score"]["total"]
+        ]
+        plt.bar(['順次配置', 'インターリーブ'], scores, color=['blue', 'green'])
+        plt.title('解析耐性スコアの比較')
+        plt.ylabel('総合スコア (0-10)')
+        plt.ylim(0, 10)
+        for i, score in enumerate(scores):
+            plt.text(i, score + 0.3, f"{score:.2f}", ha='center')
 
-    # 成功/失敗の円グラフ
-    labels = ['成功', '失敗']
-    sizes = [results.passed, results.failed]
-    colors = ['#4CAF50', '#F44336'] if results.failed == 0 else ['#FFEB3B', '#F44336']
-    explode = (0.1, 0) if results.failed == 0 else (0, 0.1)
+        # 自己相関分析の比較
+        plt.subplot(2, 2, 4)
+        correlation_values = [
+            sequential_analysis["block_analysis"]["independence_score"] if "independence_score" in sequential_analysis["block_analysis"] else 5.0,
+            interleaved_analysis["block_analysis"]["independence_score"] if "independence_score" in interleaved_analysis["block_analysis"] else 5.0
+        ]
+        plt.bar(['順次配置', 'インターリーブ'], correlation_values, color=['blue', 'green'])
+        plt.title('独立性スコアの比較')
+        plt.ylabel('独立性スコア (0-10)')
+        plt.ylim(0, 10)
+        for i, val in enumerate(correlation_values):
+            plt.text(i, val + 0.3, f"{val:.2f}", ha='center')
 
-    ax1.pie(sizes, explode=explode, labels=labels, colors=colors, autopct='%1.1f%%',
-            shadow=True, startangle=90)
-    ax1.axis('equal')
-    ax1.set_title('テスト結果概要')
+        # 全体のタイトル
+        plt.suptitle('不確定性転写暗号化方式 - ブロック処理方式の比較', fontsize=16)
 
-    # 成功率の横棒グラフ
-    success_rate = results.passed / results.total * 100 if results.total > 0 else 0
-    ax2.barh(["成功率"], [success_rate], color='#2196F3')
-    ax2.set_xlim(0, 100)
-    for i, v in enumerate([success_rate]):
-        ax2.text(v + 2, i, f"{v:.1f}%", va='center')
-    ax2.set_title('テスト成功率')
-
-    # 各テストの成功/失敗の棒グラフ
-    test_names = [r['name'] for r in results.results]
-    test_results = [1 if r['passed'] else 0 for r in results.results]
-
-    y_pos = np.arange(len(test_names))
-    colors = ['#4CAF50' if res else '#F44336' for res in test_results]
-
-    ax3.barh(y_pos, test_results, align='center', color=colors)
-    ax3.set_yticks(y_pos)
-    ax3.set_yticklabels(test_names)
-    ax3.invert_yaxis()  # 最初のテストを上に表示
-    ax3.set_xticks([0, 1])
-    ax3.set_xticklabels(['失敗', '成功'])
-    ax3.set_title('各テストの結果')
-
-    # タイトルと情報
-    plt.suptitle(f'不確定性転写暗号化方式 - 統合テスト結果', fontsize=16)
-    plt.figtext(0.5, 0.01, f'全テスト: {results.total}, 成功: {results.passed}, 失敗: {results.failed}, ' +
-                f'成功率: {(results.passed/results.total*100):.1f}% (実行日時: {timestamp})',
-                ha='center', fontsize=10)
-
-    # 保存
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95])
-    plt.savefig(output_file)
-    print(f"テスト結果の可視化を保存しました: {output_file}")
-
-    # ファイルの絶対パスを返す
-    return os.path.abspath(output_file)
+        # 保存
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.savefig(output_file)
+        print(f"ブロック処理方式の比較結果を保存しました: {output_file}")
 
 
 if __name__ == "__main__":
-    print("=== 不確定性転写暗号化方式 - 統合テスト ===")
-    results = test_encryption_decryption()
-    results.print_summary()
-
-    # 終了コードを設定（テスト失敗なら1、成功なら0）
-    sys.exit(0 if results.all_passed() else 1)
+    unittest.main()

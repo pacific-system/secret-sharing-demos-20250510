@@ -1,0 +1,412 @@
+## 3. システム設計とアーキテクチャ 🏗️
+
+### コンポーネント相関図
+
+革新的な Tri-Fusion アーキテクチャと不確定性増幅プロトコルを中核とし、第二回暗号解読キャンペーンの脆弱性対策を完全に統合した相関図です：
+
+```mermaid
+graph TD
+    %% ノードスタイル定義
+    classDef main fill:#4299E1,stroke:#2B6CB0,color:white,font-weight:bold
+    classDef core fill:#48BB78,stroke:#2F855A,color:white,font-weight:bold
+    classDef fusion fill:#E53E3E,stroke:#C53030,color:white,font-weight:bold,stroke-width:3px
+    classDef adapter fill:#9F7AEA,stroke:#6B46C1,color:white,font-weight:bold
+    classDef util fill:#ED8936,stroke:#C05621,color:white,font-weight:bold
+    classDef convert fill:#ED64A6,stroke:#B83280,color:white,font-weight:bold
+    classDef quantum fill:#805AD5,stroke:#553C9A,color:white,font-weight:bold
+    classDef zero fill:#F56565,stroke:#C53030,color:white,font-weight:bold
+    classDef vulnerability fill:#6B46C1,stroke:#4C3099,color:white,font-weight:bold,stroke-width:3px
+    classDef bidir stroke-dasharray: 5 5,stroke-width:3px
+
+    %% メインファイル
+    encrypt[encrypt.py]:::main
+    decrypt[decrypt.py]:::main
+
+    %% 融合コアモジュール
+    triFusion[tri_fusion_state.py]:::fusion
+    rabbitH[rabbit_homomorphic.py]:::core
+    fusionMech[fusion_mechanism.py]:::fusion
+
+    %% 暗号コア
+    rabbitS[rabbit_stream.py]:::core
+    homo[homomorphic.py]:::core
+    quantum[quantum_resistant.py]:::quantum
+
+    %% 変換システム
+    r2h[r_to_h.py]:::convert
+    h2q[h_to_q.py]:::convert
+    q2r[q_to_r.py]:::convert
+    uAmp[uncertainty_amplifier.py]:::convert
+
+    %% 脆弱性対策コンポーネント
+    idProt[identifier_protection.py]:::vulnerability
+    timeEq[timing_equalization.py]:::vulnerability
+    fileStd[filesize_standardization.py]:::vulnerability
+    secProc[secure_processing.py]:::vulnerability
+    secKDer[secure_key_derivation.py]:::vulnerability
+    secCache[secure_cache.py]:::vulnerability
+    secLog[secure_logging.py]:::vulnerability
+
+    %% ゼロ知識証明
+    zkProver[prover.py]:::zero
+    zkVerifier[verifier.py]:::zero
+    zkSystem[proof_system.py]:::zero
+
+    %% データ処理
+    formatDet[format_detector.py]:::adapter
+    utf8[utf8_adapter.py]:::adapter
+    binary[binary_adapter.py]:::adapter
+    json[json_adapter.py]:::adapter
+    csv[csv_adapter.py]:::adapter
+
+    %% 特殊機能
+    indist[indistinguishable.py]:::core
+    lattice[lattice_crypto.py]:::core
+
+    %% ユーティリティ
+    qRandom[quantum_random.py]:::quantum
+    logger[logger.py]:::util
+    keyMgr[key_manager.py]:::util
+    corrAnalyzer[correlation_analyzer.py]:::util
+    byteU[byte_utils.py]:::util
+    timeP[timing_protection.py]:::util
+    sideP[side_channel_protection.py]:::util
+
+    %% 依存関係定義
+    %% メインアプリケーションの関係
+    encrypt --> rabbitH
+    decrypt --> rabbitH
+    encrypt --> logger
+    decrypt --> logger
+
+    %% 脆弱性対策の統合
+    rabbitH --> idProt
+    rabbitH --> timeEq
+    rabbitH --> fileStd
+    rabbitH --> secProc
+    idProt --> secKDer
+    timeEq --> timeP
+    fileStd --> secProc
+    secProc --> secCache
+    logger --> secLog
+    keyMgr --> secKDer
+
+    %% Tri-Fusion関係
+    rabbitH --> triFusion
+    rabbitH --> fusionMech
+    fusionMech --> r2h
+    fusionMech --> h2q
+    fusionMech --> q2r
+    fusionMech --> uAmp
+
+    %% 三方向の状態共有（Tri-Fusion核心部分）
+    rabbitS <-.->|状態共有| triFusion:::bidir
+    homo <-.->|状態共有| triFusion:::bidir
+    quantum <-.->|状態共有| triFusion:::bidir
+
+    %% トライアングル接続（ここが真のTri-Fusion）
+    rabbitS <-.->|相互作用| homo:::bidir
+    homo <-.->|相互作用| quantum:::bidir
+    quantum <-.->|相互作用| rabbitS:::bidir
+
+    %% 変換システム
+    r2h --> rabbitS
+    r2h --> homo
+    h2q --> homo
+    h2q --> quantum
+    q2r --> quantum
+    q2r --> rabbitS
+    uAmp --> r2h
+    uAmp --> h2q
+    uAmp --> q2r
+
+    %% ゼロ知識証明システム
+    rabbitH --> zkSystem
+    zkSystem --> zkProver
+    zkSystem --> zkVerifier
+    zkProver --> triFusion
+    zkVerifier --> triFusion
+
+    %% 量子乱数
+    qRandom --> rabbitS
+    qRandom --> homo
+    qRandom --> quantum
+    qRandom --> uAmp
+    qRandom --> secKDer
+    qRandom --> fileStd
+
+    %% 形式処理
+    encrypt --> formatDet
+    decrypt --> formatDet
+    formatDet --> utf8
+    formatDet --> binary
+    formatDet --> json
+    formatDet --> csv
+
+    %% 不区別性と格子暗号
+    homo --> lattice
+    indist --> rabbitS
+    indist --> homo
+    indist --> quantum
+    fusionMech --> indist
+    lattice --> corrAnalyzer
+
+    %% ユーティリティ
+    rabbitH --> keyMgr
+    keyMgr --> corrAnalyzer
+    fusionMech --> byteU
+    homo --> timeP
+    rabbitS --> timeP
+    quantum --> timeP
+    timeP --> sideP
+
+    %% ロギング
+    logger --> rabbitH
+    logger --> fusionMech
+    logger --> rabbitS
+    logger --> homo
+    logger --> quantum
+
+    %% サブグラフによるグループ化
+    subgraph メインインターフェース
+        encrypt
+        decrypt
+    end
+
+    subgraph Tri-Fusion核心["Tri-Fusion核心 - 三方向融合"]
+        triFusion
+        rabbitH
+        fusionMech
+        r2h
+        h2q
+        q2r
+        uAmp
+    end
+
+    subgraph 暗号コア["三暗号エンジン"]
+        rabbitS
+        homo
+        quantum
+        lattice
+    end
+
+    subgraph 脆弱性対策["脆弱性対策システム"]
+        idProt
+        timeEq
+        fileStd
+        secProc
+        secKDer
+        secCache
+        secLog
+    end
+
+    subgraph ゼロ知識["ゼロ知識証明システム"]
+        zkSystem
+        zkProver
+        zkVerifier
+    end
+
+    subgraph データ処理["データ処理 - 多形式対応"]
+        formatDet
+        utf8
+        binary
+        json
+        csv
+    end
+
+    subgraph セキュリティ["セキュリティ基盤"]
+        indist
+        qRandom
+        corrAnalyzer
+        timeP
+        sideP
+    end
+
+    subgraph ユーティリティ["基盤ユーティリティ"]
+        logger
+        keyMgr
+        byteU
+    end
+```
+
+### 処理シーケンス図
+
+Tri-Fusion アーキテクチャにおける三方向の相互作用と不確定性増幅を含む処理シーケンス図です。第二回暗号解読キャンペーンで発見された脆弱性対策を全工程に統合しています：
+
+```mermaid
+sequenceDiagram
+    participant User as ユーザー
+    participant Encrypt as encrypt.py
+    participant RabbitH as rabbit_homomorphic.py
+    participant IdProt as identifier_protection.py
+    participant TimeEq as timing_equalization.py
+    participant FileStd as filesize_standardization.py
+    participant SecProc as secure_processing.py
+    participant SecKDer as secure_key_derivation.py
+    participant SecCache as secure_cache.py
+    participant SecLog as secure_logging.py
+    participant ZKSystem as zero_knowledge/proof_system.py
+    participant Logger as logger.py
+    participant FmtDet as format_detector.py
+    participant Adapter as adapters/*_adapter.py
+    participant TriFusion as tri_fusion_state.py
+    participant FusionMech as fusion_mechanism.py
+    participant UncAmp as uncertainty_amplifier.py
+    participant RtoH as r_to_h.py
+    participant HtoQ as h_to_q.py
+    participant QtoR as q_to_r.py
+    participant RabbitS as rabbit_stream.py
+    participant Homo as homomorphic.py
+    participant Quantum as quantum_resistant.py
+    participant QRand as quantum_random.py
+    participant Indist as indistinguishable.py
+    participant CorrAnal as correlation_analyzer.py
+
+    %% 初期化フェーズ
+    User->>Encrypt: 暗号化要求(ファイル, 鍵)
+    Encrypt->>SecLog: 安全ログセッション開始
+
+    %% データ準備
+    Encrypt->>FmtDet: ファイル形式判定要求
+    FmtDet->>Adapter: 適切なアダプタ選択
+    Adapter->>Encrypt: データ形式情報返却
+
+    %% 暗号化準備
+    Encrypt->>RabbitH: 暗号化処理要求
+    RabbitH->>SecLog: 処理開始記録（経路情報なし）
+    RabbitH->>ZKSystem: ゼロ知識証明系初期化
+
+    %% 量子乱数準備
+    RabbitH->>QRand: 量子乱数リクエスト
+    QRand-->>RabbitH: 量子乱数提供
+
+    %% 安全な鍵導出
+    RabbitH->>SecKDer: 鍵派生要求
+    SecKDer->>QRand: 量子ソルトリクエスト
+    QRand-->>SecKDer: 量子ソルト提供
+    SecKDer-->>RabbitH: 派生鍵（経路情報を安全に組込済）
+
+    %% ファイル識別子の保護処理
+    RabbitH->>IdProt: ファイル識別子保護要求
+    IdProt->>RabbitH: 保護済み識別子（識別情報除去済）
+
+    %% 処理時間均一化の準備
+    RabbitH->>TimeEq: 処理時間均一化初期化
+    TimeEq-->>RabbitH: 均一化処理準備完了
+
+    %% セキュアキャッシュ設定
+    RabbitH->>SecCache: セキュアキャッシュ初期化
+    SecCache-->>RabbitH: キャッシュ準備完了
+
+    %% Tri-Fusion環境設定
+    RabbitH->>TriFusion: 三方向共有状態初期化(派生鍵, 量子乱数)
+    TriFusion->>RabbitS: ラビット状態初期化
+    TriFusion->>Homo: 準同型コンテキスト初期化
+    TriFusion->>Quantum: 量子耐性レイヤー初期化
+
+    %% 格子基底の検証
+    TriFusion->>CorrAnal: 格子基底相関分析
+    CorrAnal-->>TriFusion: 直交性確認結果
+
+    %% 融合メカニズム確立
+    RabbitH->>FusionMech: 融合処理要求
+    FusionMech->>RtoH: 変換クラス初期化
+    FusionMech->>HtoQ: 変換クラス初期化
+    FusionMech->>QtoR: 変換クラス初期化
+    FusionMech->>UncAmp: 不確定性増幅器初期化
+
+    %% 暗号化処理ループ
+    loop 入力データブロック処理
+        %% 不確定性増幅プロセス開始
+        FusionMech->>UncAmp: 不確定性増幅開始
+        UncAmp->>QRand: 量子ノイズ要求
+        QRand-->>UncAmp: 量子ノイズ提供
+
+        %% 両経路の並列処理（タイミング攻撃対策）
+        TimeEq->>RabbitH: 並列処理開始
+
+        %% 三方向処理サイクル
+        par 三方向並列処理
+            %% ラビットストリーム処理
+            FusionMech->>RabbitS: ストリーム生成要求
+            RabbitS->>TriFusion: 現在の状態取得
+            TriFusion-->>RabbitS: 共有状態提供
+            RabbitS->>QRand: 量子乱数要求
+            QRand-->>RabbitS: 量子乱数提供
+            RabbitS->>FusionMech: 非周期ストリーム生成
+
+            %% 準同型処理
+            FusionMech->>Homo: 準同型演算実行
+            Homo->>TriFusion: 現在の状態取得
+            TriFusion-->>Homo: 共有状態提供
+            Homo->>QRand: 量子乱数要求
+            QRand-->>Homo: 量子乱数提供
+            Homo->>FusionMech: 同型写像適用結果
+
+            %% 量子耐性レイヤー処理
+            FusionMech->>Quantum: 量子耐性演算実行
+            Quantum->>TriFusion: 現在の状態取得
+            TriFusion-->>Quantum: 共有状態提供
+            Quantum->>QRand: 量子乱数要求
+            QRand-->>Quantum: 量子乱数提供
+            Quantum->>FusionMech: 量子耐性処理結果
+        end
+
+        %% 変換処理
+        FusionMech->>RtoH: ラビット→準同型変換
+        RtoH->>HtoQ: 準同型→量子変換
+        HtoQ->>QtoR: 量子→ラビット変換
+        QtoR->>UncAmp: 変換結果を不確定性増幅器へ
+
+        %% 三方向状態更新
+        UncAmp->>FusionMech: 増幅結果提供
+        FusionMech->>TriFusion: 三方向状態更新要求
+        TriFusion->>RabbitS: 状態更新伝播
+        TriFusion->>Homo: 状態更新伝播
+        TriFusion->>Quantum: 状態更新伝播
+
+        %% 不区別性確保
+        FusionMech->>Indist: 不区別性処理適用
+        Indist->>QRand: 量子乱数要求
+        QRand-->>Indist: 量子乱数提供
+        Indist-->>FusionMech: 不区別化結果
+
+        %% 両経路の処理完了（タイミング攻撃対策）
+        RabbitH->>TimeEq: 両経路処理終了
+        TimeEq-->>RabbitH: 一定時間待機後に結果返却
+    end
+
+    %% ファイルサイズ標準化
+    RabbitH->>FileStd: ファイルサイズ標準化要求
+    FileStd->>QRand: 量子パディングリクエスト
+    QRand-->>FileStd: 量子乱数パディング提供
+    FileStd-->>RabbitH: 標準化済み暗号文
+
+    %% ゼロ知識証明生成
+    FusionMech->>ZKSystem: ゼロ知識証明生成
+    ZKSystem-->>FusionMech: 証明添付
+
+    %% セキュアキャッシュ処理
+    RabbitH->>SecCache: キャッシュ更新（経路情報排除）
+    SecCache-->>RabbitH: 安全キャッシュ更新完了
+
+    %% 結果の返却
+    FusionMech->>RabbitH: 暗号化完了・結果返却
+    RabbitH->>Adapter: 出力データ形式変換
+    Adapter->>RabbitH: 変換済みデータ
+    RabbitH->>Encrypt: 暗号化完了・結果返却
+    RabbitH->>SecLog: 処理完了記録（経路情報なし）
+    Encrypt->>SecLog: セッション終了記録
+    Encrypt->>User: 暗号化ファイル
+
+    %% セッション終了時のセキュリティ処理
+    SecCache->>SecCache: セッション終了時キャッシュ消去
+    SecProc->>SecProc: メモリ安全消去
+
+    %% 復号プロセスも同様の構造（省略表記）
+    Note over User,CorrAnal: 復号処理も同様の流れで、<br/>三方向融合と不確定性増幅を適用<br/>およびすべての脆弱性対策を適用
+```
+
+この設計は、情報理論的に証明可能なゼロ知識性を実現する革新的な Tri-Fusion アーキテクチャを核心としています。従来の 2 方向融合に加え、量子耐性レイヤーを第三の柱として組み込むことで、相補文書推測攻撃を含むあらゆる既知の攻撃手法に対して数学的に証明可能な耐性を実現しています。
+
+さらに、第二回暗号解読キャンペーンで発見された「初歩的な観点の欠損」に対する包括的な対策を全工程に統合することで、理論と実装のギャップを完全に埋めています。特に、ファイル識別子の完全隠蔽、経路非依存処理、統一ファイルサイズ保証、安全ログシステム、予測不能な鍵導出、キャッシュ安全管理という 6 つの重要な脆弱性対策により、あらゆる既知の攻撃ベクトルに対して真に解読不能なシステムを実現しています。

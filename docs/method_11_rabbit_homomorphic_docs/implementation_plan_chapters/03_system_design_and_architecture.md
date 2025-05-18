@@ -25,7 +25,7 @@ graph TD
     decrypt[decrypt.py]:::main
 
     %% メインフレーム - より強調
-    rabbitH[rabbit_homomorphic.py(メインフレーム)]:::mainframe
+    rabbitH[rabbit_homomorphic.py]:::mainframe
 
     %% 融合コアモジュール
     triFusion[tri_fusion_state.py]:::fusion
@@ -37,10 +37,13 @@ graph TD
     quantum[quantum_resistant.py]:::quantum
 
     %% 変換システム - オプショナル
-    r2h[r_to_h.py]:::convert:::optional
-    h2q[h_to_q.py]:::convert:::optional
-    q2r[q_to_r.py]:::convert:::optional
-    uAmp[uncertainty_amplifier.py]:::convert:::optional
+    r2h[r_to_h.py]:::convert
+    h2q[h_to_q.py]:::convert
+    q2r[q_to_r.py]:::convert
+    uAmp[uncertainty_amplifier.py]:::convert
+
+    %% クラスの適用
+    class r2h,h2q,q2r,uAmp optional
 
     %% 脆弱性対策コンポーネント - 必須
     idProt[identifier_protection.py]:::vulnerability
@@ -52,9 +55,12 @@ graph TD
     secLog[secure_logging.py]:::vulnerability
 
     %% ゼロ知識証明 - オプショナル
-    zkProver[prover.py]:::zero:::optional
-    zkVerifier[verifier.py]:::zero:::optional
-    zkSystem[proof_system.py]:::zero:::optional
+    zkProver[prover.py]:::zero
+    zkVerifier[verifier.py]:::zero
+    zkSystem[proof_system.py]:::zero
+
+    %% クラスの適用
+    class zkProver,zkVerifier,zkSystem optional
 
     %% データ処理
     formatDet[format_detector.py]:::adapter
@@ -65,13 +71,13 @@ graph TD
 
     %% 特殊機能 - 一部オプショナル
     indist[indistinguishable.py]:::core
-    lattice[lattice_crypto.py]:::core:::optional
+    lattice[lattice_crypto.py]:::core
 
     %% ユーティリティ
     qRandom[quantum_random.py]:::quantum
     logger[logger.py]:::util
     keyMgr[key_manager.py]:::util
-    corrAnalyzer[correlation_analyzer.py]:::util:::optional
+    corrAnalyzer[correlation_analyzer.py]:::util
     byteU[byte_utils.py]:::util
     timeP[timing_protection.py]:::util
     sideP[side_channel_protection.py]:::util
@@ -241,6 +247,10 @@ graph TD
         keyMgr
         byteU
     end
+
+    %% クラスの適用
+    class lattice optional
+    class corrAnalyzer optional
 ```
 
 ### 鍵等価性の原則

@@ -25,7 +25,7 @@ graph TD
     decrypt[decrypt.py]:::main
 
     %% メインフレーム - より強調
-    rabbitH[rabbit_homomorphic.py\n(メインフレーム)]:::mainframe
+    rabbitH[rabbit_homomorphic.py(メインフレーム)]:::mainframe
 
     %% 融合コアモジュール
     triFusion[tri_fusion_state.py]:::fusion
@@ -251,7 +251,7 @@ Tri-Fusion アーキテクチャにおける処理シーケンス図です。機
 sequenceDiagram
     participant User as ユーザー
     participant Encrypt as encrypt.py
-    participant RabbitH as rabbit_homomorphic.py<br/>(メインフレーム)
+    participant RabbitH as rabbit_homomorphic.py(メインフレーム)
     participant IdProt as identifier_protection.py
     participant TimeEq as timing_equalization.py
     participant FileStd as filesize_standardization.py

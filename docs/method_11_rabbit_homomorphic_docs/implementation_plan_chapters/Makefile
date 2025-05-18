@@ -7,9 +7,10 @@ IMPLEMENTATION_CHAPTERS := 01_overview_and_profile.md \
 	02_directory_structure_and_deliverables.md \
 	03_system_design_and_architecture.md \
 	04_sequence_diagram.md \
-	05_implementation_details.md \
-	06_quality_and_security.md \
-	07_implementation_strategy_optimization.md
+	05_implementation_principles.md \
+	06_implementation_strategy.md \
+	07_implementation_schedule.md \
+	08_quality_assurance.md
 
 # ターゲットファイル
 IMPLEMENTATION_TARGET := ../implementation_plan.md

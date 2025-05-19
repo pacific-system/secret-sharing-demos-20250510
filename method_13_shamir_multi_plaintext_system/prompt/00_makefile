@@ -1,0 +1,10 @@
+.PHONY: all clean
+
+all: prompt.md
+
+prompt.md: 01_persona.md 02_initialization.md 03_encryption.md 04_decryption.md 05_update.md 06_testing.md
+	cat 01_persona.md 02_initialization.md 03_encryption.md 04_decryption.md 05_update.md 06_testing.md > prompt.md
+	@echo "プロンプトが生成されました: prompt.md"
+
+clean:
+	rm -f prompt.md

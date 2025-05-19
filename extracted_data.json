@@ -1,0 +1,45 @@
+{
+  "format": "homomorphic_masked",
+  "version": "1.1",
+  "algorithm": "paillier",
+  "true_filename": "t.text",
+  "false_filename": "f.text",
+  "true_data_type": "text",
+  "false_data_type": "text",
+  "true_size": 170,
+  "false_size": 170,
+  "true_original_size": 300,
+  "false_original_size": 300,
+  "chunk_size": 256,
+  "mask": {
+    "true_mask": {
+      "type": "linear",
+      "coefficient": 138746714,
+      "constant": 384984022
+    },
+    "false_mask": {
+      "type": "linear",
+      "coefficient": 508358055,
+      "constant": 2623450159
+    },
+    "timestamp": 1747464292
+  },
+  "true_chunks_count": 1,
+  "false_chunks_count": 1,
+  "metadata": {
+    "true": {
+      "size": 300,
+      "processed_size": 170,
+      "data_type": "text",
+      "filename": "t.text",
+      "content_hash": "088f5b0bbab0b70a3b992763d4138ad25630fff6853eab15e63602a513139d6a"
+    },
+    "false": {
+      "size": 300,
+      "processed_size": 170,
+      "data_type": "text",
+      "filename": "f.text",
+      "content_hash": "b55cd667cee3c8d3b7ba07181912dd974f62b5b9a13a35198a052dcb960bccba"
+    }
+  }
+}

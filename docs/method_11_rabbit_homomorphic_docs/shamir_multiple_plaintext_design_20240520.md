@@ -333,9 +333,11 @@ def encrypt(json_doc, password, share_ids, unassigned_ids):
    - 選択されたシェアを用いてシャミア秘密分散法で秘密を復元
    - チャンクを結合して元のデータを復元
 
-4. **後処理**：
-   - UTF-8 でデコード
-   - JSON 解析
+4. **後処理（多段デコード）**：
+   - 圧縮データの解凍
+   - Base64 デコード
+   - Latin-1 から UTF-8 へのエンコード変換
+   - UTF-8 テキストから JSON への解析
 
 ```python
 def decrypt(encrypted_file, share_ids, password):
@@ -408,7 +410,11 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
 
 1. **一時作業領域の確保**：
 
-   - 更新用の一時的なシェアセットを作成
+   - 更新用の一時ファイルを別途生成
+   - 処理開始時に既存の一時ファイルを検出・削除（前回処理の異常終了による残存物）
+   - 処理完了時に全ての一時ファイルを確実に削除
+   - 例外発生時にも一時ファイルが残らないよう終了ハンドラを設定
+   - ファイル名にはランダムな要素を含め、予測不可能性を確保
 
 2. **新シェアの生成**：
 
@@ -426,60 +432,98 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
 ```python
 def update(encrypted_file, json_doc, password, share_ids):
     """文書の更新"""
-    # 一時作業領域を確保
-    temp_shares = []
+    try:
+        # 処理開始時の一時ファイルクリーンアップ
+        temp_dir = os.path.join(os.getcwd(), "temp")
+        cleanup_temp_files(temp_dir, "update_*.tmp")
 
-    # メタデータ取得
-    metadata = encrypted_file['metadata']
-    threshold = metadata['threshold']
-    salt = metadata['salt']  # どちらのソルトを使うかはパスワードに依存
+        # 一時ファイル名をランダムに生成
+        temp_file_id = generate_random_id()
+        temp_file_path = os.path.join(temp_dir, f"update_{temp_file_id}.tmp")
+        os.makedirs(temp_dir, exist_ok=True)
 
-    # 新しいシェア生成
-    data = json.dumps(json_doc).encode('utf-8')
-    chunks = split_into_chunks(data)
+        # 一時作業領域を確保
+        temp_shares = []
 
-    for i, chunk in enumerate(chunks):
-        secret = int.from_bytes(chunk, 'big')
-        chunk_shares = generate_chunk_shares(secret, threshold, share_ids)
-        for share_id, value in chunk_shares:
-            temp_shares.append({
-                'chunk_index': i,
-                'document': 'Unknown',  # 区別しない
-                'share_id': share_id,
-                'value': value
-            })
+        # メタデータ取得
+        metadata = encrypted_file['metadata']
+        threshold = metadata['threshold']
+        salt = metadata['salt']  # どちらのソルトを使うかはパスワードに依存
 
-    # 検証（実際の実装では評価なしでプロセスを進める）
-    # 検証後に古いシェアと置き換え
+        # 新しいシェア生成
+        data = json.dumps(json_doc).encode('utf-8')
 
-    # 対象シェアIDの範囲内のシェアのみを更新
-    updated_shares = []
-    for share in encrypted_file['shares']:
-        if share['share_id'] in share_ids:
-            # 対象範囲内のシェアは新しいものに置き換え
-            # （ただし、実際には古いシェアを残さない）
-            pass
-        else:
-            # 対象範囲外のシェアはそのまま保持
-            updated_shares.append(share)
+        # 多段エンコード適用
+        data_latin = data.decode('utf-8').encode('latin-1')
+        data_base64 = base64.b64encode(data_latin)
+        # データを圧縮
+        compressed_data = compress_data(data_base64)
 
-    # 新しいシェアを追加
-    updated_shares.extend(temp_shares)
+        chunks = split_into_chunks(compressed_data)
 
-    # メタデータ更新
-    updated_metadata = metadata.copy()
-    if updated_shares[0]['document'] == 'A':
-        updated_metadata['total_chunks_a'] = len(chunks)
-    else:
-        updated_metadata['total_chunks_b'] = len(chunks)
+        for i, chunk in enumerate(chunks):
+            secret = int.from_bytes(chunk, 'big')
+            chunk_shares = generate_chunk_shares(secret, threshold, share_ids)
+            for share_id, value in chunk_shares:
+                temp_shares.append({
+                    'chunk_index': i,
+                    'share_id': share_id,
+                    'value': value
+                })
 
-    # 更新された暗号化ファイルの生成
-    updated_file = {
-        'metadata': updated_metadata,
-        'shares': updated_shares
-    }
+        # 一時ファイルに中間状態を保存
+        with open(temp_file_path, 'w') as f:
+            json.dump(temp_shares, f)
 
-    return updated_file
+        # 対象シェアIDの範囲内のシェアのみを更新
+        updated_shares = []
+        for share in encrypted_file['shares']:
+            if share['share_id'] in share_ids:
+                # 対象範囲内のシェアは新しいものに置き換え
+                # （ただし、実際には古いシェアを残さない）
+                pass
+            else:
+                # 対象範囲外のシェアはそのまま保持
+                updated_shares.append(share)
+
+        # 新しいシェアを追加
+        updated_shares.extend(temp_shares)
+
+        # メタデータ更新
+        updated_metadata = metadata.copy()
+        updated_metadata['total_chunks'] = len(chunks)
+
+        # 更新された暗号化ファイルの生成
+        updated_file = {
+            'metadata': updated_metadata,
+            'shares': updated_shares
+        }
+
+        # 処理成功時は正常に一時ファイルを削除
+        os.remove(temp_file_path)
+        return updated_file
+
+    except Exception as e:
+        # 例外発生時も一時ファイルを確実に削除
+        if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
+        raise e  # 例外を再送出
+    finally:
+        # 最終的なクリーンアップ
+        if 'temp_dir' in locals() and os.path.exists(temp_dir):
+            cleanup_temp_files(temp_dir, "update_*.tmp")
+
+def cleanup_temp_files(directory, pattern):
+    """指定ディレクトリ内の一時ファイルをパターンに基づいて削除"""
+    if os.path.exists(directory):
+        for filename in os.listdir(directory):
+            if fnmatch.fnmatch(filename, pattern):
+                file_path = os.path.join(directory, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                except Exception as e:
+                    print(f"一時ファイル削除中にエラー: {e}")
 ```
 
 ## 4. セキュリティ分析
@@ -741,116 +785,6 @@ function safeJsonParse(data) {
 
 1. **初期化処理**：
 
-```javascript
-function initializeShareIdSpace(totalSpace = 10000) {
-  const assignments = {};
-  const aCount = Math.floor(totalSpace * 0.35); // Aユーザー割当（35%）
-  const bCount = Math.floor(totalSpace * 0.35); // Bユーザー割当（35%）
-  // 残りは未割当
-
-  // すべてのIDを配列化
-  const allIds = Array.from({ length: totalSpace }, (_, i) => i + 1);
-
-  // シャッフル（Fisher-Yates）
-  for (let i = allIds.length - 1; i > 0; i--) {
-    const j = Math.floor((crypto.randomBytes(4).readUInt32BE(0) / 0x100000000) * (i + 1));
-    [allIds[i], allIds[j]] = [allIds[j], allIds[i]];
-  }
-
-  // 割り当て
-  for (let i = 0; i < aCount; i++) {
-    assignments[allIds[i]] = 'A';
-  }
-
-  for (let i = 0; i < bCount; i++) {
-    assignments[allIds[aCount + i]] = 'B';
-  }
-
-  for (let i = aCount + bCount; i < totalSpace; i++) {
-    assignments[allIds[i]] = 'U'; // 未割当
-  }
-
-  return {
-    assignments,
-    aIds: allIds.slice(0, aCount),
-    bIds: allIds.slice(aCount, aCount + bCount)
-  };
-}
 ```
 
-2. **ID 割り当ての検証**：
-
-```javascript
-function validateIdDistribution(assignments) {
-  const blockSize = 100; // 検証ブロックサイズ
-  const totalIds = Object.keys(assignments).length;
-  const blocks = Math.floor(totalIds / blockSize);
-
-  // 各ブロックでの分布をチェック
-  for (let b = 0; b < blocks; b++) {
-    const blockStart = b * blockSize;
-    const blockAssignments = Object.values(assignments).slice(blockStart, blockStart + blockSize);
-
-    const aCounts = blockAssignments.filter((a) => a === 'A').length;
-    const bCounts = blockAssignments.filter((a) => a === 'B').length;
-    const uCounts = blockAssignments.filter((a) => a === 'U').length;
-
-    const aRatio = aCounts / blockSize;
-    const bRatio = bCounts / blockSize;
-    const uRatio = uCounts / blockSize;
-
-    // 各グループの割合が許容範囲内か確認
-    if (
-      aRatio < 0.2 ||
-      aRatio > 0.5 ||
-      bRatio < 0.2 ||
-      bRatio > 0.5 ||
-      uRatio < 0.1 ||
-      uRatio > 0.5
-    ) {
-      // このブロックでは分布が偏っている
-      return false;
-    }
-  }
-
-  return true;
-}
 ```
-
-## 7. 参考資料と出典
-
-### 7.1. 学術論文
-
-1. Shamir, A. (1979). "How to share a secret". Communications of the ACM, 22(11), 612-613.
-2. Blakley, G. R. (1979). "Safeguarding cryptographic keys". Proceedings of the National Computer Conference, 48, 313-317.
-3. Krawczyk, H. (1993). "Secret sharing made short". In Annual International Cryptology Conference (pp. 136-146). Springer.
-4. Kaliski, B. (2000). "PKCS #5: Password-Based Cryptography Specification Version 2.0". RFC 2898.
-
-### 7.2. オープンソース実装
-
-1. secrets.js: JavaScript 用シャミア秘密分散ライブラリ
-   https://github.com/grempe/secrets.js
-
-2. SSSS (Shamir's Secret Sharing Scheme): C 言語実装
-   http://point-at-infinity.org/ssss/
-
-3. Vault by HashiCorp: 秘密分散を実装したシークレット管理ツール
-   https://github.com/hashicorp/vault
-
-4. RustySecrets: Rust による秘密分散実装
-   https://github.com/SpinResearch/RustySecrets
-
-### 7.3. 技術文書とリファレンス
-
-1. NIST Special Publication 800-132: パスワードベースの鍵導出関数に関する推奨事項
-2. OWASP Cryptographic Storage Cheat Sheet: 暗号化ストレージのベストプラクティス
-3. Cryptographic Side-Channel Attacks: Timing Attack Prevention Guidelines
-4. Applied Cryptography (Bruce Schneier): 暗号理論と実装のリファレンス
-
-## 8. 結論
-
-本設計書では、シャミア秘密分散法を応用した複数平文復号システムの詳細設計を提供した。核心となる「シェア ID による可能性の限定とパスワードによるマップ生成」という多段 MAP 方式により、単一の暗号化ファイルから異なるパスワードで異なる平文を復号可能なシステムが実現できる。
-
-本設計はケルクホフの原理に厳格に従い、アルゴリズムが完全に公開されてもパスワード（鍵）が秘匿されている限りセキュリティが保たれる。また、直線的処理や条件分岐の排除など、サイドチャネル攻撃に対する耐性も考慮されている。
-
-実装に際しては、本設計書で提示したガイドラインや推奨データ構造、ライブラリを参考にすることで、安全かつ効率的なシステムを構築することが可能である。

@@ -59,15 +59,16 @@ graph TD
 graph TD
     A[シェアID入力] --> B[第1段階MAP生成]
     B --> E[シェア候補の限定]
-    E --> F[候補範囲内でのマッピング]
     C[パスワード入力] --> D[第2段階MAP生成]
+    E --> D
+    E --> F[候補範囲内でのマッピング]
     D --> F
     F --> G[復号用シェア特定]
     G --> H[シャミア秘密分散法による復元]
     H --> I[JSON文書復元]
 ```
 
-※注: 第 2 段階 MAP 生成は第 1 段階で限定されたシェア候補の範囲内に対してのみ適用されます。図で示された矢印の流れは実行順序を示しており、第 1 段階の結果が第 2 段階の入力として使用されることを意味します。
+※注: 第 2 段階 MAP 生成はパスワードと第 1 段階で限定されたシェア候補の両方を入力として受け取ります。図の矢印は依存関係と処理の流れを示しており、第 1 段階の結果が第 2 段階の入力として使用されることを明示しています。
 
 ## 3. 詳細設計
 
@@ -180,14 +181,16 @@ def stage1_map(share_ids):
    - このマップは選択的なシェア識別に使用
 
 ```python
-def stage2_map(password, candidate_shares, salt):
-    """パスワードによる第2段階MAP生成"""
+def stage2_map(password, candidate_ids, salt):
+    """パスワードによる第2段階MAP生成
+    candidate_ids: 第1段階で限定されたシェアIDのセット
+    """
     # パスワードからキーを導出
     key = kdf(password, salt, iterations=100000, length=32)
 
     # キーを用いて各シェアIDに対応するインデックスを生成
     mapping = {}
-    for share_id in candidate_shares:
+    for share_id in candidate_ids:  # 第1段階で限定されたIDのみ処理
         # 決定論的にマッピング値を生成
         h = hmac.new(key, str(share_id).encode(), 'sha256')
         mapping[share_id] = int.from_bytes(h.digest(), 'big')

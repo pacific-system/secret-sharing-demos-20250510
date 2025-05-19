@@ -41,7 +41,7 @@
    - 保存データは全て A/B 区別なく単一のフォーマットで格納（文書の種類を識別する情報を含まない）
 
 ```python
-def encrypt(json_doc, password, share_ids, unassigned_ids):
+def encrypt(json_doc, password, share_token, unassigned_ids):
     """単一JSON文書の暗号化（A/B判定なし）"""
     # データの前処理
     data = json.dumps(json_doc).encode('utf-8')
@@ -233,202 +233,150 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
 4. **古いシェアの破棄**：
    - 更新成功後、古いシェアを確実に破棄
 
-```python
-def update(encrypted_file, json_doc, password, share_ids):
-    """文書の更新"""
-    # 一時ファイル管理のための変数
-    process_uuid = str(uuid.uuid4())
-    temp_dir = os.path.join(os.getcwd(), "temp")
-    temp_file_path = None
-    lock_file_path = None
+### 4.4. 一時ファイル暗号化強度のバランス
 
-    try:
-        # 一時作業ディレクトリの確保
-        os.makedirs(temp_dir, exist_ok=True)
+一時ファイルの暗号化強度は、メインファイルのセキュリティレベルと処理効率のバランスが重要な検討課題である：
 
-        # プロセス固有の一時ファイルパスを生成（UUID付与）
-        temp_file_path = os.path.join(temp_dir, f"update_{process_uuid}.tmp")
-        lock_file_path = os.path.join(temp_dir, f"lock_{process_uuid}.lock")
+1. **暗号化強度の選択肢**：
 
-        # ロックファイル作成（PIDとタイムスタンプを記録）
-        with open(lock_file_path, 'w') as lock_file:
-            lock_info = {
-                'pid': os.getpid(),
-                'timestamp': time.time(),
-                'operation': 'update'
-            }
-            json.dump(lock_info, lock_file)
+   - **最高レベル（メインファイルと同等）**: メインファイルと同じシャミア秘密分散法＋ AES-GCM
+   - **中間レベル**: シャミア秘密分散法を省略し、AES-GCM のみで保護
+   - **最小レベル**: メモリ内処理のみでディスク書き込みを回避
 
-        # 古い一時ファイルのクリーンアップ（完了・タイムアウトしたプロセスのみ）
-        cleanup_stale_temp_files(temp_dir, timeout_seconds=3600)  # 1時間のタイムアウト
+2. **トレードオフ比較**：
 
-        # 一時作業領域を確保
-        temp_shares = []
+   | セキュリティレベル | 処理速度 | メモリ使用量 | ディスク使用量 | 実装複雑性 |
+   | ------------------ | -------- | ------------ | -------------- | ---------- |
+   | 最高レベル         | 低       | 中           | 大             | 高         |
+   | 中間レベル         | 中       | 中           | 中             | 中         |
+   | 最小レベル         | 高       | 大           | なし           | 低         |
 
-        # メタデータ取得
-        metadata = encrypted_file['metadata']
-        threshold = metadata['threshold']
-        salt = metadata['salt']
+3. **推奨アプローチ**：
 
-        # 新しいシェア生成
-        data = json.dumps(json_doc).encode('utf-8')
+   - 小～中サイズのファイル（～ 10MB）: **最小レベル**（メモリ内処理）
+   - 大きいファイル（10MB ～ 100MB）: **中間レベル**（AES-GCM のみ）
+   - 巨大ファイル（100MB ～）: **最高レベル**（シャミア＋ AES-GCM）
 
-        # 多段エンコード適用
-        data_latin = data.decode('utf-8').encode('latin-1')
-        data_base64 = base64.b64encode(data_latin)
-        # データを圧縮
-        compressed_data = compress_data(data_base64)
+4. **適応型実装の例**：
 
-        chunks = split_into_chunks(compressed_data)
+   ```python
+   def secure_temp_storage(data, password, file_size):
+       """ファイルサイズに応じた適応型一時ストレージ"""
+       if file_size < 10 * 1024 * 1024:  # 10MB未満
+           # メモリ内処理のみ
+           return MemoryTempStorage(data, password)
+       elif file_size < 100 * 1024 * 1024:  # 10MB～100MB
+           # AES-GCMのみで暗号化
+           return AesGcmTempStorage(data, password)
+       else:  # 100MB以上
+           # シャミア法+AES-GCMで完全保護
+           return ShamirAesGcmTempStorage(data, password)
+   ```
 
-        for i, chunk in enumerate(chunks):
-            secret = int.from_bytes(chunk, 'big')
-            chunk_shares = generate_chunk_shares(secret, threshold, share_ids)
-            for share_id, value in chunk_shares:
-                temp_shares.append({
-                    'chunk_index': i,
-                    'share_id': share_id,
-                    'value': value
-                })
+5. **その他の考慮事項**:
+   - 処理タイムアウトの実装（長時間実行による露出リスク低減）
+   - 一時ファイルのバージョン管理（複数プロセスの並行実行対応）
+   - エラー状態の保存（停電などでの復旧可能性）
 
-        # 一時ファイルに中間状態をシャミア秘密分散法で暗号化して保存
-        # パスワードから一時ファイル用のMAPを生成
-        temp_encrypt_salt = generate_salt()
-        temp_file_data = {
-            'shares': temp_shares,
-            'salt': temp_encrypt_salt
-        }
+### 4.5. WAL ログ方式と競合検出
 
-        # 一時データをJSONに変換
-        temp_json = json.dumps(temp_file_data)
+データの整合性と安全な更新を保証するため、以下の仕組みを実装する：
 
-        # シャミア秘密分散法で暗号化
-        temp_threshold = 3  # 一時ファイル用の閾値
-        temp_data_chunks = split_into_chunks(temp_json.encode('utf-8'))
+1. **WAL ログ方式の採用**：
 
-        temp_encrypted = {
-            'metadata': {
-                'salt': temp_encrypt_salt,
-                'threshold': temp_threshold,
-                'total_chunks': len(temp_data_chunks)
-            },
-            'shares': []
-        }
+   - 原子的な更新処理を保証し、途中で処理が中断された場合のデータ整合性を確保
+   - 実装例：
 
-        # シェア生成（パスワードからIDを生成して利用）
-        password_hash = hashlib.sha256(password.encode()).digest()
-        temp_share_ids = []
-        for i in range(10):  # 10個のシェアIDを生成
-            id_seed = hashlib.sha256(password_hash + str(i).encode()).digest()
-            temp_share_ids.append(int.from_bytes(id_seed[:4], 'big') % 10000)
+     ```python
+     def atomic_update(encrypted_file, json_doc, password, share_ids):
+         """WALログを使用した原子的な更新処理"""
+         # WALログの作成
+         wal_path = create_wal_file(encrypted_file)
 
-        # 各チャンクをシェア化
-        for i, chunk in enumerate(temp_data_chunks):
-            secret = int.from_bytes(chunk, 'big')
-            chunk_shares = generate_chunk_shares(secret, temp_threshold, temp_share_ids)
-            for share_id, value in chunk_shares:
-                temp_encrypted['shares'].append({
-                    'chunk_index': i,
-                    'share_id': share_id,
-                    'value': value
-                })
+         try:
+             # ファイルの状態をWALに記録
+             write_initial_state(wal_path, encrypted_file)
 
-        # 暗号化された一時ファイルを保存
-        with open(temp_file_path, 'w') as f:
-            json.dump(temp_encrypted, f)
+             # 更新処理の実行
+             updated_file = update_internal(encrypted_file, json_doc, password, share_ids)
 
-        # 対象パーティションマップキーの範囲内のシェアのみを更新
-        updated_shares = []
-        for share in encrypted_file['shares']:
-            if share['share_id'] in share_ids:
-                # 対象範囲内のシェアは新しいものに置き換え
-                pass
-            else:
-                # 対象範囲外のシェアはそのまま保持
-                updated_shares.append(share)
+             # 更新結果をWALに記録
+             write_updated_state(wal_path, updated_file)
 
-        # 新しいシェアを追加
-        updated_shares.extend(temp_shares)
+             # WALをコミット（実際のファイル書き込み）
+             commit_wal(wal_path, updated_file)
 
-        # メタデータ更新
-        updated_metadata = metadata.copy()
-        updated_metadata['total_chunks'] = len(chunks)
+             return updated_file
 
-        # 更新された暗号化ファイルの生成
-        updated_file = {
-            'metadata': updated_metadata,
-            'shares': updated_shares
-        }
+         except Exception as e:
+             # エラー発生時はWALを使用して復旧
+             rollback_from_wal(wal_path)
+             raise e
 
-        # 処理成功時は一時ファイルとロックファイルを削除
-        safe_remove_file(temp_file_path)
-        safe_remove_file(lock_file_path)
+         finally:
+             # 処理完了後にWALをクリーンアップ
+             cleanup_wal(wal_path)
+     ```
 
-        return updated_file
+2. **競合検出と自動再試行ロジック**：
 
-    except Exception as e:
-        # 例外発生時も一時ファイルとロックを確実に解放
-        if temp_file_path and os.path.exists(temp_file_path):
-            safe_remove_file(temp_file_path)
-        if lock_file_path and os.path.exists(lock_file_path):
-            safe_remove_file(lock_file_path)
-        raise e  # 例外を再送出
+   - ファイル更新の競合を検出し、指数バックオフで自動再試行
+   - 実装例：
 
-def cleanup_stale_temp_files(directory, timeout_seconds=3600):
-    """期限切れ/孤立した一時ファイルを削除
+     ```python
+     def update_with_retry(encrypted_file, json_doc, password, share_ids, max_retries=5):
+         """競合時に指数バックオフで再試行する更新処理"""
+         retries = 0
+         initial_delay = 0.1
 
-    - timeout_seconds: プロセスがタイムアウトとみなされる秒数
-    """
-    current_time = time.time()
+         while retries < max_retries:
+             try:
+                 # ファイルロックを試行
+                 with file_lock(encrypted_file):
+                     return atomic_update(encrypted_file, json_doc, password, share_ids)
+             except FileLockError:
+                 # 競合発生時は待機して再試行
+                 retries += 1
+                 if retries >= max_retries:
+                     raise MaxRetriesExceeded("最大再試行回数を超過しました")
 
-    if not os.path.exists(directory):
-        return
+                 # 指数バックオフ
+                 delay = initial_delay * (2 ** retries)
+                 # 少しランダム性を加えて競合確率を下げる
+                 jitter = random.uniform(0, 0.1 * delay)
+                 time.sleep(delay + jitter)
 
-    # ロックファイルをスキャン
-    for filename in os.listdir(directory):
-        if filename.startswith("lock_") and filename.endswith(".lock"):
-            lock_path = os.path.join(directory, filename)
-            process_uuid = filename[5:-5]  # "lock_" と ".lock" を削除
+         # ここには到達しないはず（例外が発生するため）
+         raise RuntimeError("予期せぬエラー: 再試行ロジックの異常終了")
+     ```
 
-            try:
-                with open(lock_path, 'r') as lock_file:
-                    lock_info = json.load(lock_file)
+3. **WAL ログの管理**:
 
-                # プロセスIDの存在確認
-                pid_exists = False
-                if 'pid' in lock_info:
-                    try:
-                        # プロセスが存在するか確認（シグナル0を送信）
-                        os.kill(lock_info['pid'], 0)
-                        pid_exists = True
-                    except OSError:
-                        # プロセスが存在しない
-                        pid_exists = False
+   - WAL ログの形式：
 
-                # タイムスタンプ確認
-                is_timeout = False
-                if 'timestamp' in lock_info:
-                    if current_time - lock_info['timestamp'] > timeout_seconds:
-                        is_timeout = True
+     ```python
+     {
+         'status': 'start|ready|complete',  # 処理状態
+         'timestamp': 1628675432.123,       # タイムスタンプ
+         'original_file': {                 # 元ファイルのハッシュとパス
+             'path': '/path/to/file.bin',
+             'hash': 'sha256-hash-value'
+         },
+         'new_file': {                      # 更新後ファイル（readyまたはcomplete時）
+             'path': '/path/to/new_file.bin',
+             'hash': 'sha256-hash-value'
+         }
+     }
+     ```
 
-                # PIDが存在せず、もしくはタイムアウトした場合、関連ファイルを削除
-                if (not pid_exists) or is_timeout:
-                    # 関連する一時ファイルを削除
-                    temp_path = os.path.join(directory, f"update_{process_uuid}.tmp")
-                    if os.path.exists(temp_path):
-                        safe_remove_file(temp_path)
-                    # ロックファイル自体も削除
-                    safe_remove_file(lock_path)
+   - WAL ログの操作：
+     - 書き込み: ログエントリを追加（状態の記録）
+     - コミット: 最終状態を記録し、ファイル操作を完了
+     - ロールバック: 中断された処理を元の状態に戻す
+     - クリーンアップ: 不要になった WAL ログファイルを安全に削除
 
-            except (json.JSONDecodeError, IOError) as e:
-                # 読み取りエラーの場合は破損と見なし、ファイルを削除
-                safe_remove_file(lock_path)
-
-def safe_remove_file(file_path):
-    """ファイルを安全に削除（例外をキャッチして処理継続）"""
-    try:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-    except Exception as e:
-        print(f"ファイル削除中にエラー: {file_path}, {e}")
-```
+4. **起動時の WAL ログ処理**:
+   - システム起動時または操作開始時に未処理の WAL ログを確認
+   - 状態が「ready」のログを見つけた場合は中断された更新操作を完了
+   - 状態が「start」のログを見つけた場合はロールバックを実行
+   - 古い WAL ログ（タイムアウト値を超えたもの）を安全に削除

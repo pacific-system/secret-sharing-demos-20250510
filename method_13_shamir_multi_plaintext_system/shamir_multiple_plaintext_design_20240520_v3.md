@@ -1,5 +1,40 @@
 # シャミア秘密分散法による複数平文復号システム設計書
 
+## 0. 用語集
+
+本設計書で使用される重要な用語と概念の定義を以下に示す：
+
+### 0.1. 基本用語
+
+| 用語                   | 定義                                                                                                                                                                        |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **シャミア秘密分散法** | Adi Shamir が考案した閾値暗号の一種。秘密情報を複数の「シェア」に分散し、一定数（閾値）以上のシェアが集まると元の情報を復元できるが、閾値未満では全く情報を得られない技術。 |
+| **閾値（threshold）**  | 秘密情報を復元するために必要なシェアの最小数。例えば閾値 3 の場合、3 つ以上のシェアがあれば復元可能だが、2 つ以下では一切復元できない。                                     |
+| **シェア（share）**    | シャミア秘密分散法によって生成される、秘密情報の断片。各シェアは（ID, 値）のペアで構成される。                                                                              |
+| **チャンク（chunk）**  | 暗号化する前のデータを固定長の小さな断片に分割したもの。各チャンクに対してシャミア秘密分散法を適用する。                                                                    |
+| **パーティション空間** | システム内で使用されるシェア ID の全体集合。A 用、B 用、未割当ての 3 種類に分割される。                                                                                     |
+| **MAP（マップ）**      | 混在するシェア群の中から、必要なシェアを特定するための対応表または関数。特定の文書を復号する際に必要なシェアを選別するために使用される。                                    |
+
+### 0.2. 本システム特有の用語
+
+| 用語                         | 定義                                                                                                                                                                                                                        |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **パーティションマップキー** | ユーザーが保持する文字列で、特定の範囲のシェア ID を特定するためのキー。例：「A 用パーティションマップキー」で「A 用シェア」の ID セットを特定できる。単なる ID の集合ではなく、ID を特定するための元データとして機能する。 |
+| **多段 MAP 方式**            | 本システムの核心技術。パーティションマップキーによる第 1 段階 MAP とパスワードによる第 2 段階 MAP を組み合わせて、必要なシェアを特定する方式。                                                                              |
+| **第 1 段階 MAP**            | パーティションマップキーから生成される MAP。全シェア空間から復号に必要な候補シェアの範囲を特定する。                                                                                                                        |
+| **第 2 段階 MAP**            | パスワードから生成される MAP。第 1 段階で特定された候補シェアの中から、実際に復号に使用するシェアを選別する。                                                                                                               |
+| **統計的区別不可能性**       | 暗号ファイル内の異なる文書（A/B）のシェアや未割当領域のシェアが統計的に区別できない性質。外部観察者がどのシェアがどの文書に属するか識別できないことを保証する。                                                             |
+| **直線的処理**               | 復号処理の途中で条件分岐や評価を含まず、同一のコードパスを通り抜ける処理方式。タイミング攻撃やサイドチャネル攻撃への耐性を持つ。                                                                                            |
+
+### 0.3. データ構造と実装関連用語
+
+| 用語               | 定義                                                                                                                                                                                                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **メタデータ**     | 暗号化ファイルに保存される最小限の構成情報。具体的には以下の 3 つの情報のみを含む：<br>1. 閾値（threshold）：シェア復元に必要な最小シェア数<br>2. ソルト値（salt）：第 2 段階 MAP を生成するための乱数値<br>3. 総チャンク数（total_chunks）：元データの分割チャンク数 |
+| **ガベージシェア** | 未割当領域に配置される無意味なデータ。有効なシェアと統計的に区別できない形式で生成され、セキュリティ強化と将来の拡張性確保に役立つ。                                                                                                                                  |
+| **一時ファイル**   | 更新処理中に使用される中間ファイル。シャミア秘密分散法で暗号化され、処理完了時に削除される。                                                                                                                                                                          |
+# シャミア秘密分散法による複数平文復号システム設計書
+
 ## 1. 概要
 
 本設計書では、シャミア秘密分散法を応用した「複数平文復号システム」の詳細設計を提供する。このシステムは単一の暗号化ファイルから異なるパスワードを使用して異なる平文（JSON 文書）を復号可能にするもので、「パーティションマップキーによる MAP 生成とパスワードによるマップ生成」という多段 MAP 方式を核心とする。
@@ -7,9 +42,9 @@
 本システムの設計はケルクホフの原理に厳格に従い、アルゴリズムが完全に公開されてもパスワード（鍵）が秘匿されている限りセキュリティが保たれる。
 # シャミア秘密分散法による複数平文復号システム設計書
 
-## 3. 詳細設計（続き）
+## 4. 実装詳細
 
-### 3.4. 暗号化プロセス
+### 4.1. 暗号化プロセス
 
 暗号化プロセスは以下の手順で行う：
 
@@ -27,6 +62,10 @@
 
    - エンコードされたデータをチャンクに分割
    - 各チャンクをシャミア秘密分散法でシェア化
+   - **推奨チャンクサイズ**: 64 バイト（512 ビット）
+     - 選定理由: 暗号学的安全性とパフォーマンスのバランスが取れたサイズ
+     - 小さすぎるチャンクサイズはオーバーヘッドが大きく、大きすぎるとメモリ効率が悪化
+     - 64 バイトはモダン CPU のキャッシュラインサイズに合致し、効率的な処理が可能
 
 3. **パーティションマップキーの使用**：
 
@@ -44,7 +83,7 @@
    - 保存データは全て A/B 区別なく単一のフォーマットで格納（文書の種類を識別する情報を含まない）
 
 ```python
-def encrypt(json_doc, password, share_ids, unassigned_ids):
+def encrypt(json_doc, password, share_token, unassigned_ids):
     """単一JSON文書の暗号化（A/B判定なし）"""
     # データの前処理
     data = json.dumps(json_doc).encode('utf-8')
@@ -94,7 +133,28 @@ def encrypt(json_doc, password, share_ids, unassigned_ids):
     return encrypted_file
 ```
 
-### 3.5. 復号プロセス
+```python
+def split_into_chunks(data, chunk_size=64):
+    """データを一定サイズのチャンクに分割
+
+    Args:
+        data: 分割対象のバイトデータ
+        chunk_size: チャンクサイズ (デフォルト: 64バイト)
+
+    Returns:
+        チャンクのリスト
+    """
+    chunks = []
+    for i in range(0, len(data), chunk_size):
+        chunk = data[i:i+chunk_size]
+        # 最後のチャンクが不完全な場合はパディング
+        if len(chunk) < chunk_size:
+            chunk = chunk.ljust(chunk_size, b'\0')
+        chunks.append(chunk)
+    return chunks
+```
+
+### 4.2. 復号プロセス
 
 復号プロセスは以下の手順で行う：
 
@@ -185,7 +245,7 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
     return reconstructed_data
 ```
 
-### 3.6. 更新プロセス
+### 4.3. 更新プロセス
 
 更新プロセスは以下の手順で行う：
 
@@ -215,210 +275,158 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
 4. **古いシェアの破棄**：
    - 更新成功後、古いシェアを確実に破棄
 
-```python
-def update(encrypted_file, json_doc, password, share_ids):
-    """文書の更新"""
-    # 一時ファイル管理のための変数
-    process_uuid = str(uuid.uuid4())
-    temp_dir = os.path.join(os.getcwd(), "temp")
-    temp_file_path = None
-    lock_file_path = None
+### 4.4. 一時ファイル暗号化強度のバランス
 
-    try:
-        # 一時作業ディレクトリの確保
-        os.makedirs(temp_dir, exist_ok=True)
+一時ファイルの暗号化強度は、メインファイルのセキュリティレベルと処理効率のバランスが重要な検討課題である：
 
-        # プロセス固有の一時ファイルパスを生成（UUID付与）
-        temp_file_path = os.path.join(temp_dir, f"update_{process_uuid}.tmp")
-        lock_file_path = os.path.join(temp_dir, f"lock_{process_uuid}.lock")
+1. **暗号化強度の選択肢**：
 
-        # ロックファイル作成（PIDとタイムスタンプを記録）
-        with open(lock_file_path, 'w') as lock_file:
-            lock_info = {
-                'pid': os.getpid(),
-                'timestamp': time.time(),
-                'operation': 'update'
-            }
-            json.dump(lock_info, lock_file)
+   - **最高レベル（メインファイルと同等）**: メインファイルと同じシャミア秘密分散法＋ AES-GCM
+   - **中間レベル**: シャミア秘密分散法を省略し、AES-GCM のみで保護
+   - **最小レベル**: メモリ内処理のみでディスク書き込みを回避
 
-        # 古い一時ファイルのクリーンアップ（完了・タイムアウトしたプロセスのみ）
-        cleanup_stale_temp_files(temp_dir, timeout_seconds=3600)  # 1時間のタイムアウト
+2. **トレードオフ比較**：
 
-        # 一時作業領域を確保
-        temp_shares = []
+   | セキュリティレベル | 処理速度 | メモリ使用量 | ディスク使用量 | 実装複雑性 |
+   | ------------------ | -------- | ------------ | -------------- | ---------- |
+   | 最高レベル         | 低       | 中           | 大             | 高         |
+   | 中間レベル         | 中       | 中           | 中             | 中         |
+   | 最小レベル         | 高       | 大           | なし           | 低         |
 
-        # メタデータ取得
-        metadata = encrypted_file['metadata']
-        threshold = metadata['threshold']
-        salt = metadata['salt']
+3. **推奨アプローチ**：
 
-        # 新しいシェア生成
-        data = json.dumps(json_doc).encode('utf-8')
+   - 小～中サイズのファイル（～ 10MB）: **最小レベル**（メモリ内処理）
+   - 大きいファイル（10MB ～ 100MB）: **中間レベル**（AES-GCM のみ）
+   - 巨大ファイル（100MB ～）: **最高レベル**（シャミア＋ AES-GCM）
 
-        # 多段エンコード適用
-        data_latin = data.decode('utf-8').encode('latin-1')
-        data_base64 = base64.b64encode(data_latin)
-        # データを圧縮
-        compressed_data = compress_data(data_base64)
+4. **適応型実装の例**：
 
-        chunks = split_into_chunks(compressed_data)
+   ```python
+   def secure_temp_storage(data, password, file_size):
+       """ファイルサイズに応じた適応型一時ストレージ"""
+       if file_size < 10 * 1024 * 1024:  # 10MB未満
+           # メモリ内処理のみ
+           return MemoryTempStorage(data, password)
+       elif file_size < 100 * 1024 * 1024:  # 10MB～100MB
+           # AES-GCMのみで暗号化
+           return AesGcmTempStorage(data, password)
+       else:  # 100MB以上
+           # シャミア法+AES-GCMで完全保護
+           return ShamirAesGcmTempStorage(data, password)
+   ```
 
-        for i, chunk in enumerate(chunks):
-            secret = int.from_bytes(chunk, 'big')
-            chunk_shares = generate_chunk_shares(secret, threshold, share_ids)
-            for share_id, value in chunk_shares:
-                temp_shares.append({
-                    'chunk_index': i,
-                    'share_id': share_id,
-                    'value': value
-                })
+5. **その他の考慮事項**:
+   - 処理タイムアウトの実装（長時間実行による露出リスク低減）
+   - 一時ファイルのバージョン管理（複数プロセスの並行実行対応）
+   - エラー状態の保存（停電などでの復旧可能性）
 
-        # 一時ファイルに中間状態をシャミア秘密分散法で暗号化して保存
-        # パスワードから一時ファイル用のMAPを生成
-        temp_encrypt_salt = generate_salt()
-        temp_file_data = {
-            'shares': temp_shares,
-            'salt': temp_encrypt_salt
-        }
+### 4.5. WAL ログ方式と競合検出
 
-        # 一時データをJSONに変換
-        temp_json = json.dumps(temp_file_data)
+データの整合性と安全な更新を保証するため、以下の仕組みを実装する：
 
-        # シャミア秘密分散法で暗号化
-        temp_threshold = 3  # 一時ファイル用の閾値
-        temp_data_chunks = split_into_chunks(temp_json.encode('utf-8'))
+1. **WAL ログ方式の採用**：
 
-        temp_encrypted = {
-            'metadata': {
-                'salt': temp_encrypt_salt,
-                'threshold': temp_threshold,
-                'total_chunks': len(temp_data_chunks)
-            },
-            'shares': []
-        }
+   - 原子的な更新処理を保証し、途中で処理が中断された場合のデータ整合性を確保
+   - 実装例：
 
-        # シェア生成（パスワードからIDを生成して利用）
-        password_hash = hashlib.sha256(password.encode()).digest()
-        temp_share_ids = []
-        for i in range(10):  # 10個のシェアIDを生成
-            id_seed = hashlib.sha256(password_hash + str(i).encode()).digest()
-            temp_share_ids.append(int.from_bytes(id_seed[:4], 'big') % 10000)
+     ```python
+     def atomic_update(encrypted_file, json_doc, password, share_ids):
+         """WALログを使用した原子的な更新処理"""
+         # WALログの作成
+         wal_path = create_wal_file(encrypted_file)
 
-        # 各チャンクをシェア化
-        for i, chunk in enumerate(temp_data_chunks):
-            secret = int.from_bytes(chunk, 'big')
-            chunk_shares = generate_chunk_shares(secret, temp_threshold, temp_share_ids)
-            for share_id, value in chunk_shares:
-                temp_encrypted['shares'].append({
-                    'chunk_index': i,
-                    'share_id': share_id,
-                    'value': value
-                })
+         try:
+             # ファイルの状態をWALに記録
+             write_initial_state(wal_path, encrypted_file)
 
-        # 暗号化された一時ファイルを保存
-        with open(temp_file_path, 'w') as f:
-            json.dump(temp_encrypted, f)
+             # 更新処理の実行
+             updated_file = update_internal(encrypted_file, json_doc, password, share_ids)
 
-        # 対象パーティションマップキーの範囲内のシェアのみを更新
-        updated_shares = []
-        for share in encrypted_file['shares']:
-            if share['share_id'] in share_ids:
-                # 対象範囲内のシェアは新しいものに置き換え
-                pass
-            else:
-                # 対象範囲外のシェアはそのまま保持
-                updated_shares.append(share)
+             # 更新結果をWALに記録
+             write_updated_state(wal_path, updated_file)
 
-        # 新しいシェアを追加
-        updated_shares.extend(temp_shares)
+             # WALをコミット（実際のファイル書き込み）
+             commit_wal(wal_path, updated_file)
 
-        # メタデータ更新
-        updated_metadata = metadata.copy()
-        updated_metadata['total_chunks'] = len(chunks)
+             return updated_file
 
-        # 更新された暗号化ファイルの生成
-        updated_file = {
-            'metadata': updated_metadata,
-            'shares': updated_shares
-        }
+         except Exception as e:
+             # エラー発生時はWALを使用して復旧
+             rollback_from_wal(wal_path)
+             raise e
 
-        # 処理成功時は一時ファイルとロックファイルを削除
-        safe_remove_file(temp_file_path)
-        safe_remove_file(lock_file_path)
+         finally:
+             # 処理完了後にWALをクリーンアップ
+             cleanup_wal(wal_path)
+     ```
 
-        return updated_file
+2. **競合検出と自動再試行ロジック**：
 
-    except Exception as e:
-        # 例外発生時も一時ファイルとロックを確実に解放
-        if temp_file_path and os.path.exists(temp_file_path):
-            safe_remove_file(temp_file_path)
-        if lock_file_path and os.path.exists(lock_file_path):
-            safe_remove_file(lock_file_path)
-        raise e  # 例外を再送出
+   - ファイル更新の競合を検出し、指数バックオフで自動再試行
+   - 実装例：
 
-def cleanup_stale_temp_files(directory, timeout_seconds=3600):
-    """期限切れ/孤立した一時ファイルを削除
+     ```python
+     def update_with_retry(encrypted_file, json_doc, password, share_ids, max_retries=5):
+         """競合時に指数バックオフで再試行する更新処理"""
+         retries = 0
+         initial_delay = 0.1
 
-    - timeout_seconds: プロセスがタイムアウトとみなされる秒数
-    """
-    current_time = time.time()
+         while retries < max_retries:
+             try:
+                 # ファイルロックを試行
+                 with file_lock(encrypted_file):
+                     return atomic_update(encrypted_file, json_doc, password, share_ids)
+             except FileLockError:
+                 # 競合発生時は待機して再試行
+                 retries += 1
+                 if retries >= max_retries:
+                     raise MaxRetriesExceeded("最大再試行回数を超過しました")
 
-    if not os.path.exists(directory):
-        return
+                 # 指数バックオフ
+                 delay = initial_delay * (2 ** retries)
+                 # 少しランダム性を加えて競合確率を下げる
+                 jitter = random.uniform(0, 0.1 * delay)
+                 time.sleep(delay + jitter)
 
-    # ロックファイルをスキャン
-    for filename in os.listdir(directory):
-        if filename.startswith("lock_") and filename.endswith(".lock"):
-            lock_path = os.path.join(directory, filename)
-            process_uuid = filename[5:-5]  # "lock_" と ".lock" を削除
+         # ここには到達しないはず（例外が発生するため）
+         raise RuntimeError("予期せぬエラー: 再試行ロジックの異常終了")
+     ```
 
-            try:
-                with open(lock_path, 'r') as lock_file:
-                    lock_info = json.load(lock_file)
+3. **WAL ログの管理**:
 
-                # プロセスIDの存在確認
-                pid_exists = False
-                if 'pid' in lock_info:
-                    try:
-                        # プロセスが存在するか確認（シグナル0を送信）
-                        os.kill(lock_info['pid'], 0)
-                        pid_exists = True
-                    except OSError:
-                        # プロセスが存在しない
-                        pid_exists = False
+   - WAL ログの形式：
 
-                # タイムスタンプ確認
-                is_timeout = False
-                if 'timestamp' in lock_info:
-                    if current_time - lock_info['timestamp'] > timeout_seconds:
-                        is_timeout = True
+     ```python
+     {
+         'status': 'start|ready|complete',  # 処理状態
+         'timestamp': 1628675432.123,       # タイムスタンプ
+         'original_file': {                 # 元ファイルのハッシュとパス
+             'path': '/path/to/file.bin',
+             'hash': 'sha256-hash-value'
+         },
+         'new_file': {                      # 更新後ファイル（readyまたはcomplete時）
+             'path': '/path/to/new_file.bin',
+             'hash': 'sha256-hash-value'
+         }
+     }
+     ```
 
-                # PIDが存在せず、もしくはタイムアウトした場合、関連ファイルを削除
-                if (not pid_exists) or is_timeout:
-                    # 関連する一時ファイルを削除
-                    temp_path = os.path.join(directory, f"update_{process_uuid}.tmp")
-                    if os.path.exists(temp_path):
-                        safe_remove_file(temp_path)
-                    # ロックファイル自体も削除
-                    safe_remove_file(lock_path)
+   - WAL ログの操作：
+     - 書き込み: ログエントリを追加（状態の記録）
+     - コミット: 最終状態を記録し、ファイル操作を完了
+     - ロールバック: 中断された処理を元の状態に戻す
+     - クリーンアップ: 不要になった WAL ログファイルを安全に削除
 
-            except (json.JSONDecodeError, IOError) as e:
-                # 読み取りエラーの場合は破損と見なし、ファイルを削除
-                safe_remove_file(lock_path)
-
-def safe_remove_file(file_path):
-    """ファイルを安全に削除（例外をキャッチして処理継続）"""
-    try:
-        if os.path.exists(file_path):
-            os.remove(file_path)
-    except Exception as e:
-        print(f"ファイル削除中にエラー: {file_path}, {e}")
-```
+4. **起動時の WAL ログ処理**:
+   - システム起動時または操作開始時に未処理の WAL ログを確認
+   - 状態が「ready」のログを見つけた場合は中断された更新操作を完了
+   - 状態が「start」のログを見つけた場合はロールバックを実行
+   - 古い WAL ログ（タイムアウト値を超えたもの）を安全に削除
 # シャミア秘密分散法による複数平文復号システム設計書
 
-## 4. セキュリティ分析
+## 5. セキュリティ分析
 
-### 4.1. 攻撃モデルと脆弱性分析
+### 5.1. 攻撃モデルと脆弱性分析
 
 以下の攻撃モデルを考慮する：
 
@@ -441,7 +449,7 @@ def safe_remove_file(file_path):
 | タイミング攻撃       | 条件分岐の排除、一定時間での処理実行                       |
 | メタデータ分析       | メタデータの最小化、文書種別情報の排除                     |
 
-### 4.2. マップデータの安全性
+### 5.2. マップデータの安全性
 
 マップデータの安全性は以下の要素に依存する：
 
@@ -449,6 +457,11 @@ def safe_remove_file(file_path):
 
    - Argon2 または PBKDF2 など、実績のある KDF を使用
    - 十分なイテレーション回数と計算コスト
+   - **KDF 推奨パラメータ**：
+     - Argon2id: メモリ 64MB、イテレーション 3 回、並列度 4
+     - PBKDF2-HMAC-SHA256: イテレーション回数 310,000 回以上、出力キー長 32 バイト
+     - これらのパラメータは、OWASP 推奨値および業界標準に基づく 2024 年時点での推奨値
+     - 実装環境のハードウェア性能に応じて調整し、約 1 秒の処理時間を目安とする
 
 2. **決定論的生成**：
 
@@ -459,7 +472,7 @@ def safe_remove_file(file_path):
    - パスワードを知らなければマップ予測は計算量的に不可能
    - マップデータの部分的な漏洩が他の部分の予測に繋がらない
 
-### 4.3. ソースコード漏洩時のセキュリティ
+### 5.3. ソースコード漏洩時のセキュリティ
 
 ケルクホフの原理に従い、ソースコード漏洩時でも以下の理由でセキュリティは保たれる：
 
@@ -477,7 +490,7 @@ def safe_remove_file(file_path):
    - アルゴリズムを完全に理解していても、パスワードとパーティションマップキーがなければ復号不可能
    - ゴミデータと実データの区別が不可能
 
-### 4.4. 未割当領域のセキュリティ強化
+### 5.4. 未割当領域のセキュリティ強化
 
 未割当領域がもたらすセキュリティ強化：
 
@@ -640,7 +653,10 @@ graph LR
 2. **有限体の選択**：
 
    - 大きな素数`p`を用いた有限体 GF(p)上で計算
-   - 文書サイズに応じて適切な素数を選択（例：2^256-189）
+   - 暗号学的安全性を確保するため、メルセンヌ素数を使用
+     - 標準的実装向け: 2^127-1 (約 1.7 × 10^38)
+     - 高度な安全性向け: 2^521-1 (約 6.9 × 10^156)
+   - 実装上の利点：高速なモジュロ演算、効率的なビット操作による最適化が可能
 
 3. **シェア生成アルゴリズム**：
 
@@ -750,9 +766,9 @@ def select_shares(all_shares, share_ids, password, salt, threshold):
 ```
 # シャミア秘密分散法による複数平文復号システム設計書
 
-## 5. 性能評価
+## 6. 性能評価
 
-### 5.1. ファイルサイズ評価
+### 6.1. ファイルサイズ評価
 
 各サイズの JSON 文書に対する暗号化後のファイルサイズ予測：
 
@@ -769,7 +785,7 @@ def select_shares(all_shares, share_ids, password, salt, threshold):
 - 未割当領域のゴミデータ（全体の 20-40%）
 - メタデータと構造情報
 
-### 5.2. 処理性能評価
+### 6.2. 処理性能評価
 
 処理性能の理論的評価：
 
@@ -781,7 +797,7 @@ def select_shares(all_shares, share_ids, password, salt, threshold):
 
 ※実際の性能はハードウェアや KDF の設定により大きく変動
 
-### 5.3. メモリ使用量
+### 6.3. メモリ使用量
 
 メモリ使用量の評価：
 
@@ -794,7 +810,7 @@ def select_shares(all_shares, share_ids, password, salt, threshold):
 大きなファイルの処理はチャンク単位で行うことでメモリ効率を改善可能。
 # シャミア秘密分散法による複数平文復号システム設計書
 
-## 8. 結論
+## 9. 結論
 
 本設計書では、シャミア秘密分散法を応用した複数平文復号システムの詳細設計を提供した。核心となる「パーティションマップキーによる MAP 生成とパスワードによるマップ生成」という多段 MAP 方式により、単一の暗号化ファイルから異なるパスワードで異なる平文を復号可能なシステムが実現できる。
 
@@ -803,9 +819,9 @@ def select_shares(all_shares, share_ids, password, salt, threshold):
 実装に際しては、本設計書で提示したガイドラインや推奨データ構造、ライブラリを参考にすることで、安全かつ効率的なシステムを構築することが可能である。
 # シャミア秘密分散法による複数平文復号システム設計書
 
-## 6. 実装ガイドライン
+## 7. 実装ガイドライン
 
-### 6.1. セキュアデータ構造設計原則
+### 7.1. セキュアデータ構造設計原則
 
 データ構造設計には以下の原則を適用する：
 
@@ -834,7 +850,7 @@ def select_shares(all_shares, share_ids, password, salt, threshold):
 
 これらの原則に従うことで、データ構造自体が暗号解読の手がかりとなることを防ぎ、ケルクホフの原理に基づく堅牢なシステムを実現する。
 
-### 6.2. 推奨暗号ライブラリ
+### 7.2. 推奨暗号ライブラリ
 
 以下のライブラリの利用を推奨：
 
@@ -855,75 +871,75 @@ def select_shares(all_shares, share_ids, password, salt, threshold):
    - Python: `gmpy2`
    - JavaScript: `big-integer`
 
-### 6.3. 条件分岐の禁止と定数時間処理の実装パターン
+### 7.3. 条件分岐の禁止と定数時間処理の実装パターン
 
 以下のパターンは条件分岐によるサイドチャネル攻撃を防止するために重要である。**すべての条件分岐を含むコードパターンは本システムでは禁止とする**。
 
 1. **選択操作**：
 
-```javascript
-// ⛔ 禁止: 条件分岐を使った選択
-let result = condition ? valueA : valueB;
+```python
+# ⛔ 禁止: 条件分岐を使った選択
+result = value_a if condition else value_b
 
-// ✅ 推奨: 定数時間選択を使用
-let mask = -Number(condition); // true -> -1, false -> 0
-let result = (valueA & mask) | (valueB & ~mask);
+# ✅ 推奨: 定数時間選択を使用（ビット演算による実装）
+mask = -int(condition)  # True -> -1 (全ビット1), False -> 0 (全ビット0)
+# Pythonの整数は任意精度なのでビット長を気にする必要がない
+result = (value_a & mask) | (value_b & ~mask)
 ```
 
 2. **ループ処理**：
 
-```javascript
-// ⛔ 禁止: 早期リターンを使用
-for (let share of shares) {
-  if (isValid(share)) {
-    return share;
-  }
-}
+```python
+# ⛔ 禁止: 早期リターンを使用
+for share in shares:
+    if is_valid(share):
+        return share
 
-// ✅ 推奨: 全要素を一定時間で処理
-let selectedShare = null;
-let selectedIdx = -1;
-for (let i = 0; i < shares.length; i++) {
-  // 最初の有効なシェアのインデックスをマスク付き比較で記録
-  let isValidShare = isValid(shares[i]);
-  let shouldSelect = isValidShare && selectedIdx === -1;
-  selectedIdx = (selectedIdx & ~-Number(shouldSelect)) | (i & -Number(shouldSelect));
-  selectedShare = (selectedShare & ~-Number(shouldSelect)) | (shares[i] & -Number(shouldSelect));
-}
+# ✅ 推奨: 全要素を一定時間で処理
+selected_share = None
+selected_idx = -1
+for i in range(len(shares)):
+    # 最初の有効なシェアのインデックスをマスク付き比較で記録
+    is_valid_share = is_valid(shares[i])
+    should_select = is_valid_share and selected_idx == -1
+    # ビット演算でインデックスと値を条件分岐なしで更新
+    mask = -int(should_select)
+    selected_idx = (selected_idx & ~mask) | (i & mask)
+    selected_share = (selected_share & ~mask) | (shares[i] & mask)
 ```
 
 3. **例外処理**：
 
-```javascript
-// ⛔ 禁止: try-catchを使用した条件分岐
-try {
-  return JSON.parse(data);
-} catch (e) {
-  return null;
-}
+```python
+# ⛔ 禁止: try-exceptを使用した条件分岐
+try:
+    return json.loads(data)
+except:
+    return None
 
-// ✅ 推奨: 例外を発生させない処理
-function safeJsonParse(data) {
-  // データをチェックして安全に解析
-  if (typeof data !== 'string') return null;
-  if (data.length === 0) return null;
-  // ... 他のチェック
+# ✅ 推奨: 例外を発生させない処理
+def safe_json_parse(data):
+    """安全にJSONを解析する関数"""
+    # データをチェックして安全に解析
+    if not isinstance(data, str):
+        return {'value': None, 'error': 'データが文字列ではありません'}
+    if len(data) == 0:
+        return {'value': None, 'error': '空文字列です'}
+    # ... 他のチェック
 
-  // 解析結果をラップ
-  let result = { value: null, error: null };
-  try {
-    result.value = JSON.parse(data);
-  } catch (e) {
-    // 例外を記録するが、処理は続行
-    result.error = e;
-  }
-  return result;
-}
+    # 解析結果をラップ
+    result = {'value': None, 'error': None}
+    try:
+        result['value'] = json.loads(data)
+    except Exception as e:
+        # 例外を記録するが、処理は続行
+        result['error'] = str(e)
+    return result
 ```
 
 注意: 実装のすべての部分で条件分岐を避け、定数時間アルゴリズムを使用することは、このシステムのセキュリティモデルにおいて**絶対的要件**である。ここで示した禁止パターンを使用した実装は、タイミング攻撃に対して脆弱となるため、許容されない。
 
-### 6.4. パーティション空間管理
+### 7.4. パーティション空間管理
 
 パーティション空間の効率的かつ安全な管理のための指針：
 
@@ -943,18 +959,106 @@ function safeJsonParse(data) {
    - 暗号学的に安全な乱数発生器を用いたパーティション空間の生成
    - 初期化時にのみ ID 割り当てを行い、以後は変更しない
    - 割り当て情報は 4 つの要素（両パスワードと両パーティションマップキーセット）なしには再構築不可能
+
+### 7.5. 統計的区別不可能性の実装
+
+統計的区別不可能性を確保するための具体的実装方法を以下に示す：
+
+1. **シェア値の均一分布**：
+
+   - シャミア秘密分散法の数学的特性上、多項式の係数をランダムに選択すると、結果として生成されるシェア値は有限体上で均一分布する
+   - 実装方法：
+     ```python
+     def generate_polynomial(secret, degree, p):
+         """degree次の多項式を生成（係数は完全ランダム）"""
+         coef = [secret]  # 最初の係数は秘密値
+         # 残りの係数は完全なランダム値
+         for i in range(degree):
+             coef.append(secrets.randbelow(p))
+         return coef
+     ```
+   - この実装により、生成されるシェア値は統計的に区別不可能になる
+
+2. **シェア ID 分布の最適化**：
+
+   - 連続した ID（1,2,3...）の使用を避け、ランダム分布させた ID を使用
+   - 実装方法：
+     ```python
+     def generate_share_ids(n, id_space_size=2**32):
+         """ランダムなシェアIDをn個生成"""
+         ids = set()
+         while len(ids) < n:
+             # 大きな範囲からランダムにID生成
+             new_id = secrets.randbelow(id_space_size)
+             if new_id > 0:  # IDは0以外
+                 ids.add(new_id)
+         return list(ids)
+     ```
+   - この実装により、ID から文書種別（A/B/未割当）の推測が困難になる
+
+3. **シェア間相関の排除**：
+
+   - チャンク間やシェア間の統計的相関を排除する手法
+   - 各チャンクに対して独立したソルト値を使用
+   - 実装方法：
+     ```python
+     def generate_chunk_shares(chunks, threshold, share_ids, p):
+         """複数チャンクのシェアを生成、相関を排除"""
+         all_shares = []
+         for i, chunk in enumerate(chunks):
+             # 各チャンク専用のソルト値を生成
+             chunk_salt = secrets.token_bytes(16)
+             # シェア生成時にチャンクとソルトを組み合わせ
+             processed_secret = combine_with_salt(chunk, chunk_salt, p)
+             chunk_shares = generate_shares(processed_secret, threshold, share_ids, p)
+             all_shares.append((chunk_salt, chunk_shares))
+         return all_shares
+     ```
+   - チャンク間の相関を排除し、統計的攻撃に対する耐性を向上
+
+4. **実装上のトレードオフと実用的アプローチ**：
+
+   - 完全な統計的区別不可能性と計算効率のバランスを考慮
+   - 現実的アプローチ：
+
+     - チャンクサイズを統一（64 バイト）し、パディングを統一的に適用
+     - HMAC-SHA を用いた決定論的なマッピング
+     - 未割当領域には良質な乱数（/dev/urandom または secrets）でゴミデータを生成
+     - 生成されたすべてのシェアを均一にシャッフル
+
+   - 実装例：
+
+     ```python
+     def create_indistinguishable_file(a_shares, b_shares, unassigned_count):
+         """統計的区別不可能な暗号化ファイルを生成"""
+         # A文書とB文書のシェアを結合
+         all_shares = a_shares + b_shares
+
+         # 未割当領域にランダムなゴミデータを生成
+         for _ in range(unassigned_count):
+             fake_id = secrets.randbelow(2**32)
+             fake_value = secrets.randbelow(PRIME)
+             all_shares.append((fake_id, fake_value))
+
+         # すべてのシェアをランダムにシャッフル
+         random.shuffle(all_shares)
+
+         return all_shares
+     ```
+
+   - この実装は完全な数学的区別不可能性ではなく、計算量的な区別不可能性を提供するが、現実的な攻撃者モデルに対して十分な安全性を確保
 # シャミア秘密分散法による複数平文復号システム設計書
 
-## 7. 参考資料と出典
+## 8. 参考資料と出典
 
-### 7.1. 学術論文
+### 8.1. 学術論文
 
 1. Shamir, A. (1979). "How to share a secret". Communications of the ACM, 22(11), 612-613.
 2. Blakley, G. R. (1979). "Safeguarding cryptographic keys". Proceedings of the National Computer Conference, 48, 313-317.
 3. Krawczyk, H. (1993). "Secret sharing made short". In Annual International Cryptology Conference (pp. 136-146). Springer.
 4. Kaliski, B. (2000). "PKCS #5: Password-Based Cryptography Specification Version 2.0". RFC 2898.
 
-### 7.2. オープンソース実装
+### 8.2. オープンソース実装
 
 1. secrets.js: JavaScript 用シャミア秘密分散ライブラリ
    https://github.com/grempe/secrets.js
@@ -968,7 +1072,7 @@ function safeJsonParse(data) {
 4. RustySecrets: Rust による秘密分散実装
    https://github.com/SpinResearch/RustySecrets
 
-### 7.3. 技術文書とリファレンス
+### 8.3. 技術文書とリファレンス
 
 1. NIST Special Publication 800-132: パスワードベースの鍵導出関数に関する推奨事項
 2. OWASP Cryptographic Storage Cheat Sheet: 暗号化ストレージのベストプラクティス

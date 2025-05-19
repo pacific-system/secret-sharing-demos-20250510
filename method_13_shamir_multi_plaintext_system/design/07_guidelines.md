@@ -140,3 +140,91 @@ def safe_json_parse(data):
    - 暗号学的に安全な乱数発生器を用いたパーティション空間の生成
    - 初期化時にのみ ID 割り当てを行い、以後は変更しない
    - 割り当て情報は 4 つの要素（両パスワードと両パーティションマップキーセット）なしには再構築不可能
+
+### 7.5. 統計的区別不可能性の実装
+
+統計的区別不可能性を確保するための具体的実装方法を以下に示す：
+
+1. **シェア値の均一分布**：
+
+   - シャミア秘密分散法の数学的特性上、多項式の係数をランダムに選択すると、結果として生成されるシェア値は有限体上で均一分布する
+   - 実装方法：
+     ```python
+     def generate_polynomial(secret, degree, p):
+         """degree次の多項式を生成（係数は完全ランダム）"""
+         coef = [secret]  # 最初の係数は秘密値
+         # 残りの係数は完全なランダム値
+         for i in range(degree):
+             coef.append(secrets.randbelow(p))
+         return coef
+     ```
+   - この実装により、生成されるシェア値は統計的に区別不可能になる
+
+2. **シェア ID 分布の最適化**：
+
+   - 連続した ID（1,2,3...）の使用を避け、ランダム分布させた ID を使用
+   - 実装方法：
+     ```python
+     def generate_share_ids(n, id_space_size=2**32):
+         """ランダムなシェアIDをn個生成"""
+         ids = set()
+         while len(ids) < n:
+             # 大きな範囲からランダムにID生成
+             new_id = secrets.randbelow(id_space_size)
+             if new_id > 0:  # IDは0以外
+                 ids.add(new_id)
+         return list(ids)
+     ```
+   - この実装により、ID から文書種別（A/B/未割当）の推測が困難になる
+
+3. **シェア間相関の排除**：
+
+   - チャンク間やシェア間の統計的相関を排除する手法
+   - 各チャンクに対して独立したソルト値を使用
+   - 実装方法：
+     ```python
+     def generate_chunk_shares(chunks, threshold, share_ids, p):
+         """複数チャンクのシェアを生成、相関を排除"""
+         all_shares = []
+         for i, chunk in enumerate(chunks):
+             # 各チャンク専用のソルト値を生成
+             chunk_salt = secrets.token_bytes(16)
+             # シェア生成時にチャンクとソルトを組み合わせ
+             processed_secret = combine_with_salt(chunk, chunk_salt, p)
+             chunk_shares = generate_shares(processed_secret, threshold, share_ids, p)
+             all_shares.append((chunk_salt, chunk_shares))
+         return all_shares
+     ```
+   - チャンク間の相関を排除し、統計的攻撃に対する耐性を向上
+
+4. **実装上のトレードオフと実用的アプローチ**：
+
+   - 完全な統計的区別不可能性と計算効率のバランスを考慮
+   - 現実的アプローチ：
+
+     - チャンクサイズを統一（64 バイト）し、パディングを統一的に適用
+     - HMAC-SHA を用いた決定論的なマッピング
+     - 未割当領域には良質な乱数（/dev/urandom または secrets）でゴミデータを生成
+     - 生成されたすべてのシェアを均一にシャッフル
+
+   - 実装例：
+
+     ```python
+     def create_indistinguishable_file(a_shares, b_shares, unassigned_count):
+         """統計的区別不可能な暗号化ファイルを生成"""
+         # A文書とB文書のシェアを結合
+         all_shares = a_shares + b_shares
+
+         # 未割当領域にランダムなゴミデータを生成
+         for _ in range(unassigned_count):
+             fake_id = secrets.randbelow(2**32)
+             fake_value = secrets.randbelow(PRIME)
+             all_shares.append((fake_id, fake_value))
+
+         # すべてのシェアをランダムにシャッフル
+         random.shuffle(all_shares)
+
+         return all_shares
+     ```
+
+   - この実装は完全な数学的区別不可能性ではなく、計算量的な区別不可能性を提供するが、現実的な攻撃者モデルに対して十分な安全性を確保

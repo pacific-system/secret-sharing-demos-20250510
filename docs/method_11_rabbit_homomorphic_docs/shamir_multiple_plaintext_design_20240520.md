@@ -410,11 +410,15 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
 
 1. **一時作業領域の確保**：
 
-   - 更新用の一時ファイルを別途生成
-   - 処理開始時に既存の一時ファイルを検出・削除（前回処理の異常終了による残存物）
-   - 処理完了時に全ての一時ファイルを確実に削除
-   - 例外発生時にも一時ファイルが残らないよう終了ハンドラを設定
-   - ファイル名にはランダムな要素を含め、予測不可能性を確保
+   - 更新用の一時ファイルを別途生成し、UUID を付与して一意性を確保
+   - ロックファイルを作成して実行中プロセスを明示（ファイル名に UUID 含む）
+   - ロックファイル内にプロセス ID (PID) とタイムスタンプを記録
+   - 処理開始時に既存の一時ファイルをスキャン：
+     - プロセス ID が存在しない（終了済み）場合のみ削除
+     - タイムスタンプが閾値を超過（タイムアウト）したファイルも削除
+   - 処理完了時に自プロセスの一時ファイルとロックファイルを確実に削除
+   - 例外発生時にもロックの解放と一時ファイルの削除を実行
+   - 複数プロセスの並列実行に対応し、相互干渉を防止
 
 2. **新シェアの生成**：
 
@@ -432,15 +436,31 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
 ```python
 def update(encrypted_file, json_doc, password, share_ids):
     """文書の更新"""
-    try:
-        # 処理開始時の一時ファイルクリーンアップ
-        temp_dir = os.path.join(os.getcwd(), "temp")
-        cleanup_temp_files(temp_dir, "update_*.tmp")
+    # 一時ファイル管理のための変数
+    process_uuid = str(uuid.uuid4())
+    temp_dir = os.path.join(os.getcwd(), "temp")
+    temp_file_path = None
+    lock_file_path = None
 
-        # 一時ファイル名をランダムに生成
-        temp_file_id = generate_random_id()
-        temp_file_path = os.path.join(temp_dir, f"update_{temp_file_id}.tmp")
+    try:
+        # 一時作業ディレクトリの確保
         os.makedirs(temp_dir, exist_ok=True)
+
+        # プロセス固有の一時ファイルパスを生成（UUID付与）
+        temp_file_path = os.path.join(temp_dir, f"update_{process_uuid}.tmp")
+        lock_file_path = os.path.join(temp_dir, f"lock_{process_uuid}.lock")
+
+        # ロックファイル作成（PIDとタイムスタンプを記録）
+        with open(lock_file_path, 'w') as lock_file:
+            lock_info = {
+                'pid': os.getpid(),
+                'timestamp': time.time(),
+                'operation': 'update'
+            }
+            json.dump(lock_info, lock_file)
+
+        # 古い一時ファイルのクリーンアップ（完了・タイムアウトしたプロセスのみ）
+        cleanup_stale_temp_files(temp_dir, timeout_seconds=3600)  # 1時間のタイムアウト
 
         # 一時作業領域を確保
         temp_shares = []
@@ -448,7 +468,7 @@ def update(encrypted_file, json_doc, password, share_ids):
         # メタデータ取得
         metadata = encrypted_file['metadata']
         threshold = metadata['threshold']
-        salt = metadata['salt']  # どちらのソルトを使うかはパスワードに依存
+        salt = metadata['salt']
 
         # 新しいシェア生成
         data = json.dumps(json_doc).encode('utf-8')
@@ -480,7 +500,6 @@ def update(encrypted_file, json_doc, password, share_ids):
         for share in encrypted_file['shares']:
             if share['share_id'] in share_ids:
                 # 対象範囲内のシェアは新しいものに置き換え
-                # （ただし、実際には古いシェアを残さない）
                 pass
             else:
                 # 対象範囲外のシェアはそのまま保持
@@ -499,31 +518,77 @@ def update(encrypted_file, json_doc, password, share_ids):
             'shares': updated_shares
         }
 
-        # 処理成功時は正常に一時ファイルを削除
-        os.remove(temp_file_path)
+        # 処理成功時は一時ファイルとロックファイルを削除
+        safe_remove_file(temp_file_path)
+        safe_remove_file(lock_file_path)
+
         return updated_file
 
     except Exception as e:
-        # 例外発生時も一時ファイルを確実に削除
-        if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        # 例外発生時も一時ファイルとロックを確実に解放
+        if temp_file_path and os.path.exists(temp_file_path):
+            safe_remove_file(temp_file_path)
+        if lock_file_path and os.path.exists(lock_file_path):
+            safe_remove_file(lock_file_path)
         raise e  # 例外を再送出
-    finally:
-        # 最終的なクリーンアップ
-        if 'temp_dir' in locals() and os.path.exists(temp_dir):
-            cleanup_temp_files(temp_dir, "update_*.tmp")
 
-def cleanup_temp_files(directory, pattern):
-    """指定ディレクトリ内の一時ファイルをパターンに基づいて削除"""
-    if os.path.exists(directory):
-        for filename in os.listdir(directory):
-            if fnmatch.fnmatch(filename, pattern):
-                file_path = os.path.join(directory, filename)
-                try:
-                    if os.path.isfile(file_path):
-                        os.remove(file_path)
-                except Exception as e:
-                    print(f"一時ファイル削除中にエラー: {e}")
+def cleanup_stale_temp_files(directory, timeout_seconds=3600):
+    """期限切れ/孤立した一時ファイルを削除
+
+    - timeout_seconds: プロセスがタイムアウトとみなされる秒数
+    """
+    current_time = time.time()
+
+    if not os.path.exists(directory):
+        return
+
+    # ロックファイルをスキャン
+    for filename in os.listdir(directory):
+        if filename.startswith("lock_") and filename.endswith(".lock"):
+            lock_path = os.path.join(directory, filename)
+            process_uuid = filename[5:-5]  # "lock_" と ".lock" を削除
+
+            try:
+                with open(lock_path, 'r') as lock_file:
+                    lock_info = json.load(lock_file)
+
+                # プロセスIDの存在確認
+                pid_exists = False
+                if 'pid' in lock_info:
+                    try:
+                        # プロセスが存在するか確認（シグナル0を送信）
+                        os.kill(lock_info['pid'], 0)
+                        pid_exists = True
+                    except OSError:
+                        # プロセスが存在しない
+                        pid_exists = False
+
+                # タイムスタンプ確認
+                is_timeout = False
+                if 'timestamp' in lock_info:
+                    if current_time - lock_info['timestamp'] > timeout_seconds:
+                        is_timeout = True
+
+                # PIDが存在せず、もしくはタイムアウトした場合、関連ファイルを削除
+                if (not pid_exists) or is_timeout:
+                    # 関連する一時ファイルを削除
+                    temp_path = os.path.join(directory, f"update_{process_uuid}.tmp")
+                    if os.path.exists(temp_path):
+                        safe_remove_file(temp_path)
+                    # ロックファイル自体も削除
+                    safe_remove_file(lock_path)
+
+            except (json.JSONDecodeError, IOError) as e:
+                # 読み取りエラーの場合は破損と見なし、ファイルを削除
+                safe_remove_file(lock_path)
+
+def safe_remove_file(file_path):
+    """ファイルを安全に削除（例外をキャッチして処理継続）"""
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception as e:
+        print(f"ファイル削除中にエラー: {file_path}, {e}")
 ```
 
 ## 4. セキュリティ分析
@@ -700,32 +765,32 @@ def cleanup_temp_files(directory, pattern):
    - Python: `gmpy2`
    - JavaScript: `big-integer`
 
-### 6.3. 条件分岐を避けるコーディングパターン
+### 6.3. 条件分岐の禁止と定数時間処理の実装パターン
 
-条件分岐を避けるためのパターン例：
+以下のパターンは条件分岐によるサイドチャネル攻撃を防止するために重要である。**すべての条件分岐を含むコードパターンは本システムでは禁止とする**。
 
-1. **定数時間選択**：
+1. **選択操作**：
 
 ```javascript
-// 条件分岐を使った選択（避けるべき）
+// ⛔ 禁止: 条件分岐を使った選択
 let result = condition ? valueA : valueB;
 
-// 代わりに定数時間選択を使用
+// ✅ 推奨: 定数時間選択を使用
 let mask = -Number(condition); // true -> -1, false -> 0
 let result = (valueA & mask) | (valueB & ~mask);
 ```
 
-2. **ループの最適化**：
+2. **ループ処理**：
 
 ```javascript
-// 早期リターンを使用（避けるべき）
+// ⛔ 禁止: 早期リターンを使用
 for (let share of shares) {
   if (isValid(share)) {
     return share;
   }
 }
 
-// 代わりに全要素を処理
+// ✅ 推奨: 全要素を一定時間で処理
 let selectedShare = null;
 let selectedIdx = -1;
 for (let i = 0; i < shares.length; i++) {
@@ -737,17 +802,17 @@ for (let i = 0; i < shares.length; i++) {
 }
 ```
 
-3. **例外処理の回避**：
+3. **例外処理**：
 
 ```javascript
-// try-catchを使用（避けるべき）
+// ⛔ 禁止: try-catchを使用した条件分岐
 try {
   return JSON.parse(data);
 } catch (e) {
   return null;
 }
 
-// 代わりに例外を発生させない処理
+// ✅ 推奨: 例外を発生させない処理
 function safeJsonParse(data) {
   // データをチェックして安全に解析
   if (typeof data !== 'string') return null;
@@ -765,6 +830,8 @@ function safeJsonParse(data) {
   return result;
 }
 ```
+
+注意: 実装のすべての部分で条件分岐を避け、定数時間アルゴリズムを使用することは、このシステムのセキュリティモデルにおいて**絶対的要件**である。ここで示した禁止パターンを使用した実装は、タイミング攻撃に対して脆弱となるため、許容されない。
 
 ### 6.4. シェア ID 空間管理
 

@@ -70,7 +70,7 @@ JSON 文書は以下の多段エンコードプロセスを適用します：
 
 4. **UUID の使用**:
    - 暗号化ファイル、復号化ファイル、シェアなどには UUID を付与する
-   - ファイル名に UUID を含めて重複による上書きを防止
+   - ファイル名に UUID を含めて重複による上書きを防止（例: `encrypted_{timestamp}_{uuid}.henc`）
    - 一時ファイルやバックアップファイルにも一意の識別子を使用
 
 ### 主要関数の実装ガイド
@@ -145,7 +145,8 @@ def encrypt_file_data(data, master_key):
 def generate_file_uuid():
     """ファイル用のUUIDを生成"""
     # UUID v4を生成
-    # ファイル識別に適した文字列形式に変換
+    # タイムスタンプを組み合わせてファイル識別に使用
+    # 書式: {timestamp}_{uuid}の形式
 ```
 
 ### 出力形式
@@ -201,6 +202,7 @@ def generate_file_uuid():
    - カナリア値自体も暗号化して格納
 
 6. **ファイル命名と衝突回避**:
-   - 出力ファイル名に UUID を含める（例: `encrypted-{uuid}.bin`）
+   - 出力ファイル名に UUID とタイムスタンプを含める（例: `encrypted_{timestamp}_{uuid}.henc`）
    - 一時ファイルとバックアップファイルにも異なる UUID を付与
    - UUID 生成には Python の`uuid`モジュールを使用
+   - ファイル上書きによる情報漏洩を防止

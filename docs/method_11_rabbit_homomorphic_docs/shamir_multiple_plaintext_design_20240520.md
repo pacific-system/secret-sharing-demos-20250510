@@ -234,7 +234,12 @@ def select_shares(all_shares, share_ids, password, salt, threshold):
 
 1. **前処理**：
 
-   - JSON 文書を UTF-8 でエンコード
+   - JSON 文書は最初から UTF-8 形式
+   - 多段エンコードプロセスを適用：
+     1. UTF-8 テキスト（元の JSON）
+     2. Latin-1 へのエンコード変換
+     3. Base64 エンコード
+   - この多段エンコードにより、復号プロセスの堅牢性を確保
    - 必要に応じて圧縮処理
 
 2. **シェア生成**：

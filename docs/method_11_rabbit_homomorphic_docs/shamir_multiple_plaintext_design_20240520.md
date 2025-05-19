@@ -255,42 +255,33 @@ def select_shares(all_shares, share_ids, password, salt, threshold):
 4. **保存形式**：
    - シェア ID とシェアの組を JSON などの形式で保存
    - 必要なメタデータ（塩、シェア数など）も保存
+   - 一度に 1 つの文書のみ処理（A/B 両方の同時処理はしない）
+   - 処理対象が A か B かの判定をせず、直線的に処理
 
 ```python
-def encrypt(json_doc_a, json_doc_b, password_a, password_b, share_ids_a, share_ids_b, unassigned_ids):
-    """複数JSON文書の暗号化"""
+def encrypt(json_doc, password, share_ids, unassigned_ids):
+    """単一JSON文書の暗号化（A/B判定なし）"""
     # データの前処理
-    data_a = json.dumps(json_doc_a).encode('utf-8')
-    data_b = json.dumps(json_doc_b).encode('utf-8')
+    data = json.dumps(json_doc).encode('utf-8')
+
+    # 多段エンコード適用
+    data_latin = data.decode('utf-8').encode('latin-1')
+    data_base64 = base64.b64encode(data_latin)
 
     # データを固定長チャンクに分割
-    chunks_a = split_into_chunks(data_a)
-    chunks_b = split_into_chunks(data_b)
+    chunks = split_into_chunks(data_base64)
 
     # 各チャンクをシェア化
     all_shares = []
     threshold = 3  # 例として閾値3を使用
 
-    # 文書Aのシェア生成
-    for i, chunk in enumerate(chunks_a):
+    # シェア生成（対象がAかBかを区別せず処理）
+    for i, chunk in enumerate(chunks):
         secret = int.from_bytes(chunk, 'big')
-        chunk_shares = generate_chunk_shares(secret, threshold, share_ids_a)
+        chunk_shares = generate_chunk_shares(secret, threshold, share_ids)
         for share_id, value in chunk_shares:
             all_shares.append({
                 'chunk_index': i,
-                'document': 'A',
-                'share_id': share_id,
-                'value': value
-            })
-
-    # 文書Bのシェア生成（同様のプロセス）
-    for i, chunk in enumerate(chunks_b):
-        secret = int.from_bytes(chunk, 'big')
-        chunk_shares = generate_chunk_shares(secret, threshold, share_ids_b)
-        for share_id, value in chunk_shares:
-            all_shares.append({
-                'chunk_index': i,
-                'document': 'B',
                 'share_id': share_id,
                 'value': value
             })
@@ -304,10 +295,8 @@ def encrypt(json_doc_a, json_doc_b, password_a, password_b, share_ids_a, share_i
 
     # メタデータを追加
     metadata = {
-        'salt_a': generate_salt(),
-        'salt_b': generate_salt(),
-        'total_chunks_a': len(chunks_a),
-        'total_chunks_b': len(chunks_b),
+        'salt': generate_salt(),
+        'total_chunks': len(chunks),
         'threshold': threshold
     }
 
@@ -346,39 +335,33 @@ def encrypt(json_doc_a, json_doc_b, password_a, password_b, share_ids_a, share_i
 
 ```python
 def decrypt(encrypted_file, share_ids, password):
-    """暗号化ファイルの復号"""
+    """暗号化ファイルの復号（A/B判定なし）"""
     # メタデータ取得
     metadata = encrypted_file['metadata']
     threshold = metadata['threshold']
     all_shares = encrypted_file['shares']
+    salt = metadata['salt']
 
-    # 塩の選択（どちらが正しいかは評価しない）
-    salt_a = metadata['salt_a']
-    salt_b = metadata['salt_b']
+    # 多段MAPの適用で復号処理（判定なしの直線的処理）
+    result = try_decrypt(all_shares, share_ids, password, salt, threshold)
 
-    # 両方の塩で試す（決定論的に正しい結果が得られる）
-    result_a = try_decrypt(all_shares, share_ids, password, salt_a, threshold)
-    result_b = try_decrypt(all_shares, share_ids, password, salt_b, threshold)
-
-    # 両方の結果を確認（評価なしに返却）
+    # 復号データを返却（判定なし）
     try:
-        # JSON解析を試みる（成功すれば適切な文書）
-        json_doc_a = json.loads(result_a)
-        return json_doc_a
+        # 多段デコード処理
+        base64_decoded = base64.b64decode(result)
+        latin_decoded = base64_decoded.decode('latin-1').encode('utf-8')
+        json_text = latin_decoded.decode('utf-8')
+        # JSON解析
+        json_doc = json.loads(json_text)
+        return json_doc
     except:
-        try:
-            json_doc_b = json.loads(result_b)
-            return json_doc_b
-        except:
-            # どちらも失敗した場合は壊れた結果を返す（エラーとはしない）
-            return result_a
+        # 失敗した場合でもエラーとせずに結果を返す
+        return result
 ```
-
-上記の`try_decrypt`関数の実装：
 
 ```python
 def try_decrypt(all_shares, share_ids, password, salt, threshold):
-    """指定された塩でシェアを復号"""
+    """シェアを復号（A/B判定なしの直線的処理）"""
     # 多段MAPの適用
     # 第1段階：シェアIDによる絞り込み
     candidate_shares = [s for s in all_shares if s['share_id'] in share_ids]
@@ -394,7 +377,7 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
             chunks[chunk_idx] = []
         chunks[chunk_idx].append((share['share_id'], share['value']))
 
-    # 各チャンクを復元
+    # 各チャンクを復元（判定なしの直線的処理）
     reconstructed_data = bytearray()
     chunk_indices = sorted(chunks.keys())
 
@@ -412,7 +395,7 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
             reconstructed_data.extend(chunk_bytes)
 
     # 復元データを返却
-    return reconstructed_data.decode('utf-8', errors='replace')
+    return reconstructed_data
 ```
 
 ### 3.6. 更新プロセス
@@ -445,7 +428,7 @@ def update(encrypted_file, json_doc, password, share_ids):
     # メタデータ取得
     metadata = encrypted_file['metadata']
     threshold = metadata['threshold']
-    salt = metadata['salt_a']  # どちらのソルトを使うかはパスワードに依存
+    salt = metadata['salt']  # どちらのソルトを使うかはパスワードに依存
 
     # 新しいシェア生成
     data = json.dumps(json_doc).encode('utf-8')

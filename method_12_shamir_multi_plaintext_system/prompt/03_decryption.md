@@ -2,7 +2,7 @@
 
 ## 復号化モジュールの目的
 
-このモジュールは暗号化されたファイルから、特定のシェア ID セットとパスワードを用いて単一の JSON 文書を復元します。多段 MAP 方式の特徴を活かし、パスワードによって異なる文書が復号される仕組みです。
+このモジュールは高度に暗号化されたバイナリファイルから、特定のシェア ID セットとパスワードを用いて単一の JSON 文書を復元します。多段 MAP 方式の特徴を活かし、パスワードによって異なる文書が復号される仕組みです。
 
 ## 重要なセキュリティ要件
 
@@ -26,9 +26,36 @@
    - 各シェア ID に決定論的にマッピング値を生成
    - マッピング値でソート後、閾値分のシェアを選択
 
+### 3. 暗号化バイナリファイルの処理
+
+- **二重復号**: ファイル全体の暗号化を解除した後、内部データを処理
+- **ファイル構造解析**: バイナリフォーマットを適切に解析して各セクションを抽出
+- **認証検証**: 認証タグを検証してファイルの完全性を確保
+- **UUID 検証**: ファイルに含まれる UUID を確認し、一意性を検証
+
 ## 主要関数の実装ガイド
 
-### 1. 多段 MAP の実装
+### 1. バイナリファイルの復号と解析
+
+```python
+def decrypt_encrypted_file(encrypted_data, password):
+    """
+    暗号化されたバイナリファイルを復号
+
+    Args:
+        encrypted_data (bytes): 暗号化されたバイナリデータ
+        password (str): 復号用パスワード
+
+    Returns:
+        tuple: (メタデータ, シェアデータ, ファイルUUID) または復号失敗時はNone
+    """
+    # 1. ファイルヘッダーを解析（UUID含む）
+    # 2. パスワードからマスターキーを導出
+    # 3. 認証付き暗号の検証と復号
+    # 4. 復号されたデータからメタデータとシェアデータを抽出
+```
+
+### 2. 多段 MAP の実装
 
 ```python
 def stage1_map(share_ids):
@@ -59,7 +86,7 @@ def stage2_map(password, candidate_ids, salt):
     # {share_id: mapping_value} 形式の辞書を返す
 ```
 
-### 2. シェア選択と復元
+### 3. シェア選択と復元
 
 ```python
 def select_shares(all_shares, share_ids, password, salt, threshold):
@@ -81,7 +108,7 @@ def select_shares(all_shares, share_ids, password, salt, threshold):
     # 閾値分のシェアを選択（必ず同じ数を処理）
 ```
 
-### 3. シャミア秘密分散法による復元
+### 4. シャミア秘密分散法による復元
 
 ```python
 def lagrange_interpolation(shares, p):
@@ -98,31 +125,32 @@ def lagrange_interpolation(shares, p):
     # 有限体GF(p)上での計算に注意
 ```
 
-### 4. 復号関数
+### 5. 復号関数
 
 ```python
-def decrypt(encrypted_file, share_ids, password):
+def decrypt(encrypted_data, share_ids, password):
     """暗号化ファイルの復号
 
     Args:
-        encrypted_file: 暗号化されたファイル構造
-        share_ids: ユーザー入力のシェアIDセット
-        password: ユーザー入力のパスワード
+        encrypted_data (bytes): 暗号化されたバイナリデータ
+        share_ids (list): ユーザー入力のシェアIDセット
+        password (str): ユーザー入力のパスワード
 
     Returns:
-        復元されたJSON文書またはデコードに失敗した場合は生データ
+        tuple: (dict, str) 復元されたJSON文書とファイルUUID、またはデコードに失敗した場合は(None, None)
     """
-    # メタデータ取得
-    # 多段MAPを用いたシェア選択
-    # 選択されたシェアを用いてチャンク別に秘密を復元
-    # 復元されたデータに多段デコードを適用
-    # JSONとして解析
+    # 1. 暗号化ファイルを復号してメタデータ、シェアデータ、UUIDを取得
+    # 2. 多段MAPを用いたシェア選択
+    # 3. 選択されたシェアを用いてチャンク別に秘密を復元
+    # 4. 復元されたデータに多段デコードを適用
+    # 5. JSONとして解析
+    # 6. JSON文書とUUIDをタプルで返却
 ```
 
-### 5. 多段デコードと復元処理
+### 6. 多段デコードと復元処理
 
 ```python
-def try_decrypt(all_shares, share_ids, password, salt, threshold):
+def try_decrypt(all_shares, share_ids, password, salt, threshold, prime):
     """シェアを復号（A/B判定なしの直線的処理）
 
     Args:
@@ -131,9 +159,10 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
         password: ユーザー入力のパスワード
         salt: 暗号化時に生成された塩値
         threshold: 閾値（必要シェア数）
+        prime: 有限体の素数
 
     Returns:
-        復元されたバイトデータ
+        bytes: 復元されたバイトデータ
     """
     # 多段MAPの適用
     # チャンク別にシェアを整理
@@ -144,14 +173,15 @@ def decode_data(data):
     """多段デコード処理
 
     Args:
-        data: 復元されたバイトデータ
+        data (bytes): 復元されたバイトデータ
 
     Returns:
-        デコードされたJSON文書または例外発生時のデータ
+        dict or None: デコードされたJSON文書または例外発生時はNone
     """
-    # Base64デコード
-    # Latin-1からUTF-8へのエンコード変換
-    # JSON解析
+    # 1. 解凍（圧縮されている場合）
+    # 2. Base64デコード
+    # 3. Latin-1からUTF-8へのエンコード変換
+    # 4. JSON解析
 ```
 
 ## 実装上の制約と注意点
@@ -181,17 +211,44 @@ for i, share in enumerate(shares):
     # ビット演算で条件分岐せずに選択
 ```
 
-### 2. エラーハンドリング
+### 2. カナリア値の検証
+
+カナリア値の検証は復号が正しく行われたことを確認するのに役立ちますが、検証自体が情報漏洩につながらないよう注意が必要です。
+
+```python
+def verify_canary(decrypted_data, expected_canary_pattern):
+    """
+    カナリア値を定数時間で検証
+
+    Args:
+        decrypted_data (bytes): 復号されたデータ
+        expected_canary_pattern (bytes): 期待されるカナリアパターン
+
+    Returns:
+        bool: 検証結果（常に固定時間で実行）
+    """
+    # パターンの抽出
+    # 定数時間での比較を実行
+    # 結果を返却（タイミング攻撃を防ぐ）
+```
+
+### 3. エラーハンドリング
 
 - **失敗の特定を避ける**: 復号に失敗したか成功したかを外部から判別させない
 - **例外処理の統一**: 例外を投げる場合も定数時間で処理
 - **エラー情報の最小化**: エラーメッセージによる情報漏洩を防止
 
-### 3. パフォーマンスとメモリ使用
+### 4. パフォーマンスとメモリ使用
 
 - **チャンク単位の処理**: メモリ効率を高めるため、チャンク単位で処理
 - **予測可能なメモリアロケーション**: メモリ使用パターンが入力によって大きく変わらないよう設計
 - **カタストロフィックバックトラッキング対策**: 正規表現処理などでバックトラッキングによる処理時間増大を防止
+
+### 5. UUID の処理
+
+- **自動命名**: 復号結果ファイルの保存時には元の暗号化ファイルの UUID を使用
+- **UUID の検証**: ファイルの一意性を確認するため UUID を検証
+- **衝突回避**: 同じ UUID のファイルが存在する場合は上書きを防止
 
 ## 復号成功・失敗の判定
 

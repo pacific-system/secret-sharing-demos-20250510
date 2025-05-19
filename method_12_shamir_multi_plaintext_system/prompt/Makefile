@@ -1,7 +1,7 @@
 # シャミア秘密分散法による複数平文復号システム - プロンプト生成
 
 # 各プロンプトファイル
-PROMPT_FILES = 00_overview.md 01_encryption.md 02_decryption.md 03_update.md 04_cli.md
+PROMPT_FILES = 00_overview.md 01_initialization.md 02_encryption.md 03_decryption.md 04_update.md 05_cli.md
 
 # 出力ファイル
 OUTPUT_FILE = complete_prompt.md
@@ -36,6 +36,8 @@ $(OUTPUT_FILE): $(PROMPT_FILES)
 	@echo "3. 暗号処理において、設計書にあるアルゴリズムから逸脱しないでください。" >> $(OUTPUT_FILE)
 	@echo "4. 「正しいパスワードによる復号」に見せかけたバックドアを仕掛けないでください。" >> $(OUTPUT_FILE)
 	@echo "5. 「統計的区別不可能性」を確保するためのA/B/未割当シェア分布を維持してください。" >> $(OUTPUT_FILE)
+	@echo "6. シェアデータは必ず高度に暗号化されたバイナリファイルとして出力し、平文のJSONは使用しないでください。" >> $(OUTPUT_FILE)
+	@echo "7. 初期化時にはABを俯瞰できるマスターデータは絶対に出力せず、A用、B用のシェアを別々に出力してください。" >> $(OUTPUT_FILE)
 	@echo "" >> $(OUTPUT_FILE)
 	@echo "実装を開始してください。モジュール分割と正しいインポート関係を考慮したファイル構成から検討することをお勧めします。" >> $(OUTPUT_FILE)
 	@echo "" >> $(OUTPUT_FILE)

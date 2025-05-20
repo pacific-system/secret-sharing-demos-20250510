@@ -1,18 +1,25 @@
 """
 シャミア秘密分散法による複数平文復号システム
 
-このパッケージは、シャミア秘密分散法を応用した複数平文復号システムを
-実装しています。単一の暗号化ファイルから異なるパスワードを使用して
-異なる平文（JSON文書）を復号可能にします。
+このパッケージでは、シャミア秘密分散法を使用して複数の平文をひとつの暗号化ファイルに
+格納し、それぞれを独立したパスワードで復号できるシステムを提供します。
 """
 
-from .crypto import encrypt_json_document, decrypt_json_document
-from .update import update_encrypted_document, verify_update
-from .formats import load_encrypted_file, save_encrypted_file, convert_file_format, detect_file_format
-from .partition import generate_partition_map_key, PartitionManager, initialize_system
 from .constants import ShamirConstants
-from .key_management import PartitionKeyManager
-from .metadata import MetadataManager
-from .share_id import MemoryEfficientShareIDGenerator, verify_share_ids
+from .crypto import (
+    encrypt_json_document, decrypt_json_document, select_shares_for_encryption,
+    select_shares_for_decryption, reconstruct_secret, derive_key,
+    preprocess_json_document, postprocess_json_document,
+    init_encrypted_file, process_with_progress
+)
+from .core import generate_shares, lagrange_interpolation
+from .update import update_encrypted_document, verify_update
+from .partition import generate_partition_map_key, initialize_system
+# V3形式のインポート
+try:
+    from .formats.v3 import FileFormatV3
+    V3_FORMAT_AVAILABLE = True
+except ImportError:
+    V3_FORMAT_AVAILABLE = False
 
 __version__ = '1.0.0'

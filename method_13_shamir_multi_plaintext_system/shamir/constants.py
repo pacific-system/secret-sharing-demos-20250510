@@ -19,19 +19,22 @@ class ShamirConstants:
 
 
     # ファイルパーティション設計
-    PARTITION_SIZE = 3500   # 各ファイル(A/B)用パーティション総サイズ（整数、共通値）
     ACTIVE_SHARES = 2000    # 各ファイル(A/B)用有効シェア数（整数、共通値）
-    GARBAGE_SHARES = 1500   # 各ファイル(A/B)用ゴミデータ数（整数、共通値）
-    # 検証: ACTIVE_SHARES + GARBAGE_SHARES == PARTITION_SIZE
+    GARBAGE_SHARES = 2000   # 各ファイル(A/B)用ガベージシェア数（整数、共通値）
+    PARTITION_SIZE = ACTIVE_SHARES + GARBAGE_SHARES  # 各ファイル(A/B)用パーティション総サイズ（自動計算）
+    # ACTIVE_SHARESとGARBAGE_SHARESから自動計算されるPARTITION_SIZE
 
     # 未割当領域
-    UNASSIGNED_SHARES = 3000     # 未割当シェア数（整数）
+    UNASSIGNED_SHARES = 4000     # 未割当シェア数（整数）ガベージシェア
 
     # 全体シェア数（自動計算）
     SHARE_ID_SPACE = PARTITION_SIZE * 2 + UNASSIGNED_SHARES
 
     # チャンクサイズ（バイト単位）
     CHUNK_SIZE = 64
+
+    # シェア値の固定長シリアライズサイズ
+    FIXED_VALUE_LENGTH = 256
 
     # KDF設定
     ARGON2_MEMORY_COST = 65536  # 64 MB

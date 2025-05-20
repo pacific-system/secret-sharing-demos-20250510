@@ -23,7 +23,8 @@ from .core import (
 from .crypto import (
     encrypt_json_document, decrypt_json_document,
     load_encrypted_file, save_encrypted_file,
-    secure_decrypt, is_valid_json_result
+    secure_decrypt, is_valid_json_result,
+    init_encrypted_file
 )
 from .update import (
     update_encrypted_document, verify_update
@@ -32,10 +33,18 @@ from .tests import (
     security_self_diagnostic
 )
 
+# V3形式のインポート確認
+try:
+    from .formats.v3 import FileFormatV3
+    V3_FORMAT_AVAILABLE = True
+except ImportError:
+    V3_FORMAT_AVAILABLE = False
+
 
 def init_command(args):
     """
     システムを初期化し、パーティションマップキーを生成します
+    また、設計書に従い全てのシェアIDをガベージシェアで埋めた暗号化ファイルの雛形を生成します
 
     Args:
         args: コマンドライン引数
@@ -58,6 +67,18 @@ def init_command(args):
                 json.dump(system_info, f, indent=2)
             print(f"\nシステム情報を {args.output} に保存しました")
             print("警告: このファイルには秘密のパーティションマップキーが含まれています。安全に保管してください。")
+
+        # 暗号化ファイル雛形の生成
+        if args.generate_empty_file:
+            output_dir = args.output_dir if args.output_dir else './output'
+            try:
+                # V3形式の初期化ファイル生成
+                encrypted_file_path = init_encrypted_file(output_dir)
+                print(f"\n初期化された暗号化ファイルを生成しました: {encrypted_file_path}")
+                print("このファイルには全てのシェアIDがガベージシェアで埋められています。")
+            except Exception as e:
+                print(f"\nエラー: 暗号化ファイル雛形の生成に失敗しました - {e}")
+                print("警告: パーティションマップキーは生成されましたが、暗号化ファイル雛形は生成されませんでした。")
 
     except Exception as e:
         print(f"エラー: システム初期化に失敗しました - {e}")
@@ -227,6 +248,9 @@ def main():
     # initコマンド
     init_parser = subparsers.add_parser('init', help='システムを初期化し、パーティションマップキーを生成する')
     init_parser.add_argument('--output', '-o', help='初期化情報の出力先ファイル（オプション）')
+    init_parser.add_argument('--generate-empty-file', '-g', action='store_true',
+                          help='初期化時に全シェアIDをガベージシェアで埋めた暗号化ファイルの雛形を生成する')
+    init_parser.add_argument('--output-dir', '-d', help='暗号化ファイル雛形の出力先ディレクトリ（デフォルト: ./output）')
 
     # encryptコマンド
     encrypt_parser = subparsers.add_parser('encrypt', help='JSON文書を暗号化する')

@@ -73,6 +73,25 @@ python -m shamir update \
 python -m shamir security-test --output security_report.json
 ```
 
+### 初期化済み暗号化ファイルの生成
+
+パーティション全体をガベージシェアで埋めた初期化済み暗号化ファイルを生成することで、統計的区別不可能性を確保できます。このファイルは設計書の要件に完全準拠した形式（V3 形式）で作成されます。
+
+```bash
+# Pythonモジュールを使用する方法
+python -m shamir init --generate-empty-file --output-dir ./output
+
+# スタンドアロンスクリプトを使用する方法（依存関係の問題を回避）
+python generate_standalone.py --chunks 10 --output-dir ./output
+```
+
+初期化済み暗号化ファイルの特徴：
+
+- 全てのシェア ID がガベージシェアで埋められている
+- 統計的区別不可能性が確保されている（有効なシェア、無効なシェアを区別できない）
+- ソルト値のみの最小限のメタデータ
+- 常に新たな UUID を持つファイル名で生成される
+
 ## 使用例
 
 ### 複数文書の暗号化と復号

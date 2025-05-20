@@ -13,6 +13,8 @@ import secrets
 import hmac
 import hashlib
 import time
+import uuid
+import sys
 from typing import Any, Dict, List, Tuple, Optional, Set, Union
 from gmpy2 import mpz
 
@@ -32,6 +34,13 @@ from .core import (
     generate_polynomial, evaluate_polynomial, generate_shares,
     lagrange_interpolation, constant_time_select
 )
+
+# V3形式のインポート
+try:
+    from .formats.v3 import FileFormatV3
+    V3_FORMAT_AVAILABLE = True
+except ImportError:
+    V3_FORMAT_AVAILABLE = False
 
 
 def derive_key(password: str, salt: bytes, iterations: int = 310000, length: int = 32) -> bytes:
@@ -283,33 +292,37 @@ def encrypt_json_document(json_doc: Any, password: str, partition_key: str,
     Returns:
         暗号化されたファイルデータ
     """
-    print(f"DEBUG: encrypt_json_document - starting with threshold={threshold}")
+    print(f"暗号化を開始 (閾値: {threshold})")
+
     # ソルト値を生成
     salt = secrets.token_bytes(16)
-    print(f"DEBUG: encrypt_json_document - salt generated")
+    print("ソルト値を生成しました")
 
     # JSONを前処理
     preprocessed_data = preprocess_json_document(json_doc)
-    print(f"DEBUG: encrypt_json_document - preprocessed data size: {len(preprocessed_data)} bytes")
+    print(f"JSONデータを前処理しました (サイズ: {len(preprocessed_data)} バイト)")
 
     # チャンクに分割
     chunks = split_into_chunks(preprocessed_data)
-    print(f"DEBUG: encrypt_json_document - split into {len(chunks)} chunks")
+    print(f"データを {len(chunks)} チャンクに分割しました")
 
     # シェアID空間を生成 (1からSHARE_ID_SPACE)
     all_share_ids = list(range(1, ShamirConstants.SHARE_ID_SPACE + 1))
-    print(f"DEBUG: encrypt_json_document - generated {len(all_share_ids)} share IDs")
+    print(f"シェアID空間を生成しました (合計: {len(all_share_ids)} シェア)")
 
     # 使用するシェアIDを選択
     selected_share_ids = select_shares_for_encryption(
         partition_key, password, all_share_ids, salt, threshold
     )
-    print(f"DEBUG: encrypt_json_document - selected {len(selected_share_ids)} share IDs for encryption")
+    print(f"暗号化用に {len(selected_share_ids)} 個のシェアIDを選択しました")
 
-    # 各チャンクをシェア化
+    # 各チャンクをシェア化（進捗表示付き）
     all_shares = []
+
+    # 進捗表示機能を初期化
+    progress = process_with_progress(len(chunks), "暗号化処理")
+
     for chunk_idx, chunk in enumerate(chunks):
-        print(f"DEBUG: encrypt_json_document - processing chunk {chunk_idx+1}/{len(chunks)}")
         # チャンクをint値に変換
         secret = mpz(int.from_bytes(chunk, 'big'))
 
@@ -326,7 +339,10 @@ def encrypt_json_document(json_doc: Any, password: str, partition_key: str,
                 'value': str(value)  # 文字列として保存
             })
 
-    print(f"DEBUG: encrypt_json_document - generated {len(all_shares)} total shares")
+        # 進捗更新
+        progress(chunk_idx)
+
+    print(f"合計 {len(all_shares)} 個のシェアを生成しました")
 
     # メタデータを作成
     metadata = {
@@ -341,7 +357,7 @@ def encrypt_json_document(json_doc: Any, password: str, partition_key: str,
         'shares': all_shares
     }
 
-    print(f"DEBUG: encrypt_json_document - encryption completed")
+    print("暗号化が完了しました")
     return encrypted_file
 
 
@@ -461,7 +477,10 @@ def reconstruct_secret(
     reconstructed_chunks = []
     chunk_indices = sorted(chunks.keys())
 
-    for chunk_idx in chunk_indices:
+    # 進捗表示機能を初期化
+    progress = process_with_progress(len(chunk_indices), "チャンク復元")
+
+    for i, chunk_idx in enumerate(chunk_indices):
         chunk_shares = chunks[chunk_idx]
 
         # シェアが閾値未満の場合は復元できない
@@ -492,6 +511,9 @@ def reconstruct_secret(
                 chunk_bytes = chunk_bytes[:ShamirConstants.CHUNK_SIZE]
 
         reconstructed_chunks.append(chunk_bytes)
+
+        # 進捗更新
+        progress(i)
 
     return reconstructed_chunks
 
@@ -656,6 +678,8 @@ def decrypt_json_document(
     if len(password) < 4:
         return {"error": "パスワードが短すぎます"}
 
+    print("復号を開始します")
+
     # ファイル形式バージョンを確認
     if "header" in encrypted_file and "chunks" in encrypted_file:
         # V2形式の場合
@@ -663,6 +687,8 @@ def decrypt_json_document(
         threshold = header["threshold"]
         salt_base64 = header["salt"]
         salt = base64.urlsafe_b64decode(salt_base64)
+
+        print(f"V2形式のファイルを検出しました (閾値: {threshold})")
 
         # V2形式用のシェア選択処理
         try:
@@ -679,11 +705,19 @@ def decrypt_json_document(
                 normalized_key, share_id_space, threshold
             )
 
+            print(f"パーティションマップから {len(partition_share_ids)} 個のシェアID候補を取得しました")
+
             # 第2段階MAP: パスワードによるマッピング
             mappings = stage2_map(password, partition_share_ids, salt)
 
+            print("パスワードに基づくシェアマッピングを生成しました")
+
             # チャンク別にシェアを選択して復元
             reconstructed_chunks = []
+
+            # 進捗表示機能を初期化
+            total_chunks = len(encrypted_file["chunks"])
+            progress = process_with_progress(total_chunks, "チャンク復号")
 
             # パスワードバリデーションフラグ
             valid_password = True
@@ -731,7 +765,11 @@ def decrypt_json_document(
 
                 reconstructed_chunks.append(chunk_bytes)
 
+                # 進捗更新
+                progress(chunk_idx)
+
             # チャンクを後処理してJSON文書に変換
+            print("全チャンクの復号が完了しました。JSONに変換中...")
             json_doc = postprocess_json_document(reconstructed_chunks)
 
             # 復号結果が有効なJSONかどうかを確認
@@ -743,6 +781,7 @@ def decrypt_json_document(
             try:
                 # JSONとして再シリアライズして検証（デコード・エンコード可能か）
                 json.dumps(json_doc)
+                print("復号が完了しました")
                 return json_doc
             except (TypeError, ValueError):
                 # JSON変換エラーは無効なデータを示す（おそらく誤ったパスワード）
@@ -755,6 +794,8 @@ def decrypt_json_document(
     else:
         # V1形式の場合は既存の関数を利用
         try:
+            print("V1形式のファイルを処理します")
+
             # まずパスワードとパーティションキーが正しいか検証
             # シェアを選択
             selected_shares = select_shares_for_decryption(
@@ -774,18 +815,22 @@ def decrypt_json_document(
                     chunk_counts[chunk_idx] = 0
                 chunk_counts[chunk_idx] += 1
 
+            print(f"復号に必要なシェア数: {threshold}、選択されたシェア: {len(selected_shares)}")
+
             # チャンクごとにシェア数が閾値以上あるか確認
             for chunk_idx, count in chunk_counts.items():
                 if count < threshold:
                     return {"error": f"チャンク {chunk_idx} のシェア数が閾値未満です", "available": count, "required": threshold}
 
             # 通常の復号処理
+            print("シェア選択完了。復号処理を開始します...")
             success, result = try_decrypt_with_both_maps(
                 encrypted_file, partition_key, password
             )
 
             # 成功の場合はJSONデータを返す
             if success:
+                print("復号が完了しました")
                 # 復号結果のバリデーション試行
                 try:
                     # JSONとして再シリアライズして検証（デコード・エンコード可能か）
@@ -903,3 +948,150 @@ def is_valid_json_result(result: Any) -> bool:
         return True
     except (TypeError, ValueError):
         return False
+
+
+def init_encrypted_file(output_dir: str = './output') -> str:
+    """
+    初期化時の暗号化ファイル雛形を生成する
+
+    全てのシェアIDをガベージシェアで埋めた暗号化ファイルを生成し、
+    設計書の多段MAP方式に厳密に従う実装を行います。最小限のメタデータ
+    （ソルト値のみ）を含み、常に新たなUUIDを付与して一意性を確保します。
+
+    Args:
+        output_dir: 出力ディレクトリパス
+
+    Returns:
+        生成された暗号化ファイルのパス
+    """
+    if not V3_FORMAT_AVAILABLE:
+        raise ImportError("V3形式モジュールがインポートできません。")
+
+    # 出力ディレクトリの確認・作成
+    os.makedirs(output_dir, exist_ok=True)
+
+    # 常に新たなUUIDを生成（既存ファイルは上書きしない）
+    file_uuid = str(uuid.uuid4())
+    output_path = os.path.join(output_dir, f"encrypted_{file_uuid}.json")
+
+    # ソルト値を生成
+    salt = secrets.token_bytes(16)
+
+    # パーティション設計パラメータを確認
+    active_shares = ShamirConstants.ACTIVE_SHARES
+    garbage_shares = ShamirConstants.GARBAGE_SHARES
+    partition_size = ShamirConstants.PARTITION_SIZE
+    unassigned_shares = ShamirConstants.UNASSIGNED_SHARES
+    share_id_space = ShamirConstants.SHARE_ID_SPACE
+
+    print(f"パーティション設計: ACTIVE_SHARES={active_shares}, " +
+          f"GARBAGE_SHARES={garbage_shares}, PARTITION_SIZE={partition_size}, " +
+          f"UNASSIGNED_SHARES={unassigned_shares}, SHARE_ID_SPACE={share_id_space}")
+
+    # チャンク数の計算（この例では10チャンクで初期化）
+    total_chunks = 10  # 初期チャンク数（設定値）
+
+    # V3形式による空の暗号化ファイルデータの作成
+    empty_file = {
+        "header": {
+            "salt": base64.urlsafe_b64encode(salt).decode('ascii')
+        },
+        "values": []
+    }
+
+    # 全シェアを格納する一次元配列を初期化
+    total_values = total_chunks * share_id_space
+    values = []
+
+    print(f"初期化: {total_chunks}チャンク, {share_id_space}シェアID, 合計{total_values}値を生成")
+
+    # 進捗表示機能を初期化
+    progress = process_with_progress(total_values, "ガベージシェア生成")
+
+    # 全てのシェアに対して暗号論的に安全なランダム値を生成
+    for i in range(total_values):
+        # 大きな素数p未満のランダム値を生成（有限体GF(p)上で均一分布）
+        random_value = str(secrets.randbelow(int(ShamirConstants.PRIME - 1)) + 1)
+        values.append(random_value)
+
+        # 進捗更新（100値ごと - 処理速度のバランスを取るため）
+        if i % 100 == 0 or i == total_values - 1:
+            progress(i)
+
+    # 値を設定
+    empty_file["values"] = values
+
+    print("完全固定長シリアライズを適用中...")
+
+    # 完全固定長シリアライズを適用
+    if V3_FORMAT_AVAILABLE:
+        serialized_data = FileFormatV3.fixed_length_serialize(empty_file)
+        FileFormatV3.write_file(serialized_data, output_path)
+    else:
+        # 値を固定長に変換（V3形式が使用できない場合の代替処理）
+        serialized_values = []
+
+        # 進捗表示機能を初期化（シリアライズ用）
+        serialize_progress = process_with_progress(len(values), "固定長シリアライズ")
+
+        for i, value in enumerate(values):
+            serialized_value = value.ljust(ShamirConstants.FIXED_VALUE_LENGTH, '0')
+            serialized_values.append(serialized_value)
+
+            # 進捗更新（100値ごと）
+            if i % 100 == 0 or i == len(values) - 1:
+                serialize_progress(i)
+
+        empty_file["values"] = serialized_values
+
+        # ファイルに書き込み
+        print("ファイルを書き込み中...")
+        with open(output_path, 'w') as f:
+            json.dump(empty_file, f)
+
+    print(f"暗号化ファイルを生成しました: {output_path}")
+
+    return output_path
+
+
+def process_with_progress(total_items, operation_name="処理"):
+    """
+    進捗表示機能付きの処理ラッパー
+
+    Args:
+        total_items: 処理する総アイテム数
+        operation_name: 操作の名前（表示用）
+
+    Returns:
+        進捗表示用の関数
+    """
+    start_time = time.time()
+
+    def update_progress(current_item):
+        """進捗を表示する関数"""
+        progress = (current_item + 1) / total_items * 100
+        elapsed = time.time() - start_time
+
+        # 残り時間の推定（最低1処理完了後）
+        if current_item > 0:
+            eta = elapsed / (current_item + 1) * (total_items - current_item - 1)
+            eta_str = f"残り時間: {eta:.1f}秒"
+        else:
+            eta_str = "残り時間: 計算中..."
+
+        # プログレスバー（幅30文字）
+        bar_width = 30
+        bar_filled = int(bar_width * progress / 100)
+        bar = '█' * bar_filled + '░' * (bar_width - bar_filled)
+
+        # 進捗情報をコンソールに表示（同じ行を更新）
+        sys.stdout.write(f"\r{operation_name}: {progress:.1f}% |{bar}| {current_item+1}/{total_items} {eta_str}")
+        sys.stdout.flush()
+
+        # 最後のアイテムの場合は改行
+        if current_item == total_items - 1:
+            total_time = time.time() - start_time
+            sys.stdout.write(f"\n{operation_name}が完了しました。合計時間: {total_time:.1f}秒\n")
+            sys.stdout.flush()
+
+    return update_progress

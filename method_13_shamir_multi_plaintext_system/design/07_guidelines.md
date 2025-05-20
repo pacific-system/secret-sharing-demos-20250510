@@ -21,7 +21,7 @@
 3. **構造的匿名性**：
 
    - データ構造自体から情報が漏洩しないよう設計
-   - シェア値とその識別子のみを保存し、意味的関連を持たせない
+   - シェア値とその識別子（シェア ID）のみを保存し、それ以外の情報や意味的関連を持たせない
    - 同一の処理パスで異なる結果を導出できるよう構造化
 
 4. **固定サイズと均一性**：
@@ -150,15 +150,15 @@ return result
 
 1. **分散化と均一性**：
 
-   - パーティションマップキーの分布はランダム性を維持し、パターンを形成しない
+   - パーティションマップ内のシェア（有効シェアとガベージシェア）の分布はランダム性を維持し、パターンを形成しない
    - 任意の連続範囲において、各種別（A/B/未割当）の分布比率が一定となるよう設計
    - ブロック単位での分布検証を実施し、統計的均一性を確保
 
-2. **効率的なルックアップ**：
+2. **シェア ID 処理の最適化**：
 
-   - 頻繁なパーティションマップキー検索に対応するため、効率的なデータ構造を採用
-   - パーティションマップキーの検索や所属確認において条件分岐を用いない実装
-   - ビット演算やルックアップテーブルを活用した定数時間アクセス
+   - シェア ID の分布テーブルをビットマップまたは固定長配列として実装し、直接アクセス可能にする
+   - シェア ID がどのパーティション（A/B/ガベージシェア）に属するかの判定には、条件分岐のない実装を使用
+   - マスク演算（AND/OR）を用いた定数時間アクセス処理により、サイドチャネル漏洩を防止
 
 3. **安全な生成と管理**：
    - 暗号学的に安全な乱数発生器を用いたパーティション空間の生成
@@ -254,7 +254,7 @@ return result
 
      - チャンクサイズを統一（64 バイト固定）し、パディングを統一的に適用
      - HMAC-SHA を用いた決定論的なマッピング
-     - 未割当領域には良質な乱数（/dev/urandom または secrets）でゴミデータを生成
+     - 未割当領域には良質な乱数（/dev/urandom または secrets）でガベージシェアを生成
      - 第 2 段階 MAP で特定された位置に有効データを配置
 
    - 実装例：
@@ -277,9 +277,8 @@ return result
          required_chunks = len(stage2_map)
          has_enough_data = len(chunks) >= required_chunks
 
-         # 容量が足りない場合は例外（実際の実装では定数時間処理で対応）
-         if not has_enough_data:
-             raise CapacityError(f"データ容量不足: 必要={required_chunks}, 実際={len(chunks)}")
+         # データ定量化（64バイト固定長に調整）
+         quantized_chunks = quantize_data_chunks(chunks, required_chunks)
 
          # チャンク数が多すぎる場合は切り捨て
          chunks = chunks[:required_chunks]
@@ -294,7 +293,7 @@ return result
          return all_shares
      ```
 
-   - この実装は不足位置にゴミデータを混入せず、常に全位置を有効データで満たす
+   - この実装は不足位置にガベージシェアを混入せず、常に全位置を有効データで満たす
 
 ### 7.6. 全シェア使用方式の実装ガイドライン
 
@@ -348,283 +347,118 @@ return result
        return secret
    ```
 
-3. **シェア数の一貫性確保**：
+3. **固定シェア数の適用**：
 
    ```python
-   def verify_share_count(encrypted_data, share_ids):
-       """シェア数の一貫性を検証"""
-       # パーティションごとに必要なシェア数を検証
-       for chunk_idx, chunk_shares in enumerate(encrypted_data):
-           available_shares = [s for s in chunk_shares if s[0] in share_ids]
+   def verify_active_shares_fixed(encrypted_data, partition_size, active_shares):
+       """固定シェア数パラメータの検証"""
+       # パーティションサイズとアクティブシェア数の検証
+       if not isinstance(active_shares, int) or active_shares <= 0:
+           raise ValueError("ACTIVE_SHARESは正の整数である必要があります")
 
-           # 使用するシェアIDセットと一致するか確認
-           if len(available_shares) != len(share_ids):
-               # 不足または過剰なシェアが存在する場合は警告（エラーではない）
-               log_warning(f"チャンク {chunk_idx} のシェア数が一致しません: " +
-                         f"期待={len(share_ids)}, 実際={len(available_shares)}")
+       if not isinstance(partition_size, int) or partition_size <= 0:
+           raise ValueError("PARTITION_SIZEは正の整数である必要があります")
+
+       if active_shares > partition_size:
+           raise ValueError("ACTIVE_SHARESはPARTITION_SIZE以下である必要があります")
+
+       # ACTIVE_SHARESは設計時に固定される定数であり、実行時に変更されないことを確認
+       log_validation("ACTIVE_SHARES固定値の検証完了")
    ```
 
-4. **MAPs 実装の最適化**：
+4. **多段 MAP 実装**：
 
    ```python
-   def optimize_maps_for_all_shares(partition_key, password, salt):
-       """全シェア使用方式に最適化されたMAP生成"""
+   def implement_two_stage_map(partition_key, password, salt, partition_size, active_shares):
+       """多段MAP方式の実装"""
        # パスワードを固定長に変換（ハッシュ化）
        normalized_password = hash_to_fixed_length(password)
 
-       # 第1段階MAP：パーティションマップキーからシェアID全てを生成
-       share_ids = generate_partition_map_ids(partition_key)
+       # 第1段階MAP：パーティションマップキーからシェアID集合を生成
+       # PARTITION_SIZEの数だけシェアIDを選択
+       stage1_map_ids = generate_stage1_map(partition_key, partition_size)
 
-       # 第2段階MAP：固定数のシェア位置を決定
-       # 正規化されたパスワードとソルトからマッピング値を生成
-       mapping = {}
-       key = kdf(normalized_password, salt)
+       # 第2段階MAP：第1段階で選択されたシェアIDの中からACTIVE_SHARES個を選択
+       key_material = derive_key_material(normalized_password, salt)
+       stage2_map_ids = select_active_shares(stage1_map_ids, key_material, active_shares)
 
-       for id in share_ids:
-           mapping[id] = hmac_value(key, str(id).encode())
-
-       # 常に同じ数のシェア位置を返す
-       return share_ids, mapping
-   ```
-
-5. **全シェア使用の検証と保証**：
-
-   ```python
-   def ensure_all_shares_available(shares, required_ids):
-       """全シェアが利用可能か確認し、不足時はエラー処理"""
-       # 必要なIDのセット
-       required_set = set(required_ids)
-
-       # 実際に利用可能なIDのセット
-       available_set = set(share[0] for share in shares)
-
-       # 不足しているIDがあるか確認
-       missing_ids = required_set - available_set
-
-       if missing_ids:
-           # ここでは直接エラーを返さず、情報を返す
-           # 実際の処理は呼び出し側で行う（定数時間処理の原則に従う）
-           return {
-               "all_available": False,
-               "missing_count": len(missing_ids),
-               "missing_ids": list(missing_ids)
-           }
+       # 注: 初期状態で全ての位置にはガベージシェアが配置されており、
+       # 暗号化操作時に第2段階MAPで選択された位置のみが有効シェアに置き換えられる
 
        return {
-           "all_available": True,
-           "shares": [s for s in shares if s[0] in required_set]
+           "stage1_map_ids": stage1_map_ids,     # PARTITION_SIZE個のID
+           "stage2_map_ids": stage2_map_ids,     # ACTIVE_SHARES個のID（有効シェア用）
        }
    ```
 
-6. **シェア生成時のパラメータ固定**：
+5. **暗号化前のデータ定量化と多段エンコード**：
 
    ```python
-   def configure_shamir_parameters():
-       """シャミアパラメータの固定設定（全シェア使用方式用）"""
-       # 閾値パラメータは使用しない
-       # 代わりに常に全シェアを使用するための設定
+   def quantize_and_encode_data(json_data, active_shares, chunk_size=64):
+       """暗号化前にデータを多段エンコードして定量化"""
+       # 1. JSON文書をUTF-8テキストに変換
+       utf8_text = json.dumps(json_data, ensure_ascii=False)
+       utf8_bytes = utf8_text.encode('utf-8')
 
-       # システム全体で固定チャンクサイズを使用
-       CHUNK_SIZE = 64  # バイト
+       # 2. Latin-1へエンコード変換（バイナリデータとして扱うため）
+       try:
+           latin1_text = utf8_bytes.decode('latin-1')
+       except UnicodeDecodeError:
+           # エラー処理（実際の実装では発生しない）
+           latin1_text = utf8_bytes.decode('latin-1', errors='replace')
 
-       # 全シェア使用方式の設定
-       config = {
-           "use_all_shares": True,  # 常に全シェアを使用
-           "chunk_size": CHUNK_SIZE,  # 64バイト固定
-           "polynomial_coefficients": "random",  # 多項式係数はランダム生成
-           "prime_field": 2**521 - 1  # メルセンヌ素数を使用
-       }
+       # 3. Base64エンコード
+       import base64
+       base64_bytes = base64.b64encode(latin1_text.encode('latin-1'))
+       base64_text = base64_bytes.decode('ascii')
 
-       return config
-   ```
+       # 4. 固定長シリアライズ処理
+       # 必要な最終サイズを計算（ACTIVE_SHARES × CHUNK_SIZE）
+       target_size = active_shares * chunk_size
 
-### 7.7. 容量検証と固定サイズ実装ガイドライン
+       # Base64データを固定長形式にシリアライズ
+       serialized_data = fixed_length_serialize(base64_text, target_size)
 
-以下は容量検証と固定サイズチャンクの実装に関するガイドラインです：
+       # これにより、入力JSONのサイズに関わらず常に一定サイズのバイト列が生成される
+       return serialized_data
 
-1. **暗号化前の容量検証**：
+   def fixed_length_serialize(text_data, target_size):
+       """テキストデータを固定長形式にシリアライズ"""
+       # テキストをバイトに変換
+       data_bytes = text_data.encode('ascii')
+       current_size = len(data_bytes)
 
-   ```python
-   def verify_capacity_before_encryption(data, partition_key, password, salt):
-       """暗号化前にデータ容量を検証"""
-       # JSON文書のバイトサイズを取得
-       data_size = len(data.encode('utf-8'))
-
-       # 圧縮率を考慮した予測サイズ（保守的に0.7を使用）
-       estimated_compressed_size = int(data_size * 0.7)
-
-       # 必要チャンク数を計算（64バイト単位で切り上げ）
-       required_chunks = (estimated_compressed_size + 63) // 64
-
-       # 使用可能なシェア数はACTIVE_SHARESで固定（定数）
-       available_positions = ACTIVE_SHARES
-
-       # 容量が十分かチェック（定数時間処理）
-       has_sufficient_capacity = required_chunks <= available_positions
-
-       # 結果を返す（真偽値と必要情報）- 定数時間処理用の変数
-       result = {
-           "sufficient": has_sufficient_capacity,
-           "required_chunks": required_chunks,
-           "available_positions": available_positions,
-           "max_data_size": available_positions * 64,
-           "estimated_json_capacity": int(available_positions * 64 * 1.3)  # 圧縮率の逆数で戻す
-       }
-
-       # 必ず同じ処理パスを通る（定数時間処理）
-       return result
-   ```
-
-2. **固定サイズデータ分割**：
-
-   ```python
-   def split_data_into_fixed_chunks(data, chunk_size=64):
-       """データを固定サイズチャンクに分割"""
-       # データをバイト列に変換
-       if isinstance(data, str):
-           data = data.encode('utf-8')
-
-       # チャンク数を計算
-       chunk_count = (len(data) + chunk_size - 1) // chunk_size
-
-       # 固定サイズのチャンクリストを作成
-       chunks = []
-       for i in range(chunk_count):
-           start = i * chunk_size
-           end = start + chunk_size
-           chunk = data[start:min(end, len(data))]
-
-           # 最後のチャンクが不完全な場合はパディング
-           if len(chunk) < chunk_size:
-               # セキュアなパディング関数（実装依存）
-               chunk = secure_pad(chunk, chunk_size)
-
-           chunks.append(chunk)
-
-       return chunks
-   ```
-
-3. **パスワードの固定長変換**：
-
-   ```python
-   def hash_to_fixed_length(password, output_length=32):
-       """パスワードを固定長に変換（UTF-8対応）"""
-       # 特定のハッシュアルゴリズムを使用
-       # SHA-256は32バイト（256ビット）の出力を生成
-       import hashlib
-       import unicodedata
-
-       # Unicode正規化（NFC形式）を適用
-       # 例：分解された「é」(e + ´) と合成された「é」を同一に扱う
-       if isinstance(password, str):
-           normalized_password = unicodedata.normalize('NFC', password)
-           password_bytes = normalized_password.encode('utf-8')
+       if current_size <= target_size:
+           # 不足している場合はパディング
+           # PKCS#7パディング方式を使用
+           padding_size = target_size - current_size
+           padding_value = padding_size.to_bytes(1, byteorder='big') * padding_size
+           padded_data = data_bytes + padding_value
+           return padded_data
        else:
-           password_bytes = password
-
-       hash_obj = hashlib.sha256(password_bytes)
-       return hash_obj.digest()
+           # 超過している場合は切り詰め
+           return data_bytes[:target_size]
    ```
 
-4. **MAP 生成の固定サイズ保証**：
+6. **固定容量処理**：
 
    ```python
-   def generate_fixed_size_map(password, partition_key, salt, target_size=None):
-       """固定サイズのMAPを生成"""
-       # パスワードを固定長ハッシュに変換
-       pwd_hash = hash_to_fixed_length(password)
+   def process_with_fixed_capacity(json_data, partition_key, password, salt, active_shares):
+       """固定容量でデータ処理（単純化版）"""
+       # データをシリアライズしてバイト列に変換
+       data_bytes = json.dumps(json_data).encode('utf-8')
 
-       # パーティションマップキーからベースとなるIDのセットを取得（PARTITION_SIZE個）
-       base_ids = generate_partition_map_ids(partition_key)
+       # 必要な固定サイズに定量化（ACTIVE_SHARES × 64バイト）
+       quantized_data = quantize_and_encode_data(data_bytes, active_shares)
 
-       # target_sizeが指定されていない場合は定数値ACTIVE_SHARESを使用
-       if target_size is None:
-           target_size = ACTIVE_SHARES
+       # 多段MAPを生成
+       maps = implement_two_stage_map(partition_key, password, salt,
+                                    PARTITION_SIZE, active_shares)
 
-       # KDFを使用して派生キーを生成
-       derived_key = secure_kdf(pwd_hash, salt, iterations=310000)
+       # 暗号化処理
+       encrypted_result = encrypt_data(quantized_data, maps)
 
-       # 必要なシェア位置数を確保（常に固定サイズACTIVE_SHARES個）
-       map_positions = []
-
-       # パーティション内で分散させながらACTIVE_SHARES個の位置を決定論的に選択
-       # パスワードから導出された派生キーをもとに決定する
-       for i in range(target_size):
-           # 決定論的に位置を選択（パスワードに基づく決定論的マッピング）
-           index = derive_secure_index(derived_key, i, len(base_ids))
-           position = base_ids[index]
-           map_positions.append(position)
-
-       return map_positions
-   ```
-
-5. **固定長シリアライズ処理**：
-
-   ```python
-   def fixed_length_serialize(data, fixed_field_sizes=None):
-       """データを固定長形式でシリアライズ"""
-       if fixed_field_sizes is None:
-           # デフォルトのフィールドサイズ設定
-           fixed_field_sizes = {
-               "share_id": 10,     # シェアIDの固定文字数
-               "share_value": 128, # シェア値の固定文字数
-               "salt": 64          # ソルト値の固定文字数
-           }
-
-       # シェアIDの固定長シリアライズ
-       share_id_str = str(data["id"]).zfill(fixed_field_sizes["share_id"])
-       if len(share_id_str) > fixed_field_sizes["share_id"]:
-           share_id_str = share_id_str[-fixed_field_sizes["share_id"]:]
-
-       # シェア値の固定長シリアライズ（16進数表現）
-       share_value_hex = format(data["value"], 'x')
-       share_value_str = share_value_hex.zfill(fixed_field_sizes["share_value"])
-       if len(share_value_str) > fixed_field_sizes["share_value"]:
-           share_value_str = share_value_str[-fixed_field_sizes["share_value"]:]
-
-       # 固定長形式で結合
-       return share_id_str + share_value_str
-   ```
-
-6. **容量不足の定数時間処理**:
-
-   ```python
-   def process_with_capacity_check(json_data, partition_key, password, salt):
-       """容量検証を含む処理（条件分岐なし）"""
-       # 容量検証を実行
-       capacity_result = verify_capacity_before_encryption(json_data, partition_key, password, salt)
-
-       # 容量が十分かどうかのフラグ
-       is_sufficient = capacity_result["sufficient"]
-
-       # エラーメッセージを準備（キャパシティが不足している場合に使用）
-       error_message = f"データ容量不足: 必要={capacity_result['required_chunks']}チャンク, 利用可能={capacity_result['available_positions']}チャンク"
-
-       # 処理結果オブジェクトの初期化
-       processing_result = {
-           "success": False,
-           "error_message": None,
-           "encrypted_data": None
-       }
-
-       # 適切な処理パスを選択（定数時間処理）
-       # マスク値を作成（sufficient が True なら -1、False なら 0）
-       mask = -int(is_sufficient)
-
-       # 成功フラグを設定（sufficient が True なら True、False なら False）
-       processing_result["success"] = bool(mask & 1)
-
-       # エラーメッセージを設定（sufficient が True なら None、False ならエラーメッセージ）
-       processing_result["error_message"] = (None & mask) | (error_message & ~mask)
-
-       # データ処理（十分な容量がある場合のみ実行するが、定数時間で）
-       # 両方の処理を実行し、マスクで結果を選択
-       normal_result = encrypt_data(json_data, partition_key, password, salt) if is_sufficient else None
-       error_result = None
-
-       processing_result["encrypted_data"] = (normal_result & mask) | (error_result & ~mask)
-
-       return processing_result
+       return encrypted_result
    ```
 
 これらのガイドラインを実装することで、固定サイズチャンクと容量制限を適切に処理し、セキュリティを確保しながら効率的な実装が可能になります。

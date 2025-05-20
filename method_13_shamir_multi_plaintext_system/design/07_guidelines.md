@@ -9,7 +9,7 @@
 1. **最小情報の原則**：
 
    - 復号に必須の情報のみを保存
-   - ユーザー入力から導出可能な情報は保存しない
+   - ファイル入力から導出可能な情報は保存しない
    - メタデータは処理に必要な最低限に留める
 
 2. **識別情報の排除**：
@@ -456,8 +456,8 @@ return result
        # 必要チャンク数を計算（64バイト単位で切り上げ）
        required_chunks = (estimated_compressed_size + 63) // 64
 
-       # 使用可能なシェア数はUSER_ACTIVE_SHARESで固定（定数）
-       available_positions = USER_ACTIVE_SHARES
+       # 使用可能なシェア数はACTIVE_SHARESで固定（定数）
+       available_positions = ACTIVE_SHARES
 
        # 容量が十分かチェック（定数時間処理）
        has_sufficient_capacity = required_chunks <= available_positions
@@ -534,20 +534,20 @@ return result
        # パスワードを固定長ハッシュに変換
        pwd_hash = hash_to_fixed_length(password)
 
-       # パーティションマップキーからベースとなるIDのセットを取得（USER_PARTITION_SIZE個）
+       # パーティションマップキーからベースとなるIDのセットを取得（PARTITION_SIZE個）
        base_ids = generate_partition_map_ids(partition_key)
 
-       # target_sizeが指定されていない場合は定数値USER_ACTIVE_SHARESを使用
+       # target_sizeが指定されていない場合は定数値ACTIVE_SHARESを使用
        if target_size is None:
-           target_size = USER_ACTIVE_SHARES
+           target_size = ACTIVE_SHARES
 
        # KDFを使用して派生キーを生成
        derived_key = secure_kdf(pwd_hash, salt, iterations=310000)
 
-       # 必要なシェア位置数を確保（常に固定サイズUSER_ACTIVE_SHARES個）
+       # 必要なシェア位置数を確保（常に固定サイズACTIVE_SHARES個）
        map_positions = []
 
-       # パーティション内で分散させながらUSER_ACTIVE_SHARES個の位置を決定論的に選択
+       # パーティション内で分散させながらACTIVE_SHARES個の位置を決定論的に選択
        # パスワードから導出された派生キーをもとに決定する
        for i in range(target_size):
            # 決定論的に位置を選択（パスワードに基づく決定論的マッピング）
@@ -584,6 +584,47 @@ return result
 
        # 固定長形式で結合
        return share_id_str + share_value_str
+   ```
+
+6. **容量不足の定数時間処理**:
+
+   ```python
+   def process_with_capacity_check(json_data, partition_key, password, salt):
+       """容量検証を含む処理（条件分岐なし）"""
+       # 容量検証を実行
+       capacity_result = verify_capacity_before_encryption(json_data, partition_key, password, salt)
+
+       # 容量が十分かどうかのフラグ
+       is_sufficient = capacity_result["sufficient"]
+
+       # エラーメッセージを準備（キャパシティが不足している場合に使用）
+       error_message = f"データ容量不足: 必要={capacity_result['required_chunks']}チャンク, 利用可能={capacity_result['available_positions']}チャンク"
+
+       # 処理結果オブジェクトの初期化
+       processing_result = {
+           "success": False,
+           "error_message": None,
+           "encrypted_data": None
+       }
+
+       # 適切な処理パスを選択（定数時間処理）
+       # マスク値を作成（sufficient が True なら -1、False なら 0）
+       mask = -int(is_sufficient)
+
+       # 成功フラグを設定（sufficient が True なら True、False なら False）
+       processing_result["success"] = bool(mask & 1)
+
+       # エラーメッセージを設定（sufficient が True なら None、False ならエラーメッセージ）
+       processing_result["error_message"] = (None & mask) | (error_message & ~mask)
+
+       # データ処理（十分な容量がある場合のみ実行するが、定数時間で）
+       # 両方の処理を実行し、マスクで結果を選択
+       normal_result = encrypt_data(json_data, partition_key, password, salt) if is_sufficient else None
+       error_result = None
+
+       processing_result["encrypted_data"] = (normal_result & mask) | (error_result & ~mask)
+
+       return processing_result
    ```
 
 これらのガイドラインを実装することで、固定サイズチャンクと容量制限を適切に処理し、セキュリティを確保しながら効率的な実装が可能になります。

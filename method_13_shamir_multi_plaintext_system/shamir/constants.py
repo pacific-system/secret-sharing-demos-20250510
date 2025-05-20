@@ -18,17 +18,17 @@ class ShamirConstants:
 
 
 
-    # ユーザーパーティション設計
-    USER_PARTITION_SIZE = 3500   # 各ユーザー(A/B)用パーティション総サイズ（整数、共通値）
-    USER_ACTIVE_SHARES = 2000    # 各ユーザー(A/B)用有効シェア数（整数、共通値）
-    USER_GARBAGE_SHARES = 1500   # 各ユーザー(A/B)用ゴミデータ数（整数、共通値）
-    # 検証: USER_ACTIVE_SHARES + USER_GARBAGE_SHARES == USER_PARTITION_SIZE
+    # ファイルパーティション設計
+    PARTITION_SIZE = 3500   # 各ファイル(A/B)用パーティション総サイズ（整数、共通値）
+    ACTIVE_SHARES = 2000    # 各ファイル(A/B)用有効シェア数（整数、共通値）
+    GARBAGE_SHARES = 1500   # 各ファイル(A/B)用ゴミデータ数（整数、共通値）
+    # 検証: ACTIVE_SHARES + GARBAGE_SHARES == PARTITION_SIZE
 
     # 未割当領域
     UNASSIGNED_SHARES = 3000     # 未割当シェア数（整数）
 
     # 全体シェア数（自動計算）
-    SHARE_ID_SPACE = USER_PARTITION_SIZE * 2 + UNASSIGNED_SHARES
+    SHARE_ID_SPACE = PARTITION_SIZE * 2 + UNASSIGNED_SHARES
 
     # チャンクサイズ（バイト単位）
     CHUNK_SIZE = 64
@@ -43,8 +43,8 @@ class ShamirConstants:
     PBKDF2_ITERATIONS = 100000
 
     # パーティション比率
-    RATIO_A = 0.35  # Aユーザー用（35%）
-    RATIO_B = 0.35  # Bユーザー用（35%）
+    RATIO_A = 0.35  # Aファイル用（35%）
+    RATIO_B = 0.35  # Bファイル用（35%）
     RATIO_UNASSIGNED = 0.30  # 未割当（30%）
 
     # WALログのタイムアウト（秒）

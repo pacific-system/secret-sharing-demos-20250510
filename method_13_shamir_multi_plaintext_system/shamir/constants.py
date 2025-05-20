@@ -16,6 +16,20 @@ class ShamirConstants:
     # 閾値（最小復元シェア数）
     DEFAULT_THRESHOLD = 3
 
+
+
+    # ユーザーパーティション設計
+    USER_PARTITION_SIZE = 3500   # 各ユーザー(A/B)用パーティション総サイズ（整数、共通値）
+    USER_ACTIVE_SHARES = 2000    # 各ユーザー(A/B)用有効シェア数（整数、共通値）
+    USER_GARBAGE_SHARES = 1500   # 各ユーザー(A/B)用ゴミデータ数（整数、共通値）
+    # 検証: USER_ACTIVE_SHARES + USER_GARBAGE_SHARES == USER_PARTITION_SIZE
+
+    # 未割当領域
+    UNASSIGNED_SHARES = 3000     # 未割当シェア数（整数）
+
+    # 全体シェア数（自動計算）
+    SHARE_ID_SPACE = USER_PARTITION_SIZE * 2 + UNASSIGNED_SHARES
+
     # チャンクサイズ（バイト単位）
     CHUNK_SIZE = 64
 
@@ -25,16 +39,28 @@ class ShamirConstants:
     ARGON2_PARALLELISM = 4
     ARGON2_OUTPUT_LENGTH = 32
 
+    # 固定PBKDF2イテレーション数
+    PBKDF2_ITERATIONS = 100000
+
     # パーティション比率
     RATIO_A = 0.35  # Aユーザー用（35%）
     RATIO_B = 0.35  # Bユーザー用（35%）
     RATIO_UNASSIGNED = 0.30  # 未割当（30%）
-
-    # シェアID空間サイズ
-    SHARE_ID_SPACE = 1000  # テスト用に小さな値に変更
 
     # WALログのタイムアウト（秒）
     WAL_TIMEOUT = 3600  # 1時間
 
     # テンポラリファイルのプレフィックス
     TEMP_FILE_PREFIX = "shamir_temp_"
+
+    # 暗号化ファイル形式バージョン
+    # 1: 元の形式（各シェアに冗長なメタデータ）
+    # 2: 最適化形式（シェア値のみ）
+    FILE_FORMAT_VERSION = 2
+
+    # ファイルヘッダー識別子
+    FILE_HEADER_MAGIC = "SHAMIR_MP"
+
+    # パフォーマンスモニタリング設定
+    ENABLE_PERFORMANCE_MONITORING = True
+    MEMORY_WARNING_THRESHOLD_MB = 1024  # 1GB以上のメモリ使用で警告

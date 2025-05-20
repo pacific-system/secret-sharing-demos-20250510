@@ -1,0 +1,15 @@
+{
+  "threshold": 3,
+  "partition_a_key": "hfvkTJv52feHJq3lgJITwxUfG_0c-fqhJgZOfFe6Imo=",
+  "partition_b_key": "7GtNTaLB2GL3kK3UVye3Aca86xpwAKpkRmHr7n5wu9A=",
+  "total_shares": 10000,
+  "a_shares_count": 3500,
+  "b_shares_count": 3500,
+  "indistinguishable": true,
+  "overlap": {
+    "ab_overlap_count": 1216,
+    "au_overlap_count": 0,
+    "bu_overlap_count": 0,
+    "has_overlap": true
+  }
+}

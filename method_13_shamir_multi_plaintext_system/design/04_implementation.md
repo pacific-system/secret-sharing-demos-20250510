@@ -9,108 +9,74 @@
 1. **前処理**：
 
    - JSON 文書は最初から UTF-8 形式
+   - **容量検証とパディング処理**：
+     - **暗号化前にデータ容量を検証**：第 2 段階 MAP で生成される有効シェア数（`USER_ACTIVE_SHARES`）に基づく容量制限を検証
+     - **データサイズの標準化**：入力データサイズに関わらず常に一定のパディング処理を適用し、固定長シリアライズ処理によって`USER_ACTIVE_SHARES`に対応する統一形式に変換
+     - **容量上限の明確化**：暗号化可能な JSON サイズ上限は`USER_ACTIVE_SHARES × CHUNK_SIZE`で確定的に定義され、この値は`constants.py`で定義された整数値に依存
    - 多段エンコードプロセスを適用：
      1. UTF-8 テキスト（元の JSON）
      2. Latin-1 へのエンコード変換
      3. Base64 エンコード
-   - この多段エンコードにより、復号プロセスの堅牢性を確保
+     4. **固定長シリアライズ処理**：Base64 エンコード後に固定長形式でシリアライズし、完全な固定サイズを保証
+   - この多段エンコードとシリアライズにより、復号プロセスの堅牢性を確保し、あらゆる変動要因を排除
    - データを常に圧縮（条件判断なし）
 
 2. **シェア生成**：
 
-   - エンコードされたデータをチャンクに分割
-   - 各チャンクをシャミア秘密分散法でシェア化
-   - **推奨チャンクサイズ**: 64 バイト（512 ビット）
-     - 選定理由: 暗号学的安全性とパフォーマンスのバランスが取れたサイズ
+   - エンコードされたデータを**固定サイズ**のチャンクに分割
+   - **チャンクサイズ**: 厳密に 64 バイト（512 ビット）を遵守
+     - 理由：AB の区分やゴミデータとの区別が統計的に不可能となるよう保証
      - 小さすぎるチャンクサイズはオーバーヘッドが大きく、大きすぎるとメモリ効率が悪化
      - 64 バイトはモダン CPU のキャッシュラインサイズに合致し、効率的な処理が可能
+   - 各チャンクをシャミア秘密分散法でシェア化（全シェア使用方式）
+   - シェア生成時には、閾値は使用せず常に全てのシェアを復号に必要とする多項式を生成
+   - 多項式の次数はシェア数-1 とし、全てのシェアを使用する方式を実装
 
-3. **パーティションマップキーの使用**：
+3. **MAP 生成と位置決定**：
 
-   - パーティションマップキーの割り当ては初期化時にのみ行われる
-   - 暗号化時には既に割り当て済みのパーティションマップキーを使用するだけ
-   - パーティションマップキー + パスワード + 文書の 3 つの情報のみで暗号化が完結
-   - どのシェアが何に対応するかの判定は一切不要
+   - **パーティションマップキー処理**：
+     - パーティションマップキーから第 1 段階 MAP を生成（初期化時に割り当て）
+     - これにより`USER_PARTITION_SIZE`のシェア候補が特定される（サイズ固定の整数値）
+   - **パスワード処理**：
+     - パスワードは同一文字長にハッシュ化処理（UTF-8 マッピングのあらゆる文字に対応）
+     - あらゆる文字種（漢字・絵文字等を含む）のパスワード入力をサポート
+     - Unicode 正規化処理を適用し、同一文字の異なる表現による不一致を防止
+     - 暗号化されたパスワードと塩値から KDF を使用して MAP データを生成
+     - これにより第 2 段階 MAP が決定し、`USER_ACTIVE_SHARES`分の有効シェア位置が確定
+     - 文字種や長さに依存せず、常に同一の処理パイプラインを適用（直交処理原則に基づく）
+   - すべての有効シェアを第 2 段階 MAP で確定した位置に配置（ゴミデータなし）
+   - パスワードの内容に依存せず、常に同一数（`USER_ACTIVE_SHARES`個）のシェア位置を使用
 
 4. **出力と永続化**：
    - シャミア秘密分散法によって生成されたシェア値のみを保存
    - 塩値は復号に必要なため保存（再計算不可能な乱数値）
    - パーティションマップキーはユーザー入力として提供されるため保存不要
    - マッピング情報はパスワードとパーティションマップキーから計算で再生成可能なため保存不要
-   - 閾値など暗号設定のみ最小限のメタデータとして保存
+   - 最小限のメタデータのみを保存（ソルト値のみ）
    - 保存データは全て A/B 区別なく単一のフォーマットで格納（文書の種類を識別する情報を含まない）
 
-```python
-def encrypt(json_doc, password, share_token, unassigned_ids):
-    """単一JSON文書の暗号化（A/B判定なし）"""
-    # データの前処理
-    data = json.dumps(json_doc).encode('utf-8')
+**暗号化処理の抽象的フロー：**
 
-    # 多段エンコード適用
-    data_latin = data.decode('utf-8').encode('latin-1')
-    data_base64 = base64.b64encode(data_latin)
+1. JSON 文書を確認し、容量制限内であることを検証
+2. 全ての入力に対して常に一定のパディング処理を適用し、固定サイズのチャンク数に対応（直交処理原則に基づく）
+3. JSON 文書を UTF-8 でエンコード
+4. 複数段階のエンコーディングを適用（UTF-8→Latin-1→Base64→ 固定長シリアライズ）
+5. データを 64 バイト固定サイズのチャンクに厳密に分割（入力サイズに関わらず同一処理）
+6. 各チャンクに対してシェア生成（全シェアを使用する方式）
+7. パーティションマップキーから第 1 段階 MAP を生成
+8. パスワードから第 2 段階 MAP を生成（固定数のシェア位置）
+9. 第 2 段階 MAP で確定した全シェア位置に有効シェアを配置
+10. 最小限のメタデータ（ソルト値のみ）を付加して暗号化ファイルを生成
 
-    # データを固定長チャンクに分割
-    chunks = split_into_chunks(data_base64)
+※ 直交処理原則：全ての処理ステップが互いに独立して一貫性を持ち、入力データの特性に左右されず、常に同一の方法で実行されることを保証する原則
 
-    # 各チャンクをシェア化
-    all_shares = []
-    threshold = 3  # 例として閾値3を使用
+**チャンク分割の抽象処理（直交処理原則に基づく）：**
 
-    # シェア生成（対象がAかBかを区別せず処理）
-    for i, chunk in enumerate(chunks):
-        secret = int.from_bytes(chunk, 'big')
-        chunk_shares = generate_chunk_shares(secret, threshold, share_ids)
-        for share_id, value in chunk_shares:
-            all_shares.append({
-                'chunk_index': i,
-                'share_id': share_id,
-                'value': value
-            })
-
-    # 未割当領域にゴミデータを生成
-    garbage_shares = generate_garbage_shares(unassigned_ids, len(all_shares))
-    all_shares.extend(garbage_shares)
-
-    # シェアをシャッフル（順序による情報漏洩を防ぐ）
-    random.shuffle(all_shares)
-
-    # メタデータを追加
-    metadata = {
-        'salt': generate_salt(),
-        'total_chunks': len(chunks),
-        'threshold': threshold
-    }
-
-    # 暗号化ファイルの生成
-    encrypted_file = {
-        'metadata': metadata,
-        'shares': all_shares
-    }
-
-    return encrypted_file
-```
-
-```python
-def split_into_chunks(data, chunk_size=64):
-    """データを一定サイズのチャンクに分割
-
-    Args:
-        data: 分割対象のバイトデータ
-        chunk_size: チャンクサイズ (デフォルト: 64バイト)
-
-    Returns:
-        チャンクのリスト
-    """
-    chunks = []
-    for i in range(0, len(data), chunk_size):
-        chunk = data[i:i+chunk_size]
-        # 最後のチャンクが不完全な場合はパディング
-        if len(chunk) < chunk_size:
-            chunk = chunk.ljust(chunk_size, b'\0')
-        chunks.append(chunk)
-    return chunks
-```
+1. データを 64 バイト固定サイズのチャンクに分割
+2. 全ての場合において常に同一のパディング処理を適用（最後のチャンクが完全か不完全かに関わらず）
+3. 全チャンクを厳密に同一サイズ・同一方法で処理し、統計的区別不能性を確保
+4. 最終的に全チャンクはシステム全体で一貫した 64 バイト固定サイズとなる
+5. データサイズによらず、常に同一のチャンク処理パイプラインを適用
 
 ### 4.2. 復号プロセス
 
@@ -125,83 +91,31 @@ def split_into_chunks(data, chunk_size=64):
 
    - パーティションマップキーによる第 1 段階 MAP 生成
    - パスワードによる第 2 段階 MAP 生成
-   - シェアの選択
+   - シェアの選択（全シェアを使用）
 
 3. **秘密復元**：
 
-   - 選択されたシェアを用いてシャミア秘密分散法で秘密を復元
+   - 選択されたシェア全てを用いてシャミア秘密分散法で秘密を復元
+   - 全シェア方式では、一部のシェアだけでは復号不可能
    - チャンクを結合して元のデータを復元
 
 4. **後処理（多段デコード）**：
    - 圧縮データの解凍
    - Base64 デコード
    - Latin-1 から UTF-8 へのエンコード変換
+   - **パディング除去**: 暗号化時に追加した固定サイズ調整用のパディングデータを除去
    - UTF-8 テキストから JSON への解析
 
-```python
-def decrypt(encrypted_file, share_ids, password):
-    """暗号化ファイルの復号（A/B判定なし）"""
-    # メタデータ取得
-    metadata = encrypted_file['metadata']
-    threshold = metadata['threshold']
-    all_shares = encrypted_file['shares']
-    salt = metadata['salt']
+**復号処理の抽象的フロー：**
 
-    # 多段MAPの適用で復号処理（判定なしの直線的処理）
-    result = try_decrypt(all_shares, share_ids, password, salt, threshold)
-
-    # 復号データを返却（判定なし）
-    try:
-        # 多段デコード処理
-        base64_decoded = base64.b64decode(result)
-        latin_decoded = base64_decoded.decode('latin-1').encode('utf-8')
-        json_text = latin_decoded.decode('utf-8')
-        # JSON解析
-        json_doc = json.loads(json_text)
-        return json_doc
-    except:
-        # 失敗した場合でもエラーとせずに結果を返す
-        return result
-```
-
-```python
-def try_decrypt(all_shares, share_ids, password, salt, threshold):
-    """シェアを復号（A/B判定なしの直線的処理）"""
-    # 多段MAPの適用
-    # 第1段階：パーティションマップキーによるMAP生成
-    candidate_shares = [s for s in all_shares if s['share_id'] in share_ids]
-
-    # 第2段階：パスワードによるマッピング
-    mapping = stage2_map(password, [s['share_id'] for s in candidate_shares], salt)
-
-    # チャンク別にシェアを整理
-    chunks = {}
-    for share in candidate_shares:
-        chunk_idx = share['chunk_index']
-        if chunk_idx not in chunks:
-            chunks[chunk_idx] = []
-        chunks[chunk_idx].append((share['share_id'], share['value']))
-
-    # 各チャンクを復元（判定なしの直線的処理）
-    reconstructed_data = bytearray()
-    chunk_indices = sorted(chunks.keys())
-
-    for idx in chunk_indices:
-        # 各チャンクのシェアをマッピング値でソート
-        sorted_shares = sorted(chunks[idx], key=lambda s: mapping[s[0]])
-
-        # 閾値分のシェアを選択
-        selected_shares = sorted_shares[:threshold]
-
-        # シャミア秘密分散法による復元
-        if len(selected_shares) >= threshold:
-            secret = lagrange_interpolation(selected_shares, PRIME)
-            chunk_bytes = secret.to_bytes((secret.bit_length() + 7) // 8, 'big')
-            reconstructed_data.extend(chunk_bytes)
-
-    # 復元データを返却
-    return reconstructed_data
-```
+1. 暗号化ファイルからメタデータとシェアを取得
+2. パーティションマップキーを使用して第 1 段階 MAP を生成
+3. パスワードとソルトを使用して第 2 段階 MAP を生成
+4. 適切なシェアを全て選択し、チャンク毎に整理
+5. 各チャンクに対してラグランジュ補間で秘密を復元
+6. 復元したチャンクを結合して元のデータを生成
+7. 固定サイズ調整用のパディングデータを除去
+8. 多段デコードを適用して JSON 文書を復元
 
 ### 4.3. 更新プロセス
 
@@ -210,7 +124,53 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
 1. **一時作業領域の確保**：
 
    - 更新用の一時ファイルを別途生成し、UUID を付与して一意性を確保
-   - 一時ファイルはシャミア秘密分散法で暗号化し、ユーザーのパスワードで MAP を生成
+   - **一時ファイル専用 MAP 生成**：
+
+     - 一時ファイルはシャミア秘密分散法で暗号化するが、本体ファイルとは異なる MAP を使用
+     - 以下の方法で本体暗号化ファイルとの相関攻撃リスクを防止：
+       1. パスワードから派生キーを生成する際に「temp\_」プレフィックスを付加
+       2. UUID を追加のコンテキスト情報として KDF に提供
+       3. 異なるソルト値を使用（一時ファイル専用のソルト生成）
+       4. 異なるイテレーション回数を使用（本体の 1.5 倍程度）
+     - 実装例：
+
+       ```python
+       def generate_temp_file_map(password, partition_key, salt, uuid_str):
+           """一時ファイル専用のMAP生成関数"""
+           # 本体ファイルとは異なるコンテキストを作成
+           temp_context = f"temp_{uuid_str}"
+
+           # パスワードを変形（本体と異なる入力値に）
+           temp_password = hash_to_fixed_length(password + temp_context)
+
+           # 専用ソルト生成（本体と異なる値に）
+           temp_salt = hmac_value(salt, temp_context.encode())
+
+           # イテレーション回数を本体の1.5倍に
+           base_iterations = 310000
+           temp_iterations = int(base_iterations * 1.5)
+
+           # 派生キー生成（通常のKDFと異なるパラメータ）
+           derived_key = secure_kdf(
+               temp_password,
+               temp_salt,
+               iterations=temp_iterations,
+               context=temp_context
+           )
+
+           # 第1段階MAPも変形（パーティションマップキーにコンテキスト付加）
+           temp_partition_key = f"{partition_key}_{temp_context}"
+           stage1_map = generate_partition_map_ids(temp_partition_key)
+
+           # 第2段階MAPを生成（通常のマップとは異なるパターン）
+           stage2_map = {}
+           for id in stage1_map:
+               # UUIDを含めた一意のマッピング値を生成
+               stage2_map[id] = hmac_value(derived_key, f"{id}_{uuid_str}".encode())
+
+           return stage1_map, stage2_map
+       ```
+
    - ロックファイルを作成して実行中プロセスを明示（ファイル名に UUID 含む）
    - ロックファイル内にプロセス ID (PID) とタイムスタンプを記録
    - 処理開始時に既存の一時ファイルをスキャン：
@@ -224,6 +184,7 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
 
    - 新しい JSON 文書から新しいシェアを生成
    - 元のシェアセットと同様の構造で生成
+   - 全シェア使用方式を一貫して適用
 
 3. **検証と適用**：
 
@@ -232,6 +193,76 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
 
 4. **古いシェアの破棄**：
    - 更新成功後、古いシェアを確実に破棄
+
+**更新時の A/B 文書独立性保証（重要）**：
+
+- **一個ずつの更新原則**：
+
+  - 本システムでは A 文書と B 文書が同一ファイル内に分離保存される設計となっている
+  - 各文書の更新は**必ず一文書ずつ**行われ、同時更新は許可されない
+  - この原則により更新操作の安全性と一貫性を確保
+
+- **他文書の非破壊保証**：
+
+  - A 文書を更新する際、B 文書のシェアは**完全に保護され変更されない**
+  - この保証は「パーティションマップキーによる領域の厳格な分離」によって実現
+  - 実装者は以下の実装要件を**厳守しなければならない**：
+    1. 更新対象のパーティションマップキーの範囲外のシェアは一切変更しないこと
+    2. 既存のシェア位置に対応するインデックス情報を正確に保持すること
+    3. 更新対象文書のパーティションマップキーのみを使用して対象範囲を特定すること
+    4. 全てのシェア操作においてパーティションキーの境界チェックを実装すること
+
+- **実装時の安全措置**：
+
+  - 更新前に対象外文書のバックアップを取る機能を実装すること（実装推奨）
+  - 更新対象シェアの範囲を検証する境界チェック関数を実装すること（実装必須）
+  - 境界チェック例：
+
+    ```python
+    def is_share_in_partition(share_index, partition_key):
+        """指定されたシェアが対象パーティションに属するか検証"""
+        partition_map = generate_partition_map_ids(partition_key)
+        return share_index in partition_map
+
+    # 更新時に必ず全シェアに対して適用
+    for share_index, share in all_shares.items():
+        if is_share_in_partition(share_index, target_partition_key):
+            # 更新対象のシェアのみ置き換え
+            all_shares[share_index] = new_shares[share_index]
+        else:
+            # 対象外のシェアは一切変更しない
+            pass  # 既存のシェアをそのまま保持
+    ```
+
+**更新処理の抽象的フロー：**
+
+1. 一時ファイル管理のための変数とディレクトリを初期化
+2. プロセス固有の一時ファイルパスとロックファイルパスを生成（UUID 付与）
+3. ロックファイルを作成し、PID、タイムスタンプ、操作種別を記録
+4. 古い一時ファイルをクリーンアップ（完了・タイムアウトしたプロセスのみ）
+5. 一時作業領域を確保し、新しいシェアを生成
+6. 新しい JSON データを処理して多段エンコードを適用
+7. データをチャンクに分割し、各チャンクに対してシェアを生成
+8. 一時ファイルに中間状態を保存
+9. 対象パーティションマップキーの範囲内のシェアのみを新しいものに置き換え（パスワードから生成される MAP に従い配置）
+10. ソルト値のみの最小限のメタデータと更新されたシェアで新しい暗号化ファイルを生成
+11. 処理成功時は一時ファイルとロックファイルを削除
+
+**例外処理の抽象的フロー：**
+
+1. 例外発生を検知
+2. 一時ファイルが存在する場合は削除
+3. ロックファイルが存在する場合は削除
+4. 例外を再送出して呼び出し元に通知
+
+**一時ファイルのクリーンアップ処理：**
+
+1. 指定ディレクトリ内のロックファイルをスキャン
+2. 各ロックファイルについて:
+   - プロセス ID の存在確認を行う
+   - タイムスタンプを確認しタイムアウト判定を行う
+   - プロセスが存在しないかタイムアウトした場合、関連ファイルを削除
+3. 読み取りエラーの場合はファイルを破損とみなして削除
 
 ### 4.4. 一時ファイル暗号化強度のバランス
 
@@ -257,21 +288,11 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
    - 大きいファイル（10MB ～ 100MB）: **中間レベル**（AES-GCM のみ）
    - 巨大ファイル（100MB ～）: **最高レベル**（シャミア＋ AES-GCM）
 
-4. **適応型実装の例**：
+4. **適応型実装の概念**：
 
-   ```python
-   def secure_temp_storage(data, password, file_size):
-       """ファイルサイズに応じた適応型一時ストレージ"""
-       if file_size < 10 * 1024 * 1024:  # 10MB未満
-           # メモリ内処理のみ
-           return MemoryTempStorage(data, password)
-       elif file_size < 100 * 1024 * 1024:  # 10MB～100MB
-           # AES-GCMのみで暗号化
-           return AesGcmTempStorage(data, password)
-       else:  # 100MB以上
-           # シャミア法+AES-GCMで完全保護
-           return ShamirAesGcmTempStorage(data, password)
-   ```
+   - ファイルサイズに応じて最適な保護方式を動的に選択
+   - メモリ使用量と処理速度の適切なバランスを維持
+   - セキュリティ要件に基づいた自動的な方式選択
 
 5. **その他の考慮事項**:
    - 処理タイムアウトの実装（長時間実行による露出リスク低減）
@@ -285,91 +306,32 @@ def try_decrypt(all_shares, share_ids, password, salt, threshold):
 1. **WAL ログ方式の採用**：
 
    - 原子的な更新処理を保証し、途中で処理が中断された場合のデータ整合性を確保
-   - 実装例：
-
-     ```python
-     def atomic_update(encrypted_file, json_doc, password, share_ids):
-         """WALログを使用した原子的な更新処理"""
-         # WALログの作成
-         wal_path = create_wal_file(encrypted_file)
-
-         try:
-             # ファイルの状態をWALに記録
-             write_initial_state(wal_path, encrypted_file)
-
-             # 更新処理の実行
-             updated_file = update_internal(encrypted_file, json_doc, password, share_ids)
-
-             # 更新結果をWALに記録
-             write_updated_state(wal_path, updated_file)
-
-             # WALをコミット（実際のファイル書き込み）
-             commit_wal(wal_path, updated_file)
-
-             return updated_file
-
-         except Exception as e:
-             # エラー発生時はWALを使用して復旧
-             rollback_from_wal(wal_path)
-             raise e
-
-         finally:
-             # 処理完了後にWALをクリーンアップ
-             cleanup_wal(wal_path)
-     ```
+   - WAL（Write-Ahead Logging）の基本フロー：
+     1. 更新前に操作の詳細をログファイルに記録
+     2. ログファイルの書き込み完了を確認
+     3. 実際のデータ更新を実行
+     4. 更新成功後にログをコミット
+     5. 処理完了後にログをクリーンアップ
 
 2. **競合検出と自動再試行ロジック**：
 
    - ファイル更新の競合を検出し、指数バックオフで自動再試行
-   - 実装例：
-
-     ```python
-     def update_with_retry(encrypted_file, json_doc, password, share_ids, max_retries=5):
-         """競合時に指数バックオフで再試行する更新処理"""
-         retries = 0
-         initial_delay = 0.1
-
-         while retries < max_retries:
-             try:
-                 # ファイルロックを試行
-                 with file_lock(encrypted_file):
-                     return atomic_update(encrypted_file, json_doc, password, share_ids)
-             except FileLockError:
-                 # 競合発生時は待機して再試行
-                 retries += 1
-                 if retries >= max_retries:
-                     raise MaxRetriesExceeded("最大再試行回数を超過しました")
-
-                 # 指数バックオフ
-                 delay = initial_delay * (2 ** retries)
-                 # 少しランダム性を加えて競合確率を下げる
-                 jitter = random.uniform(0, 0.1 * delay)
-                 time.sleep(delay + jitter)
-
-         # ここには到達しないはず（例外が発生するため）
-         raise RuntimeError("予期せぬエラー: 再試行ロジックの異常終了")
-     ```
+   - 競合処理の基本フロー：
+     1. ファイルロックの取得を試行
+     2. ロック取得成功時に更新処理を実行
+     3. 競合発生時は待機時間を指数的に増加させて再試行
+     4. 最大再試行回数に達した場合はエラーとして報告
 
 3. **WAL ログの管理**:
 
-   - WAL ログの形式：
+   - WAL ログの基本構造：
 
-     ```python
-     {
-         'status': 'start|ready|complete',  # 処理状態
-         'timestamp': 1628675432.123,       # タイムスタンプ
-         'original_file': {                 # 元ファイルのハッシュとパス
-             'path': '/path/to/file.bin',
-             'hash': 'sha256-hash-value'
-         },
-         'new_file': {                      # 更新後ファイル（readyまたはcomplete時）
-             'path': '/path/to/new_file.bin',
-             'hash': 'sha256-hash-value'
-         }
-     }
-     ```
+     - 処理状態（開始/準備完了/完了）
+     - タイムスタンプ情報
+     - 元ファイルとの関連情報（パスとハッシュ値）
+     - 更新後ファイルの情報（パスとハッシュ値）
 
-   - WAL ログの操作：
+   - WAL ログの基本操作：
      - 書き込み: ログエントリを追加（状態の記録）
      - コミット: 最終状態を記録し、ファイル操作を完了
      - ロールバック: 中断された処理を元の状態に戻す

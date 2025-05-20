@@ -3,17 +3,16 @@
 # 各チャプターファイル（指定された順序で記載）
 CHAPTER_FILES = 00_terms.md \
                 01_overview.md \
+                03_detailed_design.md \
                 04_implementation.md \
                 05_security.md \
-                02_architecture.md \
-                03_detailed_design.md \
                 06_performance.md \
-                09_conclusion.md \
                 07_guidelines.md \
-                08_references.md
+                08_references.md \
+                09_conclusion.md
 
 # 出力ファイル
-OUTPUT_FILE = ../shamir_multiple_plaintext_design_20240520_v3.md
+OUTPUT_FILE = ../shamir_multiple_plaintext_design_20240520.md
 
 # デフォルトターゲット
 .PHONY: all

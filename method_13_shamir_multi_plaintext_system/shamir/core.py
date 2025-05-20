@@ -6,9 +6,12 @@
 """
 
 import secrets
-from typing import List, Tuple
+import hashlib
+import hmac
+from typing import List, Tuple, Dict
 from gmpy2 import mpz
 from .constants import ShamirConstants
+from .partition import normalize_partition_key, generate_partition_map
 
 
 def generate_polynomial(secret: mpz, degree: int, prime: mpz) -> List[mpz]:
@@ -175,3 +178,73 @@ def lagrange_interpolation(shares: List[Tuple[int, mpz]], prime: mpz) -> mpz:
         result = (result + lagrange_term) % prime
 
     return result
+
+
+def stage1_map(partition_key: str, all_share_ids: List[int]) -> List[int]:
+    """
+    第1段階MAP：パーティションマップキーから候補シェアIDを取得
+
+    決定論的に同じパーティションキーからは常に同じシェアID群を生成します。
+
+    Args:
+        partition_key: パーティションマップキー
+        all_share_ids: 全シェアIDリスト
+
+    Returns:
+        選択されたシェアIDリスト
+    """
+    # パーティションキーを正規化
+    normalized_key = normalize_partition_key(partition_key)
+
+    # パーティションキーから決定論的に割り当てシェアID空間を生成
+    selected_ids = generate_partition_map(
+        normalized_key,
+        len(all_share_ids),
+        ShamirConstants.DEFAULT_THRESHOLD
+    )
+
+    # 選択されたIDが全IDリストに存在することを確認（安全対策）
+    valid_ids = [id for id in selected_ids if id in all_share_ids]
+
+    # 最低限必要なシェア数が確保できない場合はエラー
+    if len(valid_ids) < ShamirConstants.DEFAULT_THRESHOLD:
+        raise ValueError(f"有効なシェアIDが不足しています。必要数: {ShamirConstants.DEFAULT_THRESHOLD}, 実際: {len(valid_ids)}")
+
+    return valid_ids
+
+
+def stage2_map(password: str, candidate_ids: List[int], salt: bytes) -> Dict[int, int]:
+    """
+    第2段階MAP：パスワードからシェアマッピングを生成
+
+    パスワードとソルトから決定論的にスコア値を生成します。
+
+    Args:
+        password: パスワード
+        candidate_ids: 候補シェアID（第1段階で選択されたID）
+        salt: ソルト値
+
+    Returns:
+        {シェアID: マッピング値}の辞書
+    """
+    # パスワードのハッシュ値を生成（ソルトを含む）
+    # これにより同じパスワードとソルトからは常に同じマッピング値が生成される
+    password_bytes = password.encode('utf-8')
+    key = hashlib.pbkdf2_hmac(
+        'sha256',
+        password_bytes,
+        salt,
+        100000,  # 固定イテレーション数（決定論的結果のため）
+        32  # 出力バイト数
+    )
+
+    # 各シェアIDに対してマッピング値を生成
+    mapping = {}
+    for share_id in candidate_ids:
+        # HMAC-SHA256でマッピング値を決定論的に生成
+        share_id_bytes = str(share_id).encode('utf-8')
+        h = hmac.new(key, share_id_bytes, 'sha256')
+        mapping_value = int.from_bytes(h.digest(), 'big')
+        mapping[share_id] = mapping_value
+
+    return mapping

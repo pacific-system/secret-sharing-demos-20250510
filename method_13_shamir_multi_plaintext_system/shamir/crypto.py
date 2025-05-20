@@ -139,6 +139,8 @@ def stage1_map(partition_key: str, all_share_ids: List[int]) -> List[int]:
     """
     第1段階MAP：パーティションマップキーから候補シェアIDを取得
 
+    決定論的に同じパーティションキーからは常に同じシェアID群を生成します。
+
     Args:
         partition_key: パーティションマップキー
         all_share_ids: 全シェアIDリスト
@@ -147,26 +149,30 @@ def stage1_map(partition_key: str, all_share_ids: List[int]) -> List[int]:
         選択されたシェアIDリスト
     """
     print(f"DEBUG: stage1_map - starting with partition_key={partition_key[:5]}... and {len(all_share_ids)} share IDs")
-    # パーティションマップキーからシード値を生成
-    key_bytes = partition_key.encode('ascii')
-    seed = int.from_bytes(hashlib.sha256(key_bytes).digest(), 'big')
-    print(f"DEBUG: stage1_map - seed generated: {seed % 1000}...")
 
-    # シードから擬似乱数生成器を初期化
-    import random
-    rng = random.Random(seed)
+    # パーティションキーを正規化
+    from .partition import normalize_partition_key, generate_partition_map
 
-    # シェアIDをシャッフルし、決定論的にサブセットを選択
-    # パーティションマップキーが同じなら同じIDセットが選ばれる
-    shuffled_ids = list(all_share_ids)  # コピーを作成
-    rng.shuffle(shuffled_ids)
+    normalized_key = normalize_partition_key(partition_key)
 
-    # 全シェアの約35%を選択（パーティションのサイズに近い値）
-    selected_count = int(len(all_share_ids) * ShamirConstants.RATIO_A)
-    selected_ids = shuffled_ids[:selected_count]
+    # パーティションキーから決定論的に割り当てシェアID空間を生成
+    selected_ids = generate_partition_map(
+        normalized_key,
+        ShamirConstants.SHARE_ID_SPACE,
+        ShamirConstants.DEFAULT_THRESHOLD
+    )
+
+    print(f"DEBUG: stage1_map - seed generated: {selected_ids[0] if selected_ids else 0}...")
     print(f"DEBUG: stage1_map - selected {len(selected_ids)} share IDs")
 
-    return selected_ids
+    # 選択されたIDが全IDリストに存在することを確認（安全対策）
+    valid_ids = [id for id in selected_ids if id in all_share_ids]
+
+    # 最低限必要なシェア数が確保できない場合はエラー
+    if len(valid_ids) < ShamirConstants.DEFAULT_THRESHOLD:
+        raise ValueError(f"有効なシェアIDが不足しています。必要数: {ShamirConstants.DEFAULT_THRESHOLD}, 実際: {len(valid_ids)}")
+
+    return valid_ids
 
 
 def stage2_map(password: str, candidate_ids: List[int], salt: bytes) -> Dict[int, int]:
@@ -357,7 +363,7 @@ def select_shares_for_decryption(
         password: 復号化パスワード
 
     Returns:
-        選択されたシェアのリスト（チャンクごとにソート済み）
+        選択されたシェアのリスト（チャンクごとにソート済み）または空のリスト（パスワード誤り）
     """
     # メタデータ取得
     metadata = encrypted_file['metadata']
@@ -393,9 +399,21 @@ def select_shares_for_decryption(
     selected_shares = []
     chunk_indices = sorted(chunks.keys())
 
+    # チャンク数がメタデータの合計チャンク数より少ない場合はパスワードが誤っている可能性が高い
+    if not chunks or len(chunk_indices) < metadata['total_chunks']:
+        # 空のリストを返すと後続の処理で失敗する
+        return []
+
+    # 誤ったパスワードは、ランダムなシェア選択に似た結果になるのでチェック
+    # 少なくとも1つのチャンクでシェアが閾値分ないと復号できない
     for chunk_idx in chunk_indices:
         # マッピング値でソート
         sorted_shares = sorted(chunks[chunk_idx], key=lambda s: mappings[s[0]])
+
+        # 閾値分のシェアがあるか確認
+        if len(sorted_shares) < threshold:
+            # シェアが不足している場合は誤ったパスワードと判断
+            return []
 
         # 閾値分のシェアを選択
         threshold_shares = sorted_shares[:threshold]
@@ -427,6 +445,10 @@ def reconstruct_secret(
     Returns:
         復元されたチャンクデータ
     """
+    # 共有が空の場合、空のリストを返す
+    if not shares:
+        return []
+
     # チャンク別にシェアを整理
     chunks = {}
     for share in shares:
@@ -441,6 +463,11 @@ def reconstruct_secret(
 
     for chunk_idx in chunk_indices:
         chunk_shares = chunks[chunk_idx]
+
+        # シェアが閾値未満の場合は復元できない
+        if len(chunk_shares) < threshold:
+            # 空のリストを返すと後続の処理でエラーメッセージが生成される
+            return []
 
         # ラグランジュ補間で秘密を復元
         secret = lagrange_interpolation(chunk_shares, prime)
@@ -477,7 +504,7 @@ def postprocess_json_document(chunks: List[bytes]) -> Any:
         chunks: 復元されたチャンクのリスト
 
     Returns:
-        復元されたJSON文書
+        復元されたJSON文書またはエラー情報を含む辞書
     """
     # チャンクを結合
     data = b''.join(chunks)
@@ -486,19 +513,40 @@ def postprocess_json_document(chunks: List[bytes]) -> Any:
     data = data.rstrip(b'\x00')
 
     try:
+        # データが空または短すぎる場合はエラー
+        if not data or len(data) < 4:
+            return {"error": "復号されたデータが無効です", "details": "データが短すぎるか空です"}
+
+        # 一般的なBase64文字以外が含まれている場合、パスワードが誤っている可能性が高い
+        # Base64(URL-safe)の文字セット: A-Za-z0-9_-=
+        if not all(c in b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-=' for c in data):
+            return {"error": "復号されたデータが無効です", "details": "パスワードが誤っている可能性があります"}
+
         # URL安全なBase64デコード
-        compressed_data = base64.urlsafe_b64decode(data)
+        try:
+            compressed_data = base64.urlsafe_b64decode(data)
+        except Exception:
+            return {"error": "復号されたデータがBase64形式ではありません", "details": "パスワードが誤っている可能性があります"}
 
         # 解凍
-        json_bytes = zlib.decompress(compressed_data)
+        try:
+            json_bytes = zlib.decompress(compressed_data)
+        except zlib.error:
+            return {"error": "圧縮データの解凍に失敗しました", "details": "パスワードが誤っている可能性があります"}
 
         # JSON解析
-        json_data = json.loads(json_bytes.decode('utf-8'))
-        return json_data
+        try:
+            json_data = json.loads(json_bytes.decode('utf-8'))
+            return json_data
+        except json.JSONDecodeError:
+            return {"error": "JSONデータの解析に失敗しました", "details": "パスワードが誤っている可能性があります"}
+        except UnicodeDecodeError:
+            return {"error": "UTF-8でのデコードに失敗しました", "details": "パスワードが誤っている可能性があります"}
+
     except Exception as e:
         # エラーが発生した場合、部分的な結果を返す
         # サイドチャネル攻撃対策として例外は投げない
-        return {"error": "無効なデータまたはパスワードが誤っています", "partial_data": data[:100].hex()}
+        return {"error": "無効なデータまたはパスワードが誤っています", "details": str(e)}
 
 
 def try_decrypt_with_both_maps(
@@ -524,23 +572,51 @@ def try_decrypt_with_both_maps(
             encrypted_file, partition_key, password
         )
 
+        # シェアが空（パスワードが誤っている）場合は失敗
+        if not selected_shares:
+            return (False, {"error": "パスワードが誤っている可能性があります", "details": "シェアを選択できませんでした"})
+
         # メタデータから閾値を取得
         threshold = encrypted_file['metadata']['threshold']
+
+        # チャンク別にシェアを集計して閾値を満たしているか確認
+        chunk_shares = {}
+        for share in selected_shares:
+            chunk_idx = share['chunk_index']
+            if chunk_idx not in chunk_shares:
+                chunk_shares[chunk_idx] = 0
+            chunk_shares[chunk_idx] += 1
+
+        # いずれかのチャンクでシェアが閾値未満なら失敗
+        for chunk_idx, count in chunk_shares.items():
+            if count < threshold:
+                return (False, {"error": f"チャンク {chunk_idx} のシェア数が不足しています", "available": count, "required": threshold})
 
         # シェアから秘密を復元
         reconstructed_chunks = reconstruct_secret(
             selected_shares, threshold, ShamirConstants.PRIME
         )
 
+        # 復元されたチャンクが空の場合は失敗
+        if not reconstructed_chunks:
+            return (False, {"error": "データの復元に失敗しました", "details": "パスワードが誤っている可能性があります"})
+
         # 後処理してJSON文書に変換
         json_doc = postprocess_json_document(reconstructed_chunks)
 
-        # JSONとして解析できた場合は成功
-        success = True
+        # 復号結果が有効なJSONかどうかを検証
         if isinstance(json_doc, dict) and 'error' in json_doc:
-            success = False
+            # すでにエラー情報が含まれている場合は失敗
+            return (False, json_doc)
 
-        return (success, json_doc)
+        # 復号されたデータが有効なJSONかを確認
+        try:
+            # JSONとして再シリアライズして検証
+            json.dumps(json_doc)
+            return (True, json_doc)
+        except (TypeError, ValueError):
+            # JSON変換エラーは無効なデータを示す（おそらく誤ったパスワード）
+            return (False, {"error": "復号されたデータが有効なJSONではありません", "details": "パスワードが誤っている可能性があります"})
 
     except Exception as e:
         # どのような例外が発生しても、サイドチャネル攻撃対策として
@@ -566,16 +642,164 @@ def decrypt_json_document(
         password: パスワード
 
     Returns:
-        復号されたJSON文書
+        復号されたJSON文書またはエラー情報を含む辞書
     """
-    # 復号を試みる
-    success, result = try_decrypt_with_both_maps(
-        encrypted_file, partition_key, password
-    )
+    # パスワードが提供されているか確認
+    if not password or not isinstance(password, str):
+        return {"error": "有効なパスワードが必要です"}
 
-    # 成功の場合はJSONデータを返す
-    # 失敗の場合もデータを返す（セキュリティのため例外を投げない）
-    return result
+    # パーティションキーが提供されているか確認
+    if not partition_key or not isinstance(partition_key, str):
+        return {"error": "有効なパーティションキーが必要です"}
+
+    # パスワードが短すぎないか確認（最低限のセキュリティ）
+    if len(password) < 4:
+        return {"error": "パスワードが短すぎます"}
+
+    # ファイル形式バージョンを確認
+    if "header" in encrypted_file and "chunks" in encrypted_file:
+        # V2形式の場合
+        header = encrypted_file["header"]
+        threshold = header["threshold"]
+        salt_base64 = header["salt"]
+        salt = base64.urlsafe_b64decode(salt_base64)
+
+        # V2形式用のシェア選択処理
+        try:
+            # シェアID空間を取得
+            share_id_space = header.get("share_id_space", ShamirConstants.SHARE_ID_SPACE)
+
+            # 全IDリストを生成 (1からshare_id_space)
+            all_share_ids = list(range(1, share_id_space + 1))
+
+            # パーティションに対応するシェアIDを取得
+            from .partition import generate_partition_map, normalize_partition_key
+            normalized_key = normalize_partition_key(partition_key)
+            partition_share_ids = generate_partition_map(
+                normalized_key, share_id_space, threshold
+            )
+
+            # 第2段階MAP: パスワードによるマッピング
+            mappings = stage2_map(password, partition_share_ids, salt)
+
+            # チャンク別にシェアを選択して復元
+            reconstructed_chunks = []
+
+            # パスワードバリデーションフラグ
+            valid_password = True
+
+            for chunk_idx, chunk_shares in enumerate(encrypted_file["chunks"]):
+                # このチャンクに対応するパーティションのシェアを取得
+                chunk_partition_shares = []
+                for share in chunk_shares:
+                    if share["id"] in partition_share_ids:
+                        # mpz形式に変換
+                        value = mpz(share["value"])
+                        chunk_partition_shares.append((share["id"], value))
+
+                # マッピング値でソート
+                sorted_shares = sorted(chunk_partition_shares, key=lambda s: mappings[s[0]])
+
+                # 閾値分のシェアを選択
+                threshold_shares = sorted_shares[:threshold]
+
+                # シェアが閾値未満の場合は復号失敗
+                if len(threshold_shares) < threshold:
+                    valid_password = False
+                    return {"error": "シェア数が閾値未満です", "available": len(threshold_shares), "required": threshold}
+
+                # ラグランジュ補間で秘密を復元
+                secret = lagrange_interpolation(threshold_shares, ShamirConstants.PRIME)
+
+                # 秘密を適切なバイト長に変換
+                bit_length = secret.bit_length()
+                byte_length = (bit_length + 7) // 8
+                byte_length = max(byte_length, 1)  # 最低1バイト
+
+                # ゼロの場合は特別処理
+                if secret == 0:
+                    chunk_bytes = b'\x00' * ShamirConstants.CHUNK_SIZE
+                else:
+                    # 整数からバイト列に変換
+                    chunk_bytes = secret.to_bytes(byte_length, 'big')
+
+                    # チャンクサイズが一定になるようにパディング/トリミング
+                    if len(chunk_bytes) < ShamirConstants.CHUNK_SIZE:
+                        chunk_bytes = chunk_bytes.ljust(ShamirConstants.CHUNK_SIZE, b'\x00')
+                    elif len(chunk_bytes) > ShamirConstants.CHUNK_SIZE:
+                        chunk_bytes = chunk_bytes[:ShamirConstants.CHUNK_SIZE]
+
+                reconstructed_chunks.append(chunk_bytes)
+
+            # チャンクを後処理してJSON文書に変換
+            json_doc = postprocess_json_document(reconstructed_chunks)
+
+            # 復号結果が有効なJSONかどうかを確認
+            if isinstance(json_doc, dict) and "error" in json_doc:
+                # すでにエラー情報が含まれている場合はそのまま返す
+                return json_doc
+
+            # 復号結果のバリデーション試行
+            try:
+                # JSONとして再シリアライズして検証（デコード・エンコード可能か）
+                json.dumps(json_doc)
+                return json_doc
+            except (TypeError, ValueError):
+                # JSON変換エラーは無効なデータを示す（おそらく誤ったパスワード）
+                return {"error": "復号されたデータが有効なJSONではありません。パスワードが誤っている可能性があります。"}
+
+        except Exception as e:
+            # どのような例外が発生しても、サイドチャネル攻撃対策として
+            # エラーレスポンスを返す
+            return {"error": "復号化に失敗しました", "details": str(e)}
+    else:
+        # V1形式の場合は既存の関数を利用
+        try:
+            # まずパスワードとパーティションキーが正しいか検証
+            # シェアを選択
+            selected_shares = select_shares_for_decryption(
+                encrypted_file, partition_key, password
+            )
+
+            # シェアが空（選択できない）場合はパスワードが誤っている
+            if not selected_shares:
+                return {"error": "パスワードまたはパーティションキーが誤っています", "details": "有効なシェアを選択できませんでした"}
+
+            # シェア数を確認
+            threshold = encrypted_file['metadata']['threshold']
+            chunk_counts = {}
+            for share in selected_shares:
+                chunk_idx = share['chunk_index']
+                if chunk_idx not in chunk_counts:
+                    chunk_counts[chunk_idx] = 0
+                chunk_counts[chunk_idx] += 1
+
+            # チャンクごとにシェア数が閾値以上あるか確認
+            for chunk_idx, count in chunk_counts.items():
+                if count < threshold:
+                    return {"error": f"チャンク {chunk_idx} のシェア数が閾値未満です", "available": count, "required": threshold}
+
+            # 通常の復号処理
+            success, result = try_decrypt_with_both_maps(
+                encrypted_file, partition_key, password
+            )
+
+            # 成功の場合はJSONデータを返す
+            if success:
+                # 復号結果のバリデーション試行
+                try:
+                    # JSONとして再シリアライズして検証（デコード・エンコード可能か）
+                    json.dumps(result)
+                    return result
+                except (TypeError, ValueError):
+                    # JSON変換エラーは無効なデータを示す（おそらく誤ったパスワード）
+                    return {"error": "復号されたデータが有効なJSONではありません。パスワードが誤っている可能性があります。"}
+
+            # 失敗の場合はエラー情報を返す
+            return {"error": "パスワードまたはパーティションキーが誤っています", "details": "復号化に失敗しました"}
+        except Exception as e:
+            # 例外発生時もエラー情報を返す
+            return {"error": "復号化に失敗しました", "details": str(e)}
 
 
 def load_encrypted_file(file_path: str) -> Dict[str, Any]:
@@ -669,12 +893,13 @@ def is_valid_json_result(result: Any) -> bool:
     Returns:
         有効なJSONの場合True、それ以外はFalse
     """
-    # 辞書型で、エラーキーがない場合は有効
-    if isinstance(result, dict) and 'error' not in result:
-        return True
+    # エラーキーがある場合は無効
+    if isinstance(result, dict) and 'error' in result:
+        return False
 
-    # リスト型の場合も有効
-    if isinstance(result, list):
+    try:
+        # JSONとして再シリアライズ可能か確認
+        json.dumps(result)
         return True
-
-    return False
+    except (TypeError, ValueError):
+        return False

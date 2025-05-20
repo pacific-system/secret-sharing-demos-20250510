@@ -15,7 +15,7 @@ import secrets
 import hashlib
 import base64
 from pathlib import Path
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional, Set
 
 from .constants import ShamirConstants
 from .core import (
@@ -25,8 +25,10 @@ from .core import (
 from .crypto import (
     preprocess_json_document, split_into_chunks, stage1_map, stage2_map,
     select_shares_for_encryption, derive_key, encrypt_json_document,
-    decrypt_json_document, load_encrypted_file, save_encrypted_file
+    decrypt_json_document
 )
+from .formats import load_encrypted_file, save_encrypted_file, FileFormatV1, FileFormatV2
+from .metadata import MetadataManager
 
 
 class FileLockError(Exception):
@@ -220,20 +222,35 @@ class WALManager:
         os.makedirs(self.base_dir, exist_ok=True)
         self.temp_manager = TempFileManager(base_dir)
 
-    def create_wal_file(self, original_file_path: str) -> str:
+        # メタデータマネージャーを初期化（メタデータパスを自動生成）
+        metadata_path = os.path.join(self.base_dir, 'metadata.json')
+        self.metadata_manager = MetadataManager(metadata_path)
+
+    def create_wal_file(self, original_file_path: str, partition_key: str) -> str:
         """
         新しいWALログファイルを作成
 
         Args:
             original_file_path: 元のファイルパス
+            partition_key: パーティションキー
 
         Returns:
             WALログファイルのパス
         """
+        # メタデータディレクトリを確認
+        os.makedirs(os.path.dirname(self.metadata_manager.metadata_file_path), exist_ok=True)
+
+        # WALの開始をメタデータに記録
+        if not self.metadata_manager.start_wal("update"):
+            raise ValueError("WALの開始に失敗しました。別の操作が進行中です。")
+
         wal_path = self.temp_manager.create_temp_file("shamir_wal")
 
         # 元ファイルのハッシュを計算
         file_hash = self._calculate_file_hash(original_file_path)
+
+        # パーティションキーのハッシュを計算（機密性のため部分的なハッシュ）
+        key_hash = hashlib.sha256(partition_key.encode('utf-8')).hexdigest()[:16]
 
         # 初期WALログを作成
         wal_data = {
@@ -242,7 +259,8 @@ class WALManager:
             'original_file': {
                 'path': original_file_path,
                 'hash': file_hash
-            }
+            },
+            'partition_key_hash': key_hash
         }
 
         # WALログをディスクに保存
@@ -346,6 +364,9 @@ class WALManager:
             with open(wal_path, 'w') as f:
                 json.dump(wal_data, f)
 
+            # WAL終了をメタデータに記録
+            self.metadata_manager.end_wal()
+
             # バックアップを削除
             if os.path.exists(backup_path):
                 os.remove(backup_path)
@@ -354,6 +375,9 @@ class WALManager:
             # エラー発生時はバックアップから復元
             if os.path.exists(backup_path):
                 shutil.copy2(backup_path, target_file_path)
+
+            # WAL終了（エラー状態）をメタデータに記録
+            self.metadata_manager.end_wal()
             raise e
 
     def rollback_from_wal(self, wal_path: str) -> None:
@@ -375,6 +399,9 @@ class WALManager:
         if os.path.exists(backup_path):
             shutil.copy2(backup_path, original_path)
             os.remove(backup_path)
+
+        # WAL終了（ロールバック）をメタデータに記録
+        self.metadata_manager.end_wal()
 
     def cleanup_wal(self, wal_path: str) -> None:
         """
@@ -432,6 +459,129 @@ class WALManager:
         return hashlib.sha256(json_str.encode('utf-8')).hexdigest()
 
 
+def merge_shares(original_shares: List[Dict[str, Any]], updated_shares: List[Dict[str, Any]],
+               partition_key: str, partition_share_ids: List[int]) -> List[Dict[str, Any]]:
+    """
+    更新前のシェアと更新後のシェアをマージ
+
+    Args:
+        original_shares: 元のシェアリスト
+        updated_shares: 更新されたシェアリスト
+        partition_key: パーティションキー（更新対象のパーティション）
+        partition_share_ids: パーティションに属するシェアIDのリスト
+
+    Returns:
+        マージされたシェアリスト
+    """
+    # パーティションに属するシェアIDのセット
+    partition_id_set = set(partition_share_ids)
+
+    # 更新用のシェアをシェアIDでインデックス化 (chunk_index, share_id) -> share
+    updated_share_map = {}
+    for share in updated_shares:
+        key = (share['chunk_index'], share['share_id'])
+        updated_share_map[key] = share
+
+    # マージされたシェアのリスト
+    merged_shares = []
+
+    # 元のシェアを処理
+    for share in original_shares:
+        share_id = share['share_id']
+        chunk_index = share['chunk_index']
+        key = (chunk_index, share_id)
+
+        # パーティションに属するシェアなら更新されたシェアを使用
+        if share_id in partition_id_set and key in updated_share_map:
+            merged_shares.append(updated_share_map[key])
+            # 処理済みとしてマーク
+            updated_share_map.pop(key)
+        else:
+            # パーティションに属さないシェアはそのまま保持
+            merged_shares.append(share)
+
+    # 残りの更新シェア（新しいチャンクなど）を追加
+    for key, share in updated_share_map.items():
+        merged_shares.append(share)
+
+    return merged_shares
+
+
+def merge_shares_v2(original_data: Dict[str, Any], updated_data: Dict[str, Any],
+                   partition_key: str, partition_share_ids: List[int]) -> Dict[str, Any]:
+    """
+    V2形式のファイルデータをマージ
+
+    Args:
+        original_data: 元のファイルデータ（V2形式）
+        updated_data: 更新されたファイルデータ（V2形式）
+        partition_key: パーティションキー
+        partition_share_ids: パーティションに属するシェアIDのリスト
+
+    Returns:
+        マージされたファイルデータ（V2形式）
+    """
+    # ヘッダー情報をマージ
+    merged_header = original_data["header"].copy()
+    updated_header = updated_data["header"]
+
+    # 更新後のメタデータを取り込む
+    merged_header["total_chunks"] = max(merged_header["total_chunks"], updated_header["total_chunks"])
+    merged_header["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    # パーティションに属するシェアIDのセット
+    partition_id_set = set(partition_share_ids)
+
+    # オリジナルのチャンク配列
+    original_chunks = original_data["chunks"]
+    updated_chunks = updated_data["chunks"]
+
+    # マージされたチャンク配列
+    merged_chunks = []
+
+    # 共通するチャンクインデックスの範囲で処理
+    for i in range(min(len(original_chunks), len(updated_chunks))):
+        # 現在のチャンクでのシェアをマージ
+        original_chunk = original_chunks[i]
+        updated_chunk = updated_chunks[i]
+
+        # オリジナルのシェアをIDでインデックス化
+        original_shares_map = {share["id"]: share for share in original_chunk}
+
+        # マージされたシェアリスト
+        merged_chunk = []
+
+        # 更新されたシェアを処理
+        for share in updated_chunk:
+            share_id = share["id"]
+            # パーティションに属するシェアは更新
+            if share_id in partition_id_set:
+                merged_chunk.append(share)
+                # 処理済みとしてマーク
+                if share_id in original_shares_map:
+                    del original_shares_map[share_id]
+
+        # パーティションに属さない残りのシェアをそのまま追加
+        for share_id, share in original_shares_map.items():
+            if share_id not in partition_id_set:
+                merged_chunk.append(share)
+
+        merged_chunks.append(merged_chunk)
+
+    # オリジナルにない新しいチャンクを追加
+    if len(updated_chunks) > len(original_chunks):
+        for i in range(len(original_chunks), len(updated_chunks)):
+            merged_chunks.append(updated_chunks[i])
+
+    # マージされたデータを構築
+    merged_data = {
+        "header": merged_header,
+        "chunks": merged_chunks
+    }
+
+    return merged_data
+
+
 def update_encrypted_document(
     file_path: str,
     json_doc: Any,
@@ -456,6 +606,20 @@ def update_encrypted_document(
     Returns:
         (成功フラグ, 更新後のファイルデータまたはエラー情報)
     """
+    # 新しいファイルの場合は最初に暗号化して保存
+    if not os.path.exists(file_path):
+        try:
+            # 文書を暗号化
+            encrypted_doc = encrypt_json_document(json_doc, password, partition_key)
+
+            # 暗号化データをファイルに保存
+            save_encrypted_file(encrypted_doc, file_path)
+
+            return (True, encrypted_doc)
+        except Exception as e:
+            return (False, {"error": f"新規ファイルの暗号化に失敗しました: {str(e)}"})
+
+    # 既存ファイルの更新
     # WALとロック管理を初期化
     wal_manager = WALManager()
     retries = 0
@@ -508,95 +672,153 @@ def _atomic_update(
     Returns:
         (成功フラグ, 更新後のファイルデータまたはエラー情報)
     """
-    # WALログを作成
-    wal_path = wal_manager.create_wal_file(file_path)
-
     try:
-        # 暗号化ファイルを読み込む
-        with open(file_path, 'r') as f:
-            encrypted_file = json.load(f)
+        print(f"DEBUG: _atomic_update - starting update for file {file_path}")
+        # WALログファイルを作成
+        wal_path = wal_manager.create_wal_file(file_path, partition_key)
+        print(f"DEBUG: _atomic_update - created WAL file {wal_path}")
 
-        # ファイルの状態をWALに記録
-        wal_manager.write_initial_state(wal_path, encrypted_file)
+        # 元のファイルを読み込み
+        original_data = load_encrypted_file(file_path)
+        print(f"DEBUG: _atomic_update - loaded original file with {len(original_data.get('shares', []))} shares")
 
-        # 復号してJSONドキュメントを取得
-        decrypted_doc = decrypt_json_document(encrypted_file, partition_key, password)
+        # WALに初期状態を記録
+        wal_manager.write_initial_state(wal_path, original_data)
+        print(f"DEBUG: _atomic_update - wrote initial state to WAL")
 
-        # 復号に失敗した場合
-        if isinstance(decrypted_doc, dict) and 'error' in decrypted_doc:
-            return (False, {
-                "error": "更新に失敗しました",
-                "reason": "復号化に失敗しました",
-                "details": decrypted_doc.get('error')
-            })
+        # ファイル形式に応じて処理を分岐
+        file_format_version = original_data.get("header", {}).get("version", 1)
+        print(f"DEBUG: _atomic_update - file format version: {file_format_version}")
 
-        # メタデータを取得
-        metadata = encrypted_file['metadata']
-        salt = base64.urlsafe_b64decode(metadata['salt'])
-        threshold = metadata['threshold']
+        # V2形式の場合
+        if file_format_version == 2:
+            print(f"DEBUG: _atomic_update - processing V2 format file")
+            # パーティションに対応するシェアIDを取得
+            from .partition import generate_partition_map, normalize_partition_key
+            normalized_key = normalize_partition_key(partition_key)
+            share_id_space = original_data["header"].get("share_id_space", ShamirConstants.SHARE_ID_SPACE)
+            threshold = original_data["header"].get("threshold", ShamirConstants.DEFAULT_THRESHOLD)
+            partition_share_ids = generate_partition_map(normalized_key, share_id_space, threshold)
+            print(f"DEBUG: _atomic_update - selected {len(partition_share_ids)} share IDs for partition {partition_key[:5]}...")
 
-        # 必要なシェアIDを取得
-        all_share_ids = sorted(list(set(share['share_id'] for share in encrypted_file['shares'])))
+            # 新しい暗号化ファイルを生成
+            salt_base64 = original_data["header"]["salt"]
+            salt = base64.urlsafe_b64decode(salt_base64)
+            print(f"DEBUG: _atomic_update - extracted salt")
 
-        # 第1段階MAPで候補シェアを特定
-        partition_share_ids = stage1_map(partition_key, all_share_ids)
+            # ドキュメントを暗号化（V1形式で生成）
+            encrypted_doc = encrypt_json_document(json_doc, password, partition_key, threshold)
+            print(f"DEBUG: _atomic_update - encrypted new document with {len(encrypted_doc.get('shares', []))} shares")
 
-        # パーティションマップキーに対応するシェアを特定し、それ以外のシェアは保持
-        other_shares = [s for s in encrypted_file['shares'] if s['share_id'] not in partition_share_ids]
+            # V1形式からV2形式に変換
+            from .formats import convert_v1_to_v2
+            encrypted_doc_v2 = convert_v1_to_v2(encrypted_doc)
+            print(f"DEBUG: _atomic_update - converted encrypted document from V1 to V2 format")
 
-        # 新しい文書を暗号化
-        # 前処理
-        preprocessed_data = preprocess_json_document(json_doc)
-        chunks = split_into_chunks(preprocessed_data)
+            # 更新後のファイルデータを作成
+            updated_data = merge_shares_v2(original_data, encrypted_doc_v2, partition_key, partition_share_ids)
+            print(f"DEBUG: _atomic_update - merged shares, resulting in {len(updated_data.get('chunks', []))} chunks")
 
-        # 新しいシェアIDを選択
-        selected_share_ids = select_shares_for_encryption(
-            partition_key, password, all_share_ids, salt, threshold
-        )
+            # WALに更新状態を記録
+            wal_manager.write_updated_state(wal_path, updated_data)
+            print(f"DEBUG: _atomic_update - wrote updated state to WAL")
 
-        # 新しいシェアを生成
-        new_shares = []
-        for chunk_idx, chunk in enumerate(chunks):
-            secret = int.from_bytes(chunk, 'big')
-            chunk_shares = generate_shares(
-                secret, threshold, selected_share_ids, ShamirConstants.PRIME
+            # 実際にファイルを更新
+            wal_manager.commit_wal(wal_path, file_path)
+            print(f"DEBUG: _atomic_update - committed WAL to file {file_path}")
+
+            # WALをクリーンアップ
+            wal_manager.cleanup_wal(wal_path)
+            print(f"DEBUG: _atomic_update - cleaned up WAL")
+
+            return (True, updated_data)
+
+        # V1形式の場合（従来と同様の処理）
+        else:
+            print(f"DEBUG: _atomic_update - processing V1 format file")
+            # V1形式のデータ構造
+            original_metadata = original_data["metadata"]
+            original_shares = original_data["shares"]
+            print(f"DEBUG: _atomic_update - original file has {len(original_shares)} shares and {original_metadata.get('total_chunks', 0)} chunks")
+
+            # メタデータから復号に必要な情報を取得
+            salt_base64 = original_metadata["salt"]
+            salt = base64.urlsafe_b64decode(salt_base64)
+            threshold = original_metadata["threshold"]
+            print(f"DEBUG: _atomic_update - extracted metadata with threshold {threshold}")
+
+            # シェアID空間を生成 (1からSHARE_ID_SPACE)
+            all_share_ids = list(range(1, ShamirConstants.SHARE_ID_SPACE + 1))
+            print(f"DEBUG: _atomic_update - generated {len(all_share_ids)} share IDs")
+
+            # パーティションに対応するシェアIDを取得
+            from .partition import generate_partition_map, normalize_partition_key
+            normalized_key = normalize_partition_key(partition_key)
+            print(f"DEBUG: _atomic_update - normalized partition key {partition_key[:5]}...")
+            partition_share_ids = generate_partition_map(
+                normalized_key, ShamirConstants.SHARE_ID_SPACE, threshold
             )
-            for share_id, value in chunk_shares:
-                new_shares.append({
-                    'chunk_index': chunk_idx,
-                    'share_id': share_id,
-                    'value': str(value)
-                })
+            print(f"DEBUG: _atomic_update - selected {len(partition_share_ids)} share IDs for partition {partition_key[:5]}...")
 
-        # メタデータを更新
-        updated_metadata = metadata.copy()
-        updated_metadata['total_chunks'] = len(chunks)
+            # 現在のチャンク（ブロック）数を取得
+            total_chunks = original_metadata["total_chunks"]
+            print(f"DEBUG: _atomic_update - original document has {total_chunks} chunks")
 
-        # 更新後のファイルを作成
-        updated_file = {
-            'metadata': updated_metadata,
-            'shares': other_shares + new_shares
-        }
+            # ドキュメントを暗号化
+            encrypted_doc = encrypt_json_document(json_doc, password, partition_key, threshold)
+            encrypted_metadata = encrypted_doc["metadata"]
+            encrypted_shares = encrypted_doc["shares"]
+            print(f"DEBUG: _atomic_update - encrypted new document with {len(encrypted_shares)} shares")
 
-        # 更新結果をWALに記録
-        wal_manager.write_updated_state(wal_path, updated_file)
+            # 新しいメタデータを作成（元のメタデータを基に更新）
+            new_metadata = original_metadata.copy()
+            new_metadata["total_chunks"] = max(total_chunks, encrypted_metadata["total_chunks"])
+            print(f"DEBUG: _atomic_update - created new metadata with {new_metadata['total_chunks']} chunks")
 
-        # WALをコミット（実際のファイル書き込み）
-        wal_manager.commit_wal(wal_path, file_path)
+            # シェアをマージ
+            merged_shares = merge_shares(original_shares, encrypted_shares, partition_key, partition_share_ids)
+            print(f"DEBUG: _atomic_update - merged shares, resulting in {len(merged_shares)} shares")
 
-        return (True, updated_file)
+            # 更新後のファイルデータを作成
+            updated_data = {
+                "metadata": new_metadata,
+                "shares": merged_shares
+            }
+            print(f"DEBUG: _atomic_update - created updated file data")
+
+            # WALに更新状態を記録
+            wal_manager.write_updated_state(wal_path, updated_data)
+            print(f"DEBUG: _atomic_update - wrote updated state to WAL")
+
+            # 実際にファイルを更新
+            wal_manager.commit_wal(wal_path, file_path)
+            print(f"DEBUG: _atomic_update - committed WAL to file {file_path}")
+
+            # WALをクリーンアップ
+            wal_manager.cleanup_wal(wal_path)
+            print(f"DEBUG: _atomic_update - cleaned up WAL")
+
+            return (True, updated_data)
 
     except Exception as e:
-        # エラー発生時はWALを使用してロールバック
-        wal_manager.rollback_from_wal(wal_path)
-        return (False, {
-            "error": "更新中にエラーが発生しました",
-            "details": str(e)
-        })
+        # エラーが発生した場合はロールバック
+        print(f"ERROR: _atomic_update - update failed with error: {str(e)}")
+        import traceback
+        traceback.print_exc()
 
-    finally:
-        # 処理完了後にWALをクリーンアップ
-        wal_manager.cleanup_wal(wal_path)
+        try:
+            wal_manager.rollback_from_wal(wal_path)
+            wal_manager.cleanup_wal(wal_path)
+            print(f"DEBUG: _atomic_update - rolled back and cleaned up WAL after error")
+        except Exception as rollback_error:
+            # ロールバックエラーも記録
+            print(f"ERROR: _atomic_update - rollback failed with error: {str(rollback_error)}")
+
+        # 元のエラーを返す
+        return (False, {
+            "error": "更新処理中にエラーが発生しました",
+            "exception": str(e)
+        })
 
 
 def verify_update(
@@ -606,75 +828,91 @@ def verify_update(
     partition_key: str
 ) -> Dict[str, Any]:
     """
-    更新前に検証を行い、問題がないか確認
-
-    注意: このシステムは一度に一つの文書のみを処理します。パーティションA用または
-    B用のいずれかのパーティションキーを使用して一つの文書を更新します。
-    暗号化ファイル自体は複数文書（AとB）のシェアを含んでいる可能性があります。
+    更新を検証（実際に更新せずに結果を確認）
 
     Args:
         file_path: 暗号化ファイルのパス
         json_doc: 新しいJSON文書
         password: パスワード
-        partition_key: パーティションマップキー（AまたはBのいずれか）
+        partition_key: パーティションマップキー
 
     Returns:
-        検証結果（問題がなければsuccess=True、問題があればエラー情報を含む）
+        検証結果の辞書
     """
     try:
-        # 既存ファイル読み込み
-        with open(file_path, 'r') as f:
-            encrypted_file = json.load(f)
+        # 暗号化ファイルを読み込み
+        file_data = load_encrypted_file(file_path)
 
-        # 復号テスト
-        decrypted_doc = decrypt_json_document(encrypted_file, partition_key, password)
+        # ファイル形式に応じて処理を分岐
+        file_format_version = file_data.get("header", {}).get("version", 1)
 
-        # 復号に失敗した場合
-        if isinstance(decrypted_doc, dict) and 'error' in decrypted_doc:
+        if file_format_version == 2:
+            # V2形式の場合
+            header = file_data["header"]
+            threshold = header["threshold"]
+
+            # 新しい暗号化ファイルを生成（実際には保存しない）
+            encrypted_doc = encrypt_json_document(json_doc, password, partition_key, threshold)
+
+            # パーティションに対応するシェアIDを取得
+            from .partition import generate_partition_map, normalize_partition_key
+            normalized_key = normalize_partition_key(partition_key)
+            share_id_space = header.get("share_id_space", ShamirConstants.SHARE_ID_SPACE)
+            partition_share_ids = generate_partition_map(normalized_key, share_id_space, threshold)
+
+            # シェア数の変化を確認
+            original_share_count = sum(len(chunk) for chunk in file_data["chunks"])
+
+            # 更新シミュレーション
+            updated_data = merge_shares_v2(file_data, encrypted_doc, partition_key, partition_share_ids)
+            updated_share_count = sum(len(chunk) for chunk in updated_data["chunks"])
+
             return {
-                "success": False,
-                "error": "検証に失敗しました",
-                "reason": "既存ファイルの復号化に失敗しました",
-                "details": decrypted_doc.get('error')
+                "valid": True,
+                "file_format": "V2",
+                "original_chunks": len(file_data["chunks"]),
+                "updated_chunks": len(updated_data["chunks"]),
+                "original_share_count": original_share_count,
+                "updated_share_count": updated_share_count,
+                "change": updated_share_count - original_share_count,
+                "partition_share_count": len(partition_share_ids)
             }
+        else:
+            # V1形式の場合
+            original_metadata = file_data["metadata"]
+            original_shares = file_data["shares"]
+            threshold = original_metadata["threshold"]
 
-        # 新しい文書を前処理して推定ファイルサイズを計算
-        preprocessed_data = preprocess_json_document(json_doc)
-        chunks = split_into_chunks(preprocessed_data)
+            # シェアID空間を生成 (1からSHARE_ID_SPACE)
+            all_share_ids = list(range(1, ShamirConstants.SHARE_ID_SPACE + 1))
 
-        # 現在のチャンク数と新しいチャンク数を比較
-        metadata = encrypted_file['metadata']
-        current_chunks = metadata.get('total_chunks', 0)
+            # パーティションに対応するシェアIDを取得
+            from .partition import generate_partition_map, normalize_partition_key
+            normalized_key = normalize_partition_key(partition_key)
+            partition_share_ids = generate_partition_map(
+                normalized_key, ShamirConstants.SHARE_ID_SPACE, threshold
+            )
 
-        if 'total_chunks_a' in metadata and partition_key.endswith('_a'):
-            current_chunks = metadata.get('total_chunks_a', 0)
-        elif 'total_chunks_b' in metadata and partition_key.endswith('_b'):
-            current_chunks = metadata.get('total_chunks_b', 0)
+            # ドキュメントを暗号化（実際には保存しない）
+            encrypted_doc = encrypt_json_document(json_doc, password, partition_key, threshold)
+            encrypted_shares = encrypted_doc["shares"]
 
-        size_change = len(chunks) - current_chunks
-        size_change_percent = (size_change / max(1, current_chunks)) * 100
+            # シェアをマージ（シミュレーション）
+            merged_shares = merge_shares(original_shares, encrypted_shares, partition_key, partition_share_ids)
 
-        # サイズ変更が大きすぎる場合に警告
-        warnings = []
-        if abs(size_change_percent) > 50:
-            warnings.append(f"ファイルサイズが大幅に変更されます（{size_change_percent:.1f}%）")
-
-        # チャンク数が増えた場合の処理時間目安
-        estimated_time = 0.01 * len(chunks)  # 1チャンクあたり約0.01秒と仮定
-
-        return {
-            "success": True,
-            "current_chunks": current_chunks,
-            "new_chunks": len(chunks),
-            "size_change": size_change,
-            "size_change_percent": size_change_percent,
-            "estimated_time": estimated_time,
-            "warnings": warnings
-        }
+            return {
+                "valid": True,
+                "file_format": "V1",
+                "original_chunks": original_metadata["total_chunks"],
+                "updated_chunks": max(original_metadata["total_chunks"], encrypted_doc["metadata"]["total_chunks"]),
+                "original_share_count": len(original_shares),
+                "updated_share_count": len(merged_shares),
+                "change": len(merged_shares) - len(original_shares),
+                "partition_share_count": len(partition_share_ids)
+            }
 
     except Exception as e:
         return {
-            "success": False,
-            "error": "検証中にエラーが発生しました",
-            "details": str(e)
+            "valid": False,
+            "error": f"検証中にエラーが発生しました: {str(e)}"
         }

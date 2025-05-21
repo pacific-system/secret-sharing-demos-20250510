@@ -411,7 +411,9 @@ def verify_statistical_indistinguishability(
 
 def initialize_system(
     threshold: int = ShamirConstants.DEFAULT_THRESHOLD,
-    share_id_space: int = ShamirConstants.SHARE_ID_SPACE
+    share_id_space: int = ShamirConstants.SHARE_ID_SPACE,
+    a_password: str = None,
+    b_password: str = None
 ) -> Dict[str, Any]:
     """
     システムを初期化し、パーティションマップキーを生成
@@ -419,10 +421,18 @@ def initialize_system(
     Args:
         threshold: 閾値
         share_id_space: シェアID空間の大きさ
+        a_password: A領域用のパスワード（指定されない場合は自動生成）
+        b_password: B領域用のパスワード（指定されない場合は自動生成）
 
     Returns:
         システム初期化情報を含む辞書
     """
+    # パスワードが指定されていない場合は生成
+    if a_password is None:
+        a_password = secrets.token_urlsafe(16)
+    if b_password is None:
+        b_password = secrets.token_urlsafe(16)
+
     # パーティションマップキーを生成
     partition_a_key = generate_partition_map_key()
     partition_b_key = generate_partition_map_key()
@@ -450,5 +460,7 @@ def initialize_system(
         "a_shares_count": partition_stats["partition_a"]["count"],
         "b_shares_count": partition_stats["partition_b"]["count"],
         "indistinguishable": partition_stats["indistinguishable"],
-        "overlap": partition_stats["overlap"]
+        "overlap": partition_stats["overlap"],
+        "a_password": a_password,
+        "b_password": b_password
     }

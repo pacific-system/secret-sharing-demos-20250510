@@ -50,3 +50,4 @@
 7. "Fixed-size Block Processing in Cryptographic Applications": 固定サイズブロック処理の実装ガイドライン
 8. "Capacity Planning for Secure Storage Systems": 安全なストレージシステムの容量計画と管理
 9. ISO/IEC 18033-2: IT Security techniques -- Encryption algorithms -- Part 2: Asymmetric ciphers (パディングスキームに関する標準)
+10. "Secure Password Handling in Multi-stage Cryptographic Systems": 多段階暗号システムにおける生パスワードと処理済みパスワードの適切な使用方法と安全性への影響

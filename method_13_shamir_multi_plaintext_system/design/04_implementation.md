@@ -48,16 +48,24 @@ def generate_partition_map_key(partition_distribution):
     # 領域分布をコンパクトな表現に変換
     compressed_distribution = compress_distribution(partition_distribution)
 
-    # 暗号学的に強力なハッシュ関数で鍵を生成
-    key_material = hmac_sha256(SYSTEM_SECRET, compressed_distribution)
+    # 分布データの完全性を保証するための認証コード生成
+    auth_code = hmac_sha256(SYSTEM_SECRET, compressed_distribution)
 
-    # 鍵を扱いやすい形式（Base64など）に変換
-    formatted_key = format_key(key_material)
+    # 分布データを暗号化（システムシークレットを用いた対称鍵暗号を使用）
+    encrypted_distribution = encrypt_data(compressed_distribution, SYSTEM_SECRET)
+
+    # 認証コードと暗号化された分布データを組み合わせてキーを構成
+    key_data = combine_data(auth_code, encrypted_distribution)
+
+    # キーデータを扱いやすい形式（Base64など）に変換
+    formatted_key = format_key(key_data)
 
     return formatted_key
 ```
 
 パーティションマップキーは一方向変換であり、領域分布の復元のみに使用可能。
+
+このパーティションマップキーには、領域分布を復元するために必要な情報が暗号化された形で含まれています。システムシークレットを知る正当なシステムのみが、このキーから領域分布を復元できる設計になっています。
 
 #### 4.2.3. 領域分布の復元
 
@@ -66,17 +74,16 @@ def generate_partition_map_key(partition_distribution):
 ```python
 def restore_partition_distribution(partition_map_key):
     """パーティションマップキーから元の領域分布を復元する関数"""
-    # パーティションマップキーを解析
-    key_material = parse_key(partition_map_key)
+    # パーティションマップキーを解析して領域分布情報を取得
+    # 注: パーティションマップキーには実際の領域分布データが暗号化された形で含まれている必要がある
+    # (HMACだけでは不可能なため、キー内に暗号化された分布情報を格納する設計が必要)
+    decrypted_data = decrypt_partition_data(partition_map_key, SYSTEM_SECRET)
 
-    # 鍵から領域分布の圧縮表現を復元する検証処理
-    valid_key, compressed_distribution = verify_key(key_material, SYSTEM_SECRET)
-
-    if not valid_key:
+    if not decrypted_data:
         raise InvalidPartitionMapKeyError("無効なパーティションマップキーです")
 
-    # 圧縮された分布から完全な領域分布を再構築
-    partition_distribution = decompress_distribution(compressed_distribution)
+    # 暗号化された分布データから完全な領域分布を再構築
+    partition_distribution = reconstruct_partition_distribution(decrypted_data)
 
     # 復元された分布が有効か検証（PARTITION_SIZEと一致するか、重複がないか等）
     validate_partition_distribution(partition_distribution)

@@ -59,6 +59,40 @@ def generate_partition_map_key(partition_distribution):
 
 パーティションマップキーは一方向変換であり、領域分布の復元のみに使用可能。
 
+#### 4.2.3. 領域分布の復元
+
+パーティションマップキーから元の領域分布を復元する処理は、暗号書庫の更新（updateCryptoStorage）と読取（readCryptoStorage）操作の最初のステップとして実装されます。
+
+```python
+def restore_partition_distribution(partition_map_key):
+    """パーティションマップキーから元の領域分布を復元する関数"""
+    # パーティションマップキーを解析
+    key_material = parse_key(partition_map_key)
+
+    # 鍵から領域分布の圧縮表現を復元する検証処理
+    valid_key, compressed_distribution = verify_key(key_material, SYSTEM_SECRET)
+
+    if not valid_key:
+        raise InvalidPartitionMapKeyError("無効なパーティションマップキーです")
+
+    # 圧縮された分布から完全な領域分布を再構築
+    partition_distribution = decompress_distribution(compressed_distribution)
+
+    # 復元された分布が有効か検証（PARTITION_SIZEと一致するか、重複がないか等）
+    validate_partition_distribution(partition_distribution)
+
+    return partition_distribution
+```
+
+この復元処理により、パーティションマップキーがあれば、任意の暗号書庫に対して正確に同じ領域分布（A 領域または B 領域のシェア ID セット）を再現できます。この方式の重要な特性は：
+
+1. **決定論的再現性**: 同一のパーティションマップキーからは常に同一の領域分布が復元される
+2. **安全性**: パーティションマップキーなしでは領域分布を特定できない
+3. **完全性**: 復元された分布には領域に属するすべてのシェア ID が含まれる（PARTITION_SIZE 分）
+4. **整合性**: 復元処理は分布の妥当性検証を含み、不正なキーや破損したキーを検出する
+
+この領域分布の復元は、パスワードからシェア ID を特定する第 2 段階 MAP の生成前に必須のステップとなります。
+
 ### 4.3. データ暗号化処理の共通実装
 
 #### 4.3.1. 多段エンコードプロセス

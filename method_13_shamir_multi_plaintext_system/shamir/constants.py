@@ -20,12 +20,12 @@ class ShamirConstants:
 
     # ファイルパーティション設計
     ACTIVE_SHARES = 2000    # 各ファイル(A/B)用有効シェア数（整数、共通値）
-    GARBAGE_SHARES = 2000   # 各ファイル(A/B)用ガベージシェア数（整数、共通値）
+    GARBAGE_SHARES = 4000   # 各ファイル(A/B)用ガベージシェア数（整数、共通値）
     PARTITION_SIZE = ACTIVE_SHARES + GARBAGE_SHARES  # 各ファイル(A/B)用パーティション総サイズ（自動計算）
     # ACTIVE_SHARESとGARBAGE_SHARESから自動計算されるPARTITION_SIZE
 
     # 未割当領域
-    UNASSIGNED_SHARES = 4000     # 未割当シェア数（整数）ガベージシェア
+    UNASSIGNED_SHARES = 6000     # 未割当シェア数（整数）ガベージシェア
 
     # 全体シェア数（自動計算）
     SHARE_ID_SPACE = PARTITION_SIZE * 2 + UNASSIGNED_SHARES

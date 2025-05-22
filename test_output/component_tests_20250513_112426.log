@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_8_homomorphic/tests/test_indistinguishable.py", line 31, in <module>
-    from method_8_homomorphic.indistinguishable import (
-ModuleNotFoundError: No module named 'method_8_homomorphic'
-
-
-実行時間: 0.82秒
-終了コード: 1

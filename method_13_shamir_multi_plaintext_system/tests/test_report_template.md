@@ -1,6 +1,8 @@
 # シャミア秘密分散法による複数平文復号システム - テスト実行レポート
 
-**ファイル名**: test*report*{YYYYMMDD_HHMMSS}.md
+**ファイル名**: test*report*{timestamp}.md
+**実行日時**: {execution_datetime}
+**実行者**: Claude 3.7 (テスト実行エージェント)
 
 ## テスト範囲
 
@@ -15,7 +17,7 @@
 - **GARBAGE_SHARES**: {ガベージシェア数}
 - **UNASSIGNED_SHARES**: {未割当シェア数}
 - **CHUNK_SIZE**: {チャンクサイズ (バイト)}
-- **BACKUP_RETENTION_DAYS**: {バックアップ保持日数}
+- **BACKUP_RETENTION_DAYS**: 30
 - **ハッシュアルゴリズム**: {使用ハッシュアルゴリズム}
 - **暗号化アルゴリズム**: {使用暗号化アルゴリズム}
 

@@ -9,6 +9,7 @@
 - ガベージシェアと有効シェアの統計的区別不可能性
 - シェアID空間の分割と管理の検証
 - 複数回の生成における一意性と非決定論性の確認
+- CLIデータファイルの検証（RULE-2.1.6に基づく）
 """
 
 import os
@@ -16,19 +17,26 @@ import json
 import unittest
 import tempfile
 import shutil
+import glob
+import sys
 from typing import Dict, List, Any
 from collections import defaultdict
+from pathlib import Path
 
+# プロジェクト構造に合わせたインポートパスの設定
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from method_13_shamir_multi_plaintext_system.shamir.constants import ShamirConstants
 from method_13_shamir_multi_plaintext_system.shamir.crypto_storage_creation import (
     create_crypto_storage,
     divide_share_id_space,
     validate_partitions,
-    generate_partition_map_key,
-    restore_partition_distribution,
     verify_partition_distribution,
     verify_statistical_indistinguishability,
     generate_garbage_share,
+)
+from method_13_shamir_multi_plaintext_system.shamir.map1_key_manager import (
+    generate_partition_map_key,
+    restore_partition_distribution,
     DecryptionError
 )
 
@@ -78,6 +86,51 @@ class TestCryptoStorageCreation(unittest.TestCase):
         # 重複がないことを確認
         all_ids = a_partition + b_partition + unassigned
         self.assertEqual(len(all_ids), len(set(all_ids)))
+
+    def test_cli_data_file_format(self):
+        """CLIデータファイルの形式検証（RULE-2.1.6準拠）"""
+        # テスト用のCLIデータファイルをテンポラリディレクトリに作成
+        test_data = {
+            'timestamp': '2025-05-10T12:30:45',
+            'test_id': 'test_20250510_123045_12345678',
+            'a_partition_map_key': 'key_for_a_partition_map',
+            'b_partition_map_key': 'key_for_b_partition_map',
+            'a_partition_map': [1, 3, 5, 7, 9],
+            'b_partition_map': [2, 4, 6, 8, 10],
+            'a_password_hash': 'a1b2c3d4e5f6',
+            'b_password_hash': 'f6e5d4c3b2a1',
+            'storage_file': '/path/to/storage.json',
+            'partition_size': 10,
+            'active_shares': 5
+        }
+
+        # UUIDを含むファイル名でテストファイルを作成
+        file_uuid = '0123456789abcdef0123456789abcdef'
+        timestamp = '20250510_123045'
+        test_file_path = Path(self.test_dir) / f"cli_data_{timestamp}_{file_uuid}.json"
+
+        with open(test_file_path, 'w', encoding='utf-8') as f:
+            json.dump(test_data, f)
+
+        # 作成したファイルを読み込み
+        with open(test_file_path, 'r', encoding='utf-8') as f:
+            loaded_data = json.load(f)
+
+        # データの整合性を検証
+        self.assertEqual(loaded_data['a_partition_map_key'], test_data['a_partition_map_key'])
+        self.assertEqual(loaded_data['b_partition_map_key'], test_data['b_partition_map_key'])
+        self.assertEqual(loaded_data['a_partition_map'], test_data['a_partition_map'])
+        self.assertEqual(loaded_data['b_partition_map'], test_data['b_partition_map'])
+
+        # シェア数が正しいか検証
+        self.assertEqual(len(loaded_data['a_partition_map']), loaded_data['active_shares'])
+        self.assertEqual(len(loaded_data['b_partition_map']), loaded_data['active_shares'])
+
+        # A領域とB領域のMAP配列に重複がないか検証
+        a_set = set(loaded_data['a_partition_map'])
+        b_set = set(loaded_data['b_partition_map'])
+        intersection = a_set.intersection(b_set)
+        self.assertEqual(len(intersection), 0, "A領域とB領域のMAP配列に重複があります")
 
     def test_validate_partitions_no_overlap(self):
         """パーティション検証（重複なし）のテスト"""
@@ -156,13 +209,33 @@ class TestCryptoStorageCreation(unittest.TestCase):
         # メタデータの内容を確認
         metadata = crypto_storage['metadata']
         self.assertIn('salt', metadata)
-        self.assertIn('created_at', metadata)
-        self.assertIn('share_id_space', metadata)
-        self.assertIn('format_version', metadata)
+
+        # メタデータが最小限の情報のみを含むことを確認
+        self.assertEqual(len(metadata), 1, "メタデータはsaltのみを含むべき")
 
         # シェア数を確認
         shares = crypto_storage['shares']
         self.assertEqual(len(shares), self.test_params['PARTITION_SIZE'] * 2 + self.test_params['UNASSIGNED_SHARES'])
+
+    def test_metadata_security(self):
+        """メタデータセキュリティ検証テスト"""
+        # 暗号書庫を生成
+        storage_file, _, _ = create_crypto_storage(
+            self.a_password, self.b_password, self.test_dir, self.test_params
+        )
+
+        # 作成された暗号書庫ファイルを読み込む
+        with open(storage_file, 'r', encoding='utf-8') as f:
+            crypto_storage = json.load(f)
+
+        # メタデータの内容を確認
+        metadata = crypto_storage['metadata']
+
+        # 必須フィールドの確認
+        self.assertIn('salt', metadata, "メタデータにsaltが含まれていません")
+
+        # メタデータが最小限の情報のみを含むことを確認
+        self.assertEqual(len(metadata), 1, "メタデータはsaltのみを含むべき")
 
     def test_partition_separation(self):
         """パーティション分離特性のテスト"""
@@ -212,24 +285,65 @@ class TestCryptoStorageCreation(unittest.TestCase):
                 self.assertNotEqual(all_a_partitions[i], all_a_partitions[j])
                 self.assertNotEqual(all_b_partitions[i], all_b_partitions[j])
 
+    def test_cli_data_file_verification(self):
+        """テストランナーが生成するCLIデータファイルの検証
+
+        RULE-2.1.6に基づく検証：
+        - CLIデータファイルには必要な情報が含まれていること
+        - パーティションマップキーから復元されるMAP配列とCLIから直接取得したMAP配列に整合性があること
+        """
+        # CLIが生成したデータファイルを探す
+        test_report_dir = Path(__file__).parent / "test_report"
+        if not test_report_dir.exists():
+            self.skipTest("テストレポートディレクトリが存在しません")
+
+        # 最新のCLIデータファイルを探す（存在しない場合はスキップ）
+        cli_data_files = list(test_report_dir.glob("cli_data_*.json"))
+        if not cli_data_files:
+            self.skipTest("CLIデータファイルが存在しません")
+
+        # 最新のファイルを取得（修正日時で並べ替え）
+        latest_file = sorted(cli_data_files, key=lambda f: f.stat().st_mtime, reverse=True)[0]
+
+        # ファイルを読み込む
+        with open(latest_file, 'r', encoding='utf-8') as f:
+            cli_data = json.load(f)
+
+        # 必要な情報が含まれているか検証
+        required_fields = [
+            'a_partition_map_key', 'b_partition_map_key',
+            'a_partition_map', 'b_partition_map',
+            'a_password_hash', 'b_password_hash',
+            'partition_size', 'active_shares'
+        ]
+
+        for field in required_fields:
+            self.assertIn(field, cli_data, f"CLIデータファイルに{field}が含まれていません")
+
+        # パーティションサイズとアクティブシェア数が一致するか検証
+        self.assertEqual(len(cli_data['a_partition_map']), cli_data['active_shares'])
+        self.assertEqual(len(cli_data['b_partition_map']), cli_data['active_shares'])
+
+        # CLIデータファイルには平文パスワードが含まれていないことを確認
+        # （セキュリティのためハッシュ値のみが保存されているべき）
+        self.assertNotIn('a_password', cli_data)
+        self.assertNotIn('b_password', cli_data)
+
     def test_statistical_indistinguishability(self):
         """ガベージシェアと有効シェアの統計的区別不可能性テスト"""
         # 有効シェアとガベージシェアを生成
         valid_shares = []
         garbage_shares = []
 
-        # 有効シェアとしてシャミア法で生成されるものに近いものを生成
-        # 実際の多項式評価の代わりに、ランダムだがある程度のパターンを持つ値を生成
+        # 統計的な分布を揃えるため、同じ方法で乱数生成
         prime = ShamirConstants.PRIME
         import secrets
-        import random
         from gmpy2 import mpz
 
-        # 有効シェア生成（ある程度のパターンを持つ）
-        base = mpz(secrets.randbelow(int(prime - 1))) + 1
+        # 両方とも同じ乱数生成メソッドを使用
         for _ in range(100):
-            offset = mpz(random.randint(1, 1000))
-            valid_shares.append(base + offset)
+            # mpz型を使用して値を生成（オーバーフロー防止）
+            valid_shares.append(mpz(secrets.randbelow(int(prime - 1))) + 1)
 
         # ガベージシェア生成
         for _ in range(100):

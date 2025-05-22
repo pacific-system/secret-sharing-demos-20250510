@@ -80,7 +80,7 @@ class TestCorrections(unittest.TestCase):
 
     def test_partition_key_normalization(self):
         """パーティションキーの正規化機能をテスト"""
-        from shamir.partition import normalize_partition_key
+        from method_13_shamir_multi_plaintext_system.shamir._trash.partition import normalize_partition_key
 
         # 通常のBase64文字列
         key1 = "abcdefghijklmnopqrstuvwxyz1234567890=="
@@ -104,7 +104,7 @@ class TestCorrections(unittest.TestCase):
 
     def test_deterministic_stage1_map(self):
         """決定論的なstage1_map関数をテスト"""
-        from shamir.partition import generate_partition_map
+        from method_13_shamir_multi_plaintext_system.shamir._trash.partition import generate_partition_map
 
         # 同じパーティションキーからは常に同じシェアIDが生成されることを確認
         key = "test_partition_key"

@@ -23,7 +23,7 @@ from pathlib import Path
 # モジュールのパスを追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from shamir.partition import initialize_system, PartitionManager
+from method_13_shamir_multi_plaintext_system.shamir._trash.partition import initialize_system, PartitionManager
 from shamir.crypto import encrypt_json_document, decrypt_json_document, save_encrypted_file, load_encrypted_file
 from shamir.update import update_encrypted_document
 from shamir.tests import security_self_diagnostic

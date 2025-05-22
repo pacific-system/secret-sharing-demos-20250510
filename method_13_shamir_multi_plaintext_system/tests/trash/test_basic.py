@@ -18,8 +18,8 @@ import tempfile
 from pathlib import Path
 
 from shamir.constants import ShamirConstants
-from shamir.partition import generate_partition_map_key, PartitionManager, initialize_system
-from shamir.core import generate_polynomial, evaluate_polynomial, generate_shares, lagrange_interpolation
+from method_13_shamir_multi_plaintext_system.shamir._trash.partition import generate_partition_map_key, PartitionManager, initialize_system
+from method_13_shamir_multi_plaintext_system.shamir._trash.core import generate_polynomial, evaluate_polynomial, generate_shares, lagrange_interpolation
 from shamir.crypto import encrypt_json_document, decrypt_json_document, load_encrypted_file, save_encrypted_file
 from shamir.update import update_encrypted_document
 from shamir.tests import security_self_diagnostic

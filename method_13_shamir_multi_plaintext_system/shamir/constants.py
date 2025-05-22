@@ -13,6 +13,7 @@ class ShamirConstants:
     # 有限体の素数 (2^521 - 1)
     PRIME = mpz(2**521 - 1)
 
+
     # 閾値（最小復元シェア数）
     DEFAULT_THRESHOLD = 3
 
@@ -50,6 +51,9 @@ class ShamirConstants:
     RATIO_B = 0.35  # Bファイル用（35%）
     RATIO_UNASSIGNED = 0.30  # 未割当（30%）
 
+    # バックアップ保持日数
+    BACKUP_RETENTION_DAYS = 30
+
     # WALログのタイムアウト（秒）
     WAL_TIMEOUT = 3600  # 1時間
 
@@ -59,7 +63,7 @@ class ShamirConstants:
     # 暗号化ファイル形式バージョン
     # 1: 元の形式（各シェアに冗長なメタデータ）
     # 2: 最適化形式（シェア値のみ）
-    FILE_FORMAT_VERSION = 2
+    # FILE_FORMAT_VERSION = 2
 
     # ファイルヘッダー識別子
     FILE_HEADER_MAGIC = "SHAMIR_MP"

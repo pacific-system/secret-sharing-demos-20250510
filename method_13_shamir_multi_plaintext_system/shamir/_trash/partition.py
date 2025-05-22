@@ -13,7 +13,7 @@ import base64
 import random
 import hmac
 from typing import Dict, List, Tuple, Set, Any
-from .constants import ShamirConstants
+from ..constants import ShamirConstants
 
 
 def generate_partition_map_key(length: int = 32) -> str:

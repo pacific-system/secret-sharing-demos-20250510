@@ -10,7 +10,7 @@ import hashlib
 import hmac
 from typing import List, Tuple, Dict
 from gmpy2 import mpz
-from .constants import ShamirConstants
+from ..constants import ShamirConstants
 from .partition import normalize_partition_key, generate_partition_map
 
 

@@ -58,242 +58,51 @@
    - Python: `gmpy2`
    - JavaScript: `big-integer`
 
-### 7.3. 条件分岐の禁止と定数時間処理の実装パターン
+### 7.3. 実装パターン参照
 
-以下のパターンは条件分岐によるサイドチャネル攻撃を防止するために重要である。**すべての条件分岐を含むコードパターンは本システムでは禁止とする**。
+実装パターンは各モジュールの詳細設計に移動しました。具体的な実装パターンは以下の場所に記載されています：
 
-1. **選択操作**：
+1. **暗号書庫生成（createCryptoStorage）の実装パターン**:
 
-```python
-# ⛔ 禁止: 条件分岐を使った選択
-result = value_a if condition else value_b
+   - 「03_02_crypto_storage_creation.md」の「3.2.10. 実装パターン」セクション
+   - パーティションマップキーの暗号化パターン
+   - シェア ID 空間分割の最適実装
 
-# ✅ 推奨: 定数時間選択を使用（ビット演算による実装）
-mask = -int(condition)  # True -> -1 (全ビット1), False -> 0 (全ビット0)
-# Pythonの整数は任意精度なのでビット長を気にする必要がない
-result = (value_a & mask) | (value_b & ~mask)
-```
+2. **暗号書庫更新（updateCryptoStorage）の実装パターン**:
 
-2. **ループ処理**：
+   - 「03_03_crypto_storage_update.md」の「3.3.10. 実装パターン」セクション
+   - パーティションマップキーの復号パターン
+   - 第 2 段階 MAP 生成パターン
+   - ファイルロック検証パターン
+   - 障害復旧処理パターン
+   - 多段エンコード処理パターン
 
-```python
-# ⛔ 禁止: 早期リターンを使用
-for share in shares:
-    if is_valid(share):
-        return share
+3. **暗号書庫読取（readCryptoStorage）の実装パターン**:
+   - 「03_04_crypto_storage_read.md」の「3.4.11. 実装パターン」セクション
+   - パーティションマップキーの復号パターン
+   - 第 2 段階 MAP 生成パターン
+   - 多段デコード処理パターン
+   - JSON フォーマット検証パターン
 
-# ✅ 推奨: 全要素を一定時間で処理
-selected_share = None
-selected_idx = -1
-for i in range(len(shares)):
-    # 最初の有効なシェアのインデックスをマスク付き比較で記録
-    is_valid_share = is_valid(shares[i])
-    should_select = is_valid_share and selected_idx == -1
-    # ビット演算でインデックスと値を条件分岐なしで更新
-    mask = -int(should_select)
-    selected_idx = (selected_idx & ~mask) | (i & mask)
-    selected_share = (selected_share & ~mask) | (shares[i] & mask)
-```
-
-3. **例外処理**：
-
-```python
-# ⛔ 禁止: try-exceptを使用した条件分岐
-try:
-    return json.loads(data)
-except:
-    return None
-
-# ✅ 推奨: 例外を発生させない処理
-def safe_json_parse(data):
-    """安全にJSONを解析する関数"""
-    # データをチェックして安全に解析
-    if not isinstance(data, str):
-        return {'value': None, 'error': 'データが文字列ではありません'}
-    if len(data) == 0:
-        return {'value': None, 'error': '空文字列です'}
-    # ... 他のチェック
-
-    # 解析結果をラップ
-    result = {'value': None, 'error': None}
-    try:
-        result['value'] = json.loads(data)
-    except Exception as e:
-        # 例外を記録するが、処理は続行
-        result['error'] = str(e)
-    return result
-```
-
-4. **容量チェック**：
-
-```python
-# ⛔ 禁止: 容量による条件分岐
-if data_size > max_size:
-    raise CapacityError("容量超過")
-else:
-    encrypt_data(data)
-
-# ✅ 推奨: 容量チェック結果を変数に保存し、処理を続行
-is_within_capacity = data_size <= max_size
-# 結果を記録（ログやメトリクスなど）
-log_capacity_check(is_within_capacity)
-# ビット演算で処理結果を選択
-result = process_within_capacity(data) if is_within_capacity else create_error_result()
-return result
-```
-
-注意: 実装のすべての部分で条件分岐を避け、定数時間アルゴリズムを使用することは、このシステムのセキュリティモデルにおいて**絶対的要件**である。ここで示した禁止パターンを使用した実装は、タイミング攻撃に対して脆弱となるため、許容されない。
+これらの実装パターンは、対応する処理の詳細設計に密接に関連しているため、各モジュールの文書に統合されています。実装を行う際は、該当するモジュールの詳細設計文書を参照してください。
 
 ### 7.4. パーティション空間管理
 
-パーティション空間の効率的かつ安全な管理のための指針：
+パーティション空間管理の詳細については、「03_01_general_principles.md」の「3.1.11. パーティション空間管理」セクションを参照してください。このセクションでは以下の内容が説明されています：
 
-1. **分散化と均一性**：
-
-   - パーティションマップ内のシェア（有効シェアとガベージシェア）の分布はランダム性を維持し、パターンを形成しない
-   - 任意の連続範囲において、各種別（A/B/未割当）の分布比率が一定となるよう設計
-   - ブロック単位での分布検証を実施し、統計的均一性を確保
-
-2. **シェア ID 処理の最適化**：
-
-   - シェア ID の分布テーブルをビットマップまたは固定長配列として実装し、直接アクセス可能にする
-   - シェア ID がどのパーティション（A/B/ガベージシェア）に属するかの判定には、条件分岐のない実装を使用
-   - マスク演算（AND/OR）を用いた定数時間アクセス処理により、サイドチャネル漏洩を防止
-
-3. **安全な生成と管理**：
-   - 暗号学的に安全な乱数発生器を用いたパーティション空間の生成
-   - 初期化時にのみ ID 割り当てを行い、以後は変更しない
-   - 割り当て情報は 4 つの要素（両パスワードと両パーティションマップキーセット）なしには再構築不可能
+- 分散化と均一性の確保方法
+- シェア ID 処理の最適化テクニック
+- 安全な生成と管理のプラクティス
 
 ### 7.5. 統計的区別不可能性の実装
 
-統計的区別不可能性を確保するための具体的実装方法を以下に示す：
+統計的区別不可能性の実装の詳細については、「03_01_general_principles.md」の「3.1.12. 統計的区別不可能性の実装」セクションを参照してください。このセクションでは以下の内容が説明されています：
 
-1. **シェア値の均一分布**：
-
-   - シャミア秘密分散法の数学的特性上、多項式の係数をランダムに選択すると、結果として生成されるシェア値は有限体上で均一分布する
-   - 実装方法：
-     ```python
-     def generate_polynomial(secret, degree, p):
-         """degree次の多項式を生成（係数は完全ランダム）"""
-         coef = [secret]  # 最初の係数は秘密値
-         # 残りの係数は完全なランダム値
-         for i in range(degree):
-             coef.append(secrets.randbelow(p))
-         return coef
-     ```
-   - この実装により、生成されるシェア値は統計的に区別不可能になる
-
-2. **シェア ID 分布の最適化**：
-
-   - 連続した ID（1,2,3...）の使用を避け、ランダム分布させた ID を使用
-   - 実装方法：
-     ```python
-     def generate_share_ids(n, id_space_size=2**32):
-         """ランダムなシェアIDをn個生成"""
-         ids = set()
-         while len(ids) < n:
-             # 大きな範囲からランダムにID生成
-             new_id = secrets.randbelow(id_space_size)
-             if new_id > 0:  # IDは0以外
-                 ids.add(new_id)
-         return list(ids)
-     ```
-   - この実装により、ID から文書種別（A/B/未割当）の推測が困難になる
-
-3. **シェア間相関の排除**：
-
-   - チャンク間やシェア間の統計的相関を排除する手法
-   - 各チャンクに対して独立したソルト値を使用
-   - 実装方法：
-     ```python
-     def generate_chunk_shares(chunks, share_ids, p):
-         """複数チャンクのシェアを生成、相関を排除"""
-         all_shares = []
-         for i, chunk in enumerate(chunks):
-             # 各チャンク専用のソルト値を生成
-             chunk_salt = secrets.token_bytes(16)
-             # シェア生成時にチャンクとソルトを組み合わせ
-             processed_secret = combine_with_salt(chunk, chunk_salt, p)
-             # 全シェアを生成（閾値の概念は使用せず）
-             polynomial_degree = len(share_ids) - 1
-             chunk_shares = generate_shares(processed_secret, polynomial_degree, share_ids, p)
-             all_shares.append((chunk_salt, chunk_shares))
-         return all_shares
-     ```
-   - チャンク間の相関を排除し、統計的攻撃に対する耐性を向上
-
-4. **チャンクサイズの厳密な統一**：
-
-   - すべてのチャンクを 64 バイト固定サイズで処理
-   - パディング実装の例：
-     ```python
-     def pad_chunk(chunk, target_size=64):
-         """チャンクを指定サイズに厳密にパディング"""
-         # チャンクサイズが小さい場合は埋める
-         if len(chunk) < target_size:
-             # 埋めるサイズを計算
-             pad_size = target_size - len(chunk)
-             # PyCryptodomeのPadding機能を使用
-             from Crypto.Util.Padding import pad
-             padded_chunk = pad(chunk, target_size)
-             return padded_chunk
-         # 既に指定サイズの場合はそのまま返す
-         elif len(chunk) == target_size:
-             return chunk
-         # チャンクサイズが大きい場合は次のチャンクに分割（呼び出し側で処理）
-         else:
-             return chunk[:target_size]
-     ```
-   - この実装により、あらゆるチャンクが同一サイズとなり、統計的区別を不可能にする
-
-5. **実装上のトレードオフと実用的アプローチ**：
-
-   - 完全な統計的区別不可能性と計算効率のバランスを考慮
-   - 現実的アプローチ：
-
-     - チャンクサイズを統一（64 バイト固定）し、パディングを統一的に適用
-     - HMAC-SHA を用いた決定論的なマッピング
-     - 未割当領域には良質な乱数（/dev/urandom または secrets）でガベージシェアを生成
-     - 第 2 段階 MAP で特定された位置に有効データを配置
-
-   - 実装例：
-
-     ```python
-     def create_secure_file(json_data, partition_key, password, salt):
-         """全シェア位置に有効データを配置した安全なファイルを生成"""
-         # 第1段階MAP生成
-         stage1_map = generate_stage1_map(partition_key)
-
-         # 第2段階MAP生成
-         # パスワードを固定長に変換
-         hashed_password = hash_to_fixed_length(password)
-         stage2_map = generate_stage2_map(hashed_password, salt, stage1_map)
-
-         # データを固定サイズチャンクに分割
-         chunks = split_to_fixed_chunks(json_data, 64)
-
-         # 必要なチャンク数と実際のチャンク数を比較
-         required_chunks = len(stage2_map)
-         has_enough_data = len(chunks) >= required_chunks
-
-         # データ定量化（64バイト固定長に調整）
-         quantized_chunks = quantize_data_chunks(chunks, required_chunks)
-
-         # チャンク数が多すぎる場合は切り捨て
-         chunks = chunks[:required_chunks]
-
-         # 全シェア生成
-         all_shares = []
-         for i, chunk in enumerate(chunks):
-             # シェア生成
-             shares = generate_shares_all_required(chunk, stage2_map, PRIME)
-             all_shares.extend(shares)
-
-         return all_shares
-     ```
-
-   - この実装は不足位置にガベージシェアを混入せず、常に全位置を有効データで満たす
+- シェア値の均一分布を実現する多項式生成
+- シェア ID 分布の最適化手法
+- シェア間相関の排除テクニック
+- チャンクサイズの厳密な統一方法
+- 実装上のトレードオフと実用的アプローチ
 
 ### 7.6. 全シェア使用方式の実装ガイドライン
 
@@ -463,292 +272,11 @@ return result
 
 これらのガイドラインを実装することで、固定サイズチャンクと容量制限を適切に処理し、セキュリティを確保しながら効率的な実装が可能になります。
 
-## 7. 利用ガイドライン
+## 利用ガイドライン
 
-### 7.1. パスワード管理ガイドライン
+利用ガイドラインについては「08_usage_guidelines.md」ファイルを参照してください。利用ガイドラインには以下の内容が含まれています：
 
-#### 7.1.1. パスワード強度推奨事項
-
-セキュリティを確保するため、以下のパスワード強度を推奨します：
-
-1. **最小長**: 12 文字以上
-2. **複雑性**: 大文字、小文字、数字、特殊文字を含む
-3. **エントロピー**: 最低 60 ビット以上のエントロピーを持つ
-4. **言語**: UTF-8 でサポートされるすべての文字（漢字、絵文字なども含む）が使用可能
-5. **パスワード使用**: パーティションマップキーの暗号化には**全文そのままのパスワード（生のパスワード）**が使用され、第 2 段階 MAP 生成には**必ず処理（ハッシュ化）されたパスワード**が使用される（**開発者は第 2 段階 MAP 生成に生のパスワードを誤って使用してはならない**）
-
-#### 7.1.2. パスワード保管に関する注意
-
-1. **分離保管**: パスワードとパーティションマップキーは別々の場所に保管
-2. **バックアップ**: パスワードとパーティションマップキーの安全なバックアップを作成
-3. **共有方法**: 必要に応じて分散保管方式（他の暗号技術と組み合わせ）の使用を検討
-4. **更新頻度**: 定期的なパスワード更新より、強力な初期パスワードの使用を推奨
-
-### 7.2. 暗号書庫管理ガイドライン
-
-#### 7.2.1. 適切なファイルパーティション設計
-
-目的に応じた適切なパラメータ設定を以下に示します：
-
-| 用途             | ACTIVE_SHARES | PARTITION_SIZE | 特徴                                           |
-| ---------------- | ------------- | -------------- | ---------------------------------------------- |
-| 標準的な保護     | 8             | 24             | バランスの取れたセキュリティと性能             |
-| 高セキュリティ   | 16            | 48             | 最大限のセキュリティ（性能は若干低下）         |
-| リソース制約環境 | 4             | 16             | 最小限のリソース要件（セキュリティは若干低下） |
-| 大容量データ     | 8             | 32             | 大きな JSON データの保存に最適                 |
-
-#### 7.2.2. バックアップと復旧戦略
-
-1. **定期バックアップ**:
-
-   - 暗号書庫ファイルの定期的なバックアップ
-   - ファイル破損に備えた複数世代のバックアップ保持
-
-2. **障害復旧**:
-
-   - システムが WAL 方式による自動復旧を試みるが、重大な破損時には手動復旧が必要
-   - バックアップからの復元手順を事前に準備
-
-3. **バックアップローテーション**:
-   - `BACKUP_RETENTION_DAYS`設定による古いバックアップの自動削除
-   - 重要なデータの場合は長期アーカイブの検討
-
-### 7.3. 実装パターン
-
-#### 7.3.1. 安全な暗号操作のためのパターン
-
-1. **パーティションマップキーの暗号化**:
-
-   ```python
-   # パーティション分布を全文そのままのパスワード（生のパスワード）で暗号化する
-   partition_map_key = encrypt_partition_map(partition_distribution, password)
-   ```
-
-2. **パーティションマップキーの復号**:
-
-   ```python
-   # パーティションマップキーを全文そのままのパスワード（生のパスワード）で復号する
-   partition_distribution = decrypt_partition_map(partition_map_key, password)
-   ```
-
-3. **第 2 段階 MAP の生成**:
-
-   ```python
-   # パスワードを処理（ハッシュ化）する
-   processed_password = process_password(password)
-
-   # 処理されたパスワードを使用して第2段階MAPを生成する
-   # 重要: 開発者は生のパスワードを誤って使用してはならない
-   second_stage_map = generate_second_stage_map(processed_password, first_stage_map, salt, active_shares)
-   ```
-
-4. **多段エンコード処理**:
-
-   ```python
-   # JSONデータを多段エンコードする（パーティションマップキーを使用した固定長暗号化を含む）
-   encoded_data = multi_stage_encode(json_data, partition_map_key)
-   ```
-
-5. **多段デコード処理**:
-   ```python
-   # 多段エンコードされたデータをデコードする（パーティションマップキーを使用した固定長暗号化解除を含む）
-   json_data = multi_stage_decode(encoded_data, partition_map_key)
-   ```
-
-#### 7.3.2. 異常検出と対応パターン
-
-1. **JSON フォーマット検証**:
-
-   ```python
-   def validate_json(json_data):
-       try:
-           # JSONの構文とスキーマを検証
-           parsed = json.loads(json_data)
-           # 必要に応じて追加の検証
-           return True, parsed
-       except json.JSONDecodeError:
-           return False, None
-   ```
-
-2. **ファイルロック検証**:
-
-   ```python
-   def check_and_acquire_lock(file_path):
-       lock_path = file_path + ".lock"
-       if os.path.exists(lock_path):
-           # ロックファイルの経過時間を確認
-           lock_time = os.path.getmtime(lock_path)
-           if time.time() - lock_time > LOCK_TIMEOUT:
-               # タイムアウトしたロックを強制解除
-               os.remove(lock_path)
-           else:
-               raise RuntimeError("File is locked by another process")
-
-       # 新しいロックを作成
-       with open(lock_path, 'w') as f:
-           f.write(str(time.time()))
-       return lock_path
-   ```
-
-3. **障害復旧処理**:
-   ```python
-   def recover_from_backup(file_path):
-       backup_path = get_latest_backup(file_path)
-       if backup_path and os.path.exists(backup_path):
-           shutil.copy2(backup_path, file_path)
-           return True
-       return False
-   ```
-
-### 7.4. アプリケーション統合ガイドライン
-
-#### 7.4.1. 基本的な使用パターン
-
-1. **初期化と設定**:
-
-   ```python
-   # 暗号書庫の作成
-   createCryptoStorage(
-       file_path="secure_storage.dat",
-       partition_map_key_a=encrypt_partition_map(partition_distribution_a, password_a),
-       partition_map_key_b=encrypt_partition_map(partition_distribution_b, password_b),
-       password_a=password_a,  # 全文そのままのパスワード
-       password_b=password_b   # 全文そのままのパスワード
-   )
-   ```
-
-2. **データ保存**:
-
-   ```python
-   # A用のデータを保存
-   updateCryptoStorage(
-       file_path="secure_storage.dat",
-       json_data=json.dumps({"key": "value_for_A"}),
-       partition_map_key=a_partition_map_key,  # パーティションマップキーA
-       password=password_a  # パスワードA（全文そのまま）
-   )
-
-   # B用のデータを保存
-   updateCryptoStorage(
-       file_path="secure_storage.dat",
-       json_data=json.dumps({"key": "value_for_B"}),
-       partition_map_key=b_partition_map_key,  # パーティションマップキーB
-       password=password_b  # パスワードB（全文そのまま）
-   )
-   ```
-
-3. **データ読み取り**:
-
-   ```python
-   # A用のデータを読み取り
-   json_data_a = readCryptoStorage(
-       file_path="secure_storage.dat",
-       partition_map_key=a_partition_map_key,  # パーティションマップキーA
-       password=password_a  # パスワードA（全文そのまま）
-   )
-
-   # B用のデータを読み取り
-   json_data_b = readCryptoStorage(
-       file_path="secure_storage.dat",
-       partition_map_key=b_partition_map_key,  # パーティションマップキーB
-       password=password_b  # パスワードB（全文そのまま）
-   )
-   ```
-
-#### 7.4.2. エラー処理パターン
-
-1. **正常な失敗シナリオ**:
-
-   ```python
-   try:
-       # 暗号書庫からデータを読み取り
-       data = readCryptoStorage(file_path, partition_map_key, password)
-
-       # 返されたデータが有効なJSONかどうかを確認
-       is_valid, parsed = validate_json(data)
-       if not is_valid:
-           print("無効なパスワードまたはパーティションマップキーが使用された可能性があります")
-       else:
-           # 有効なデータを処理
-           process_data(parsed)
-   except Exception as e:
-       print(f"エラーが発生しました: {e}")
-   ```
-
-2. **WAL 復旧処理**:
-   ```python
-   def safe_update(file_path, json_data, partition_map_key, password):
-       try:
-           result = updateCryptoStorage(file_path, json_data, partition_map_key, password)
-           return result
-       except Exception as e:
-           # ロックファイルを確認
-           lock_path = file_path + ".lock"
-           if os.path.exists(lock_path):
-               # 自動復旧を試みる
-               recover_from_backup(file_path)
-               # ロックを解放
-               os.remove(lock_path)
-           raise e
-   ```
-
-#### 7.4.3. パフォーマンス最適化パターン
-
-1. **キャッシング**:
-
-   ```python
-   # パスワード処理結果のキャッシング
-   processed_password_cache = {}
-
-   def get_processed_password(password):
-       if password not in processed_password_cache:
-           processed_password_cache[password] = process_password(password)
-       return processed_password_cache[password]
-   ```
-
-2. **並列処理**:
-
-   ```python
-   import concurrent.futures
-
-   def process_chunks_parallel(chunks, func, max_workers=None):
-       with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-           results = list(executor.map(func, chunks))
-       return results
-   ```
-
-### 7.5. セキュリティプラクティス
-
-#### 7.5.1. 安全な展開と運用
-
-1. **配置の安全性**:
-
-   - セキュアな環境への暗号書庫配置
-   - アクセス制御の適切な設定
-   - 読み取り専用メディアの使用検討
-
-2. **鍵管理**:
-
-   - パーティションマップキーは**全文そのままのパスワード（生のパスワード）**で暗号化
-   - 第 2 段階 MAP の生成には**必ず処理されたパスワード**を使用（**開発者は生のパスワードを誤って使用してはならない**）
-   - パスワードとパーティションマップキーの安全な管理と分離
-
-3. **監査と監視**:
-   - アクセス試行のログ記録（オプション）
-   - 異常アクセスパターンの検出
-
-#### 7.5.2. 安全な更新と破棄
-
-1. **更新プロセス**:
-
-   - WAL 方式による安全な更新
-   - 更新中の障害に対する自動復旧
-
-2. **安全な破棄**:
-
-   - 不要になった暗号書庫の安全な削除
-   - メモリ内の機密データの明示的な消去
-
-3. **鍵ローテーション**:
-   - 定期的なパーティションマップキーのローテーション
-   - 新旧のパーティションマップキーの安全な管理
+- パスワード管理ガイドライン
+- 暗号書庫管理ガイドライン
+- アプリケーション統合ガイドライン
+- セキュリティプラクティス

@@ -1,0 +1,6 @@
+2025-05-22 21:47:27,141 [INFO] root: ロガーを設定しました: /Users/macbook/shamir-secret-sharing-demo/method_13_shamir_multi_plaintext_system/test/logs/test_log_20250522_214727.log
+2025-05-22 21:47:27,141 [INFO] test: テスト実行を開始します
+2025-05-22 21:47:27,141 [INFO] utils.config_loader: 設定ファイルを読み込みました: /Users/macbook/shamir-secret-sharing-demo/method_13_shamir_multi_plaintext_system/test/test_config.json
+2025-05-22 21:47:27,142 [INFO] test: テストケースを検出しています...
+2025-05-22 21:47:27,142 [WARNING] test: テストケースが見つかりませんでした
+2025-05-22 21:47:27,142 [ERROR] test: テストケースが見つかりませんでした

@@ -102,9 +102,9 @@ method_13_shamir_multi_plaintext_system/test/
 1. `test_runner.py`を実行
 2. `config_loader.py`で設定ファイル（`test_config.json`）を読み込み
 3. 設定に基づいて実行するテストケースを決定
-4. 各テストケースファイルを独立して実行
+4. テストを実行
 5. テスト結果を収集
-6. 設定に基づいて有効化された分析処理を実行（各分析は独立したファイルで実行）
+6. 設定に基づいて有効化された分析処理を実行
 7. レポートを生成（`report_generator.py`を使用）して`test_report`ディレクトリに保存
 
 ### 3.2 CLI コマンド実行方法
@@ -323,7 +323,7 @@ class KeyLengthAnalyzer:
 
 分析ファイル:
 
-- `key_length_analyzer.py` - キー長の検証（十分な長さであるか）
+- `key_length_analyzer.py` - キー長の検証（適切なな長さであるか）
 - `key_randomness_analyzer.py` - キーの統計的ランダム性（ビット分布）
 - `key_uniqueness_analyzer.py` - 複数回生成時の一意性
 

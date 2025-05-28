@@ -88,5 +88,6 @@
     "prettier.printWidth": 9999999,
     // 保存時にフォーマットを実行する
     "editor.formatOnSave": false
-  }
+  },
+  "makefile.configureOnOpen": false
 }

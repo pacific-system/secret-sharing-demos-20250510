@@ -23,6 +23,6 @@
   "reporting": {
     "include_raw_data": false,
     "generate_charts": true,
-    "test_repeat_count": 5
+    "test_repeat_count": 10
   }
 }

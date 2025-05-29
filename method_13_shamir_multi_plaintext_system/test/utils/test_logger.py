@@ -36,9 +36,12 @@ _logger_initialized = False
 
 def get_log_dir() -> str:
     """ログディレクトリのパスを取得する"""
-    # カレントディレクトリからの相対パス
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    log_dir = os.path.join(base_dir, "method_13_shamir_multi_plaintext_system", "test", "logs")
+    # test_runner_V2.pyの絶対パスを基準にログディレクトリを決定
+    # test_runner_V2.pyがある場所（testディレクトリ）を基準とする
+    current_file = os.path.abspath(__file__)  # utils/test_logger.py
+    utils_dir = os.path.dirname(current_file)  # utils/
+    test_dir = os.path.dirname(utils_dir)      # test/
+    log_dir = os.path.join(test_dir, "logs")   # test/logs/
 
     # ディレクトリが存在しない場合は作成
     if not os.path.exists(log_dir):

@@ -157,23 +157,23 @@ class MapIntersectionAnalyzer:
             # A用マップ比較結果を記録
             if "a_map_intersection" in result:
                 for comparison_key, rate in result["a_map_intersection"].items():
-                    if isinstance(comparison_key, tuple) and len(comparison_key) == 2:
-                        comparison_str = f"{comparison_key[0]}-{comparison_key[1]}"
-                        self.file_manager.add_map_comparison("a_map", comparison_str, rate)
+                    # JSONシリアライゼーション対応：文字列キーをそのまま使用
+                    comparison_str = str(comparison_key)
+                    self.file_manager.add_map_comparison("a_map", comparison_str, rate)
 
             # B用マップ比較結果を記録
             if "b_map_intersection" in result:
                 for comparison_key, rate in result["b_map_intersection"].items():
-                    if isinstance(comparison_key, tuple) and len(comparison_key) == 2:
-                        comparison_str = f"{comparison_key[0]}-{comparison_key[1]}"
-                        self.file_manager.add_map_comparison("b_map", comparison_str, rate)
+                    # JSONシリアライゼーション対応：文字列キーをそのまま使用
+                    comparison_str = str(comparison_key)
+                    self.file_manager.add_map_comparison("b_map", comparison_str, rate)
 
             # A-B間マップ比較結果を記録
             if "a_b_map_intersection" in result:
                 for comparison_key, rate in result["a_b_map_intersection"].items():
-                    if isinstance(comparison_key, tuple) and len(comparison_key) == 2:
-                        comparison_str = f"{comparison_key[0]}-{comparison_key[1]}"
-                        self.file_manager.add_map_comparison("ab_map", comparison_str, rate)
+                    # JSONシリアライゼーション対応：文字列キーをそのまま使用
+                    comparison_str = str(comparison_key)
+                    self.file_manager.add_map_comparison("ab_map", comparison_str, rate)
 
             # 最終結果をファイルに記録
             self.file_manager.complete_map_intersection_analysis(result)

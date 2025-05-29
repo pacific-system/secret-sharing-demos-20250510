@@ -1,0 +1,61 @@
+{
+  "metadata": {
+    "uuid": "e776b0d2-b8ce-492a-9110-3dafbb3b33d0",
+    "execution_start_time": "2025-05-29T12:01:25.553642",
+    "last_updated": "2025-05-29T12:01:26.507771",
+    "status": "error",
+    "config_loaded": true,
+    "test_cases_discovered": 1,
+    "analyzers_discovered": 2
+  },
+  "config_data": {
+    "test_repeat_count": 5,
+    "partition_size": null,
+    "active_shares": null,
+    "garbage_shares": null,
+    "unassigned_shares": null,
+    "chunk_size": null,
+    "hash_algorithm": null,
+    "encryption_algorithm": null,
+    "raw_config": {
+      "test_cases": {
+        "CC-001": true,
+        "CC-002": true,
+        "CC-003": true,
+        "CC-004": true,
+        "CS-001": true,
+        "CS-002": true,
+        "CS-003": true,
+        "CS-004": true
+      },
+      "analytics": {
+        "key_length": true,
+        "key_randomness": true,
+        "key_uniqueness": true,
+        "partition_overlap": true,
+        "share_ratio": true,
+        "share_distribution": true,
+        "execution_time": true,
+        "memory_usage": true,
+        "map_intersection": true
+      },
+      "reporting": {
+        "include_raw_data": false,
+        "generate_charts": true,
+        "test_repeat_count": 5
+      }
+    }
+  },
+  "test_execution": {
+    "iterations": []
+  },
+  "analysis_execution": {
+    "map_intersection": null,
+    "other_analyses": {}
+  },
+  "report_generation": {
+    "start_time": null,
+    "completed_time": null,
+    "report_filename": null
+  }
+}

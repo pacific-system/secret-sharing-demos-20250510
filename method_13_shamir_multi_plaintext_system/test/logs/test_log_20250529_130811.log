@@ -1,0 +1,555 @@
+2025-05-29 13:08:11,182 [INFO] root: ロガーを設定しました: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/logs/test_log_20250529_130811.log
+2025-05-29 13:08:11,183 [INFO] test_runner_V2_file_manager: 結果保存ディレクトリを確認/作成しました: results
+2025-05-29 13:08:11,183 [INFO] test: テスト実行を開始します
+2025-05-29 13:08:11,183 [INFO] test: 実行環境: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test
+2025-05-29 13:08:11,183 [INFO] test: test_runner_V2.py絶対パス: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/test_runner_V2.py
+2025-05-29 13:08:11,183 [INFO] test_runner_V2_file_manager: 新しいテスト実行を初期化しました: results/test_results_a8823b15-392f-432c-b52f-7bf00db705be_20250529_130811.json
+2025-05-29 13:08:11,183 [INFO] test: 結果ファイルを初期化しました: results/test_results_a8823b15-392f-432c-b52f-7bf00db705be_20250529_130811.json
+2025-05-29 13:08:11,184 [INFO] utils.config_loader: 設定ファイルを読み込みました: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/test_config.json
+2025-05-29 13:08:11,184 [INFO] test: 設定ファイルをファイルに記録しました
+2025-05-29 13:08:11,184 [INFO] test_runner_V2_test_executor: テストベースディレクトリを設定しました: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test
+2025-05-29 13:08:11,184 [INFO] test: テストケースを検出しています...
+2025-05-29 13:08:11,184 [INFO] test: テストディレクトリを検索中: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/test_cases/crypto_storage_creation
+2025-05-29 13:08:11,185 [INFO] utils.password_manager: パスワードファイルを読み込みました: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/test_passwords.txt
+2025-05-29 13:08:11,185 [INFO] utils.password_manager: A用パスワード（ランダム選択）: pass word with spaces
+2025-05-29 13:08:11,185 [INFO] utils.password_manager: B用パスワード（ランダム選択）: EmptySpaceAtStart
+2025-05-29 13:08:11,185 [INFO] test_cases.base_test: ランダムパスワードを初期化しました（A: 21文字, B: 17文字）
+2025-05-29 13:08:11,185 [INFO] test_cases.base_test: テストケース TestBasicCreation を初期化しました
+2025-05-29 13:08:11,185 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を初期化しました
+2025-05-29 13:08:11,185 [INFO] test: テストケース CC-001 (TestBasicCreation) を検出しました
+2025-05-29 13:08:11,185 [INFO] test: テストディレクトリを検索中: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/test_cases/crypto_storage_update
+2025-05-29 13:08:11,185 [INFO] test: テストディレクトリを検索中: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/test_cases/crypto_storage_read
+2025-05-29 13:08:11,185 [INFO] test: 検出されたテストケース数: 1
+2025-05-29 13:08:11,186 [INFO] test: 検出されたテストケース: ['CC-001']
+2025-05-29 13:08:11,186 [INFO] test_runner_V2_analysis_executor: 分析ベースディレクトリを設定しました: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test
+2025-05-29 13:08:11,186 [INFO] test: 分析モジュールを検出しています...
+2025-05-29 13:08:11,186 [INFO] test: 分析モジュールディレクトリを検索中: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/analysis
+2025-05-29 13:08:11,192 [INFO] analysis.map_intersection_analyzer: パーティションMAP交差分析モジュールを初期化しました
+2025-05-29 13:08:11,192 [INFO] test: 分析モジュール map_intersection (MapIntersectionAnalyzer) を検出しました
+2025-05-29 13:08:11,192 [INFO] analysis.key_length_analyzer: パーティションマップキー長分析モジュールを初期化しました
+2025-05-29 13:08:11,192 [INFO] test: 分析モジュール key_length (KeyLengthAnalyzer) を検出しました
+2025-05-29 13:08:11,192 [INFO] test: 検出された分析モジュール数: 2
+2025-05-29 13:08:11,192 [INFO] test: 検出された分析モジュール: ['map_intersection', 'key_length']
+2025-05-29 13:08:11,193 [INFO] test: テストを5回繰り返し実行します...
+2025-05-29 13:08:11,193 [INFO] test: テスト実行 #1/5 を開始します...
+2025-05-29 13:08:11,193 [INFO] utils.password_manager: A用パスワード（ランダム選択）: password_四_user_bBBB
+2025-05-29 13:08:11,193 [INFO] utils.password_manager: B用パスワード（ランダム選択）: ThisIsAVeryLongPasswordThatExceedsTwentyCharacters
+2025-05-29 13:08:11,193 [INFO] test_cases.base_test: ランダムパスワードを初期化しました（A: 20文字, B: 50文字）
+2025-05-29 13:08:11,193 [INFO] test_cases.base_test: テストケース TestBasicCreation を初期化しました
+2025-05-29 13:08:11,193 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を初期化しました
+2025-05-29 13:08:11,193 [INFO] test: テスト CC-001 (TestBasicCreation) を実行しています...
+2025-05-29 13:08:11,193 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を実行します
+2025-05-29 13:08:11,193 [INFO] test_cases.base_test: パーティション A のランダムパスワードを取得しました（長さ: 20）
+2025-05-29 13:08:11,194 [INFO] test_cases.base_test: パーティション B のランダムパスワードを取得しました（長さ: 50）
+2025-05-29 13:08:11,194 [INFO] test_cases.base_test: 実行するコマンド: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/cli/create_storage.py -o output -a password_四_user_bBBB -b ThisIsAVeryLongPasswordThatExceedsTwentyCharacters -v
+2025-05-29 13:08:11,709 [INFO] test_cases.base_test: A領域パーティションMAPを抽出しました: [5, 11, 16, 22, 26, 27, 29, 30...
+2025-05-29 13:08:11,711 [INFO] test_cases.base_test: B領域パーティションMAPを抽出しました: [0, 2, 3, 10, 12, 15, 18, 19, ...
+2025-05-29 13:08:11,711 [INFO] test_cases.base_test: 暗号化ファイル名を抽出しました: output/crypto_storage_7390f1a9-0d5b-47b8-bb37-16ca9bec42e4.json
+2025-05-29 13:08:11,711 [INFO] test_cases.base_test: パーティション A 用マップキーを抽出しました（長さ: 3647）
+2025-05-29 13:08:11,711 [INFO] test_cases.base_test: パーティション B 用マップキーを抽出しました（長さ: 3647）
+2025-05-29 13:08:11,712 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）は成功しました
+2025-05-29 13:08:11,712 [INFO] test_runner_V2_test_executor: DEBUG: テスト CC-001 のA用ランダムパスワード: password_四_user_bBBB
+2025-05-29 13:08:11,712 [INFO] test_runner_V2_test_executor: DEBUG: テスト CC-001 のB用ランダムパスワード: ThisIsAVeryLongPasswordThatExceedsTwentyCharacters
+2025-05-29 13:08:11,712 [INFO] test: テスト CC-001 の実行結果: 成功
+2025-05-29 13:08:11,712 [INFO] test.result: テスト CC-001 の結果: 成功
+2025-05-29 13:08:11,713 [INFO] test: テスト実行 #1/5 完了: 実行されたテスト数: 1
+2025-05-29 13:08:11,718 [INFO] test: テスト実行 #2/5 を開始します...
+2025-05-29 13:08:11,719 [INFO] utils.password_manager: A用パスワード（ランダム選択）: パスワード！＠＃＄％
+2025-05-29 13:08:11,719 [INFO] utils.password_manager: B用パスワード（ランダム選択）: Partition_A_Key123!
+2025-05-29 13:08:11,719 [INFO] test_cases.base_test: ランダムパスワードを初期化しました（A: 10文字, B: 19文字）
+2025-05-29 13:08:11,719 [INFO] test_cases.base_test: テストケース TestBasicCreation を初期化しました
+2025-05-29 13:08:11,719 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を初期化しました
+2025-05-29 13:08:11,719 [INFO] test: テスト CC-001 (TestBasicCreation) を実行しています...
+2025-05-29 13:08:11,719 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を実行します
+2025-05-29 13:08:11,719 [INFO] test_cases.base_test: パーティション A のランダムパスワードを取得しました（長さ: 10）
+2025-05-29 13:08:11,719 [INFO] test_cases.base_test: パーティション B のランダムパスワードを取得しました（長さ: 19）
+2025-05-29 13:08:11,719 [INFO] test_cases.base_test: 実行するコマンド: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/cli/create_storage.py -o output -a パスワード！＠＃＄％ -b Partition_A_Key123! -v
+2025-05-29 13:08:12,115 [INFO] test_cases.base_test: A領域パーティションMAPを抽出しました: [4, 7, 8, 9, 17, 21, 24, 29, 3...
+2025-05-29 13:08:12,116 [INFO] test_cases.base_test: B領域パーティションMAPを抽出しました: [5, 6, 12, 14, 16, 19, 20, 22,...
+2025-05-29 13:08:12,116 [INFO] test_cases.base_test: 暗号化ファイル名を抽出しました: output/crypto_storage_af82c1cb-8788-4e6b-ac73-4e92d7bf23f0.json
+2025-05-29 13:08:12,117 [INFO] test_cases.base_test: パーティション A 用マップキーを抽出しました（長さ: 3647）
+2025-05-29 13:08:12,117 [INFO] test_cases.base_test: パーティション B 用マップキーを抽出しました（長さ: 3647）
+2025-05-29 13:08:12,117 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）は成功しました
+2025-05-29 13:08:12,117 [INFO] test_runner_V2_test_executor: DEBUG: テスト CC-001 のA用ランダムパスワード: パスワード！＠＃＄％
+2025-05-29 13:08:12,117 [INFO] test_runner_V2_test_executor: DEBUG: テスト CC-001 のB用ランダムパスワード: Partition_A_Key123!
+2025-05-29 13:08:12,117 [INFO] test: テスト CC-001 の実行結果: 成功
+2025-05-29 13:08:12,117 [INFO] test.result: テスト CC-001 の結果: 成功
+2025-05-29 13:08:12,118 [INFO] test: テスト実行 #2/5 完了: 実行されたテスト数: 1
+2025-05-29 13:08:12,129 [INFO] test: テスト実行 #3/5 を開始します...
+2025-05-29 13:08:12,129 [INFO] utils.password_manager: A用パスワード（ランダム選択）: abcdefgh
+2025-05-29 13:08:12,129 [INFO] utils.password_manager: B用パスワード（ランダム選択）: password_四_user_bBBB
+2025-05-29 13:08:12,129 [INFO] test_cases.base_test: ランダムパスワードを初期化しました（A: 8文字, B: 20文字）
+2025-05-29 13:08:12,129 [INFO] test_cases.base_test: テストケース TestBasicCreation を初期化しました
+2025-05-29 13:08:12,129 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を初期化しました
+2025-05-29 13:08:12,130 [INFO] test: テスト CC-001 (TestBasicCreation) を実行しています...
+2025-05-29 13:08:12,130 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を実行します
+2025-05-29 13:08:12,130 [INFO] test_cases.base_test: パーティション A のランダムパスワードを取得しました（長さ: 8）
+2025-05-29 13:08:12,130 [INFO] test_cases.base_test: パーティション B のランダムパスワードを取得しました（長さ: 20）
+2025-05-29 13:08:12,130 [INFO] test_cases.base_test: 実行するコマンド: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/cli/create_storage.py -o output -a abcdefgh -b password_四_user_bBBB -v
+2025-05-29 13:08:12,524 [INFO] test_cases.base_test: A領域パーティションMAPを抽出しました: [0, 1, 4, 5, 10, 11, 19, 22, 2...
+2025-05-29 13:08:12,525 [INFO] test_cases.base_test: B領域パーティションMAPを抽出しました: [2, 3, 6, 7, 12, 13, 15, 17, 1...
+2025-05-29 13:08:12,526 [INFO] test_cases.base_test: 暗号化ファイル名を抽出しました: output/crypto_storage_7c577e10-ad11-4fec-aed6-5856e3adc363.json
+2025-05-29 13:08:12,526 [INFO] test_cases.base_test: パーティション A 用マップキーを抽出しました（長さ: 3647）
+2025-05-29 13:08:12,526 [INFO] test_cases.base_test: パーティション B 用マップキーを抽出しました（長さ: 3647）
+2025-05-29 13:08:12,526 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）は成功しました
+2025-05-29 13:08:12,526 [INFO] test_runner_V2_test_executor: DEBUG: テスト CC-001 のA用ランダムパスワード: abcdefgh
+2025-05-29 13:08:12,526 [INFO] test_runner_V2_test_executor: DEBUG: テスト CC-001 のB用ランダムパスワード: password_四_user_bBBB
+2025-05-29 13:08:12,526 [INFO] test: テスト CC-001 の実行結果: 成功
+2025-05-29 13:08:12,526 [INFO] test.result: テスト CC-001 の結果: 成功
+2025-05-29 13:08:12,527 [INFO] test: テスト実行 #3/5 完了: 実行されたテスト数: 1
+2025-05-29 13:08:12,543 [INFO] test: テスト実行 #4/5 を開始します...
+2025-05-29 13:08:12,543 [INFO] utils.password_manager: A用パスワード（ランダム選択）: abcdefgh
+2025-05-29 13:08:12,543 [INFO] utils.password_manager: B用パスワード（ランダム選択）: PW_4_user_a
+2025-05-29 13:08:12,543 [INFO] test_cases.base_test: ランダムパスワードを初期化しました（A: 8文字, B: 11文字）
+2025-05-29 13:08:12,543 [INFO] test_cases.base_test: テストケース TestBasicCreation を初期化しました
+2025-05-29 13:08:12,543 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を初期化しました
+2025-05-29 13:08:12,543 [INFO] test: テスト CC-001 (TestBasicCreation) を実行しています...
+2025-05-29 13:08:12,543 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を実行します
+2025-05-29 13:08:12,543 [INFO] test_cases.base_test: パーティション A のランダムパスワードを取得しました（長さ: 8）
+2025-05-29 13:08:12,543 [INFO] test_cases.base_test: パーティション B のランダムパスワードを取得しました（長さ: 11）
+2025-05-29 13:08:12,543 [INFO] test_cases.base_test: 実行するコマンド: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/cli/create_storage.py -o output -a abcdefgh -b PW_4_user_a -v
+2025-05-29 13:08:12,938 [INFO] test_cases.base_test: A領域パーティションMAPを抽出しました: [5, 9, 10, 11, 13, 15, 16, 18,...
+2025-05-29 13:08:12,940 [INFO] test_cases.base_test: B領域パーティションMAPを抽出しました: [0, 3, 7, 20, 25, 26, 28, 29, ...
+2025-05-29 13:08:12,940 [INFO] test_cases.base_test: 暗号化ファイル名を抽出しました: output/crypto_storage_16147502-37b5-4c3c-b00e-c72fcefcf546.json
+2025-05-29 13:08:12,940 [INFO] test_cases.base_test: パーティション A 用マップキーを抽出しました（長さ: 3647）
+2025-05-29 13:08:12,940 [INFO] test_cases.base_test: パーティション B 用マップキーを抽出しました（長さ: 3647）
+2025-05-29 13:08:12,940 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）は成功しました
+2025-05-29 13:08:12,940 [INFO] test_runner_V2_test_executor: DEBUG: テスト CC-001 のA用ランダムパスワード: abcdefgh
+2025-05-29 13:08:12,940 [INFO] test_runner_V2_test_executor: DEBUG: テスト CC-001 のB用ランダムパスワード: PW_4_user_a
+2025-05-29 13:08:12,940 [INFO] test: テスト CC-001 の実行結果: 成功
+2025-05-29 13:08:12,941 [INFO] test.result: テスト CC-001 の結果: 成功
+2025-05-29 13:08:12,942 [INFO] test: テスト実行 #4/5 完了: 実行されたテスト数: 1
+2025-05-29 13:08:12,962 [INFO] test: テスト実行 #5/5 を開始します...
+2025-05-29 13:08:12,962 [INFO] utils.password_manager: A用パスワード（ランダム選択）: パスワード！＠＃＄％
+2025-05-29 13:08:12,962 [INFO] utils.password_manager: B用パスワード（ランダム選択）: ThisIsAVeryLongPasswordThatExceedsTwentyCharacters
+2025-05-29 13:08:12,962 [INFO] test_cases.base_test: ランダムパスワードを初期化しました（A: 10文字, B: 50文字）
+2025-05-29 13:08:12,963 [INFO] test_cases.base_test: テストケース TestBasicCreation を初期化しました
+2025-05-29 13:08:12,963 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を初期化しました
+2025-05-29 13:08:12,963 [INFO] test: テスト CC-001 (TestBasicCreation) を実行しています...
+2025-05-29 13:08:12,963 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）を実行します
+2025-05-29 13:08:12,963 [INFO] test_cases.base_test: パーティション A のランダムパスワードを取得しました（長さ: 10）
+2025-05-29 13:08:12,963 [INFO] test_cases.base_test: パーティション B のランダムパスワードを取得しました（長さ: 50）
+2025-05-29 13:08:12,963 [INFO] test_cases.base_test: 実行するコマンド: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/cli/create_storage.py -o output -a パスワード！＠＃＄％ -b ThisIsAVeryLongPasswordThatExceedsTwentyCharacters -v
+2025-05-29 13:08:13,358 [INFO] test_cases.base_test: A領域パーティションMAPを抽出しました: [1, 4, 5, 6, 7, 8, 10, 12, 13,...
+2025-05-29 13:08:13,360 [INFO] test_cases.base_test: B領域パーティションMAPを抽出しました: [3, 9, 11, 15, 18, 20, 21, 22,...
+2025-05-29 13:08:13,360 [INFO] test_cases.base_test: 暗号化ファイル名を抽出しました: output/crypto_storage_f2f46fc2-c512-412a-8c53-14a3d071a6db.json
+2025-05-29 13:08:13,360 [INFO] test_cases.base_test: パーティション A 用マップキーを抽出しました（長さ: 3647）
+2025-05-29 13:08:13,360 [INFO] test_cases.base_test: パーティション B 用マップキーを抽出しました（長さ: 3647）
+2025-05-29 13:08:13,360 [INFO] test_cases.crypto_storage_creation.test_cc_001_basic_creation: 基本生成テスト（CC-001）は成功しました
+2025-05-29 13:08:13,360 [INFO] test_runner_V2_test_executor: DEBUG: テスト CC-001 のA用ランダムパスワード: パスワード！＠＃＄％
+2025-05-29 13:08:13,360 [INFO] test_runner_V2_test_executor: DEBUG: テスト CC-001 のB用ランダムパスワード: ThisIsAVeryLongPasswordThatExceedsTwentyCharacters
+2025-05-29 13:08:13,361 [INFO] test: テスト CC-001 の実行結果: 成功
+2025-05-29 13:08:13,361 [INFO] test.result: テスト CC-001 の結果: 成功
+2025-05-29 13:08:13,362 [INFO] test: テスト実行 #5/5 完了: 実行されたテスト数: 1
+2025-05-29 13:08:13,388 [INFO] test: 全5回のテスト実行が完了しました
+2025-05-29 13:08:13,388 [INFO] test: テスト実行が完了し、結果をJSONファイルに保存しました
+2025-05-29 13:08:13,388 [INFO] test: JSONファイルからデータを読み込んで分析処理を実行しています...
+2025-05-29 13:08:13,388 [INFO] test: CLIパスワードを使用した復号処理を開始します...
+2025-05-29 13:08:13,388 [WARNING] test: テスト CC-001: CLIパスワードが不完全です（A: False, B: False）
+2025-05-29 13:08:13,388 [INFO] test: JSONファイルから読み込み完了: 最新結果=1件, 全結果=5イテレーション
+2025-05-29 13:08:13,388 [INFO] analysis.map_intersection_analyzer: パーティションMAP交差分析モジュールを初期化しました
+2025-05-29 13:08:13,388 [INFO] test: 分析 map_intersection (MapIntersectionAnalyzer) を実行しています...
+2025-05-29 13:08:13,388 [INFO] test: パーティションMAP交差分析を開始します...
+2025-05-29 13:08:13,388 [INFO] analysis.map_intersection_analyzer: パーティションMAP交差分析を実行します
+2025-05-29 13:08:13,388 [INFO] analysis.map_intersection_analyzer: テスト結果から直接パーティションマップ情報を取得します: iteration=1
+2025-05-29 13:08:13,388 [INFO] analysis.map_intersection_analyzer: A領域パーティションマップを取得しました: 要素数=6000
+2025-05-29 13:08:13,388 [INFO] analysis.map_intersection_analyzer: B領域パーティションマップを取得しました: 要素数=6000
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: テスト結果から直接パーティションマップ情報を取得します: iteration=2
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: A領域パーティションマップを取得しました: 要素数=6000
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: B領域パーティションマップを取得しました: 要素数=6000
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: テスト結果から直接パーティションマップ情報を取得します: iteration=3
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: A領域パーティションマップを取得しました: 要素数=6000
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: B領域パーティションマップを取得しました: 要素数=6000
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: テスト結果から直接パーティションマップ情報を取得します: iteration=4
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: A領域パーティションマップを取得しました: 要素数=6000
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: B領域パーティションマップを取得しました: 要素数=6000
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: テスト結果から直接パーティションマップ情報を取得します: iteration=5
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: A領域パーティションマップを取得しました: 要素数=6000
+2025-05-29 13:08:13,389 [INFO] analysis.map_intersection_analyzer: B領域パーティションマップを取得しました: 要素数=6000
+2025-05-29 13:08:13,435 [INFO] analysis.map_intersection_analyzer: A領域パーティションマップの平均交差率: 19.86%
+2025-05-29 13:08:13,435 [INFO] analysis.map_intersection_analyzer: B領域パーティションマップの平均交差率: 19.91%
+2025-05-29 13:08:13,435 [INFO] analysis.map_intersection_analyzer: A-B間パーティションマップの平均交差率: 16.05%
+2025-05-29 13:08:13,435 [INFO] analysis.map_intersection_analyzer: 交差分析のために抽出されたパーティションマップ: A=5件, B=5件
+2025-05-29 13:08:13,435 [INFO] analysis.map_intersection_analyzer: パーティションマップ交差分析の効率化効果:
+2025-05-29 13:08:13,435 [INFO] analysis.map_intersection_analyzer:   A用マップ比較: 10回実行 (効率化前: 20回)
+2025-05-29 13:08:13,435 [INFO] analysis.map_intersection_analyzer:   B用マップ比較: 10回実行 (効率化前: 20回)
+2025-05-29 13:08:13,435 [INFO] analysis.map_intersection_analyzer:   A-B間マップ比較: 25回実行 (効率化対象外)
+2025-05-29 13:08:13,435 [INFO] analysis.map_intersection_analyzer:   合計計算回数: 45回 (効率化前: 65回, 30.8%削減)
+2025-05-29 13:08:15,152 [INFO] test: パーティションMAP交差分析にall_test_resultsを渡しました（テスト実行数: 5）
+2025-05-29 13:08:15,152 [INFO] test: 分析 map_intersection の実行完了: パーセンテージデータを記録しました
+2025-05-29 13:08:15,152 [INFO] analysis.key_length_analyzer: パーティションマップキー長分析モジュールを初期化しました
+2025-05-29 13:08:15,152 [INFO] test: 分析 key_length (KeyLengthAnalyzer) を実行しています...
+2025-05-29 13:08:15,152 [INFO] analysis.key_length_analyzer: パーティションマップキー長分析を実行します
+2025-05-29 13:08:15,152 [WARNING] analysis.key_length_analyzer: テスト CC-001 にパーティションマップキーが含まれていません
+2025-05-29 13:08:15,152 [WARNING] analysis.key_length_analyzer: 分析可能なパーティションマップキーがありません
+2025-05-29 13:08:15,152 [INFO] test: 分析 key_length の実行結果: 不合格
+2025-05-29 13:08:15,179 [INFO] test: JSONファイルベースの分析処理が完了しました
+2025-05-29 13:08:15,179 [INFO] test: 分析実行が完了し、結果をJSONファイルに保存しました
+2025-05-29 13:08:15,206 [INFO] test: JSONファイルからデータを読み込んでテストレポートを生成しています...
+2025-05-29 13:08:15,214 [INFO] test: JSONファイルからデータを読み込みました: results/test_results_a8823b15-392f-432c-b52f-7bf00db705be_20250529_130811.json
+2025-05-29 13:08:15,214 [INFO] utils.report_generator: テストレポートの生成を開始します
+2025-05-29 13:08:15,214 [INFO] utils.report_generator: テンプレートパス: /Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/test_report_template.md
+2025-05-29 13:08:15,214 [INFO] utils.report_generator: テスト繰り返し回数: 5
+2025-05-29 13:08:15,215 [WARNING] utils.report_generator: 未知のプレースホルダー: 使用ハッシュアルゴリズム
+2025-05-29 13:08:15,215 [WARNING] utils.report_generator: 未知のプレースホルダー: 使用暗号化アルゴリズム
+2025-05-29 13:08:15,215 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_1_2
+2025-05-29 13:08:15,215 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_1_3
+2025-05-29 13:08:15,215 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_1_4
+2025-05-29 13:08:15,215 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_1_5
+2025-05-29 13:08:15,215 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_1_6
+2025-05-29 13:08:15,215 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_1_7
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_1_8
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_1_9
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_1_10
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_2_1
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_2_3
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_2_4
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_2_5
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_2_6
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_2_7
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_2_8
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_2_9
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_2_10
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_3_1
+2025-05-29 13:08:15,216 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_3_2
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_3_4
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_3_5
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_3_6
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_3_7
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_3_8
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_3_9
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_3_10
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_4_1
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_4_2
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_4_3
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_4_5
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_4_6
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_4_7
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_4_8
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_4_9
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_4_10
+2025-05-29 13:08:15,217 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_5_1
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_5_2
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_5_3
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_5_4
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_5_6
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_5_7
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_5_8
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_5_9
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_5_10
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_6_1
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_6_2
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_6_3
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_6_4
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_6_5
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_6_7
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_6_8
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_6_9
+2025-05-29 13:08:15,218 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_6_10
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_7_1
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_7_2
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_7_3
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_7_4
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_7_5
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_7_6
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_7_8
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_7_9
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_7_10
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_8_1
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_8_2
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_8_3
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_8_4
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_8_5
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_8_6
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_8_7
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_8_9
+2025-05-29 13:08:15,219 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_8_10
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_9_1
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_9_2
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_9_3
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_9_4
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_9_5
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_9_6
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_9_7
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_9_8
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_9_10
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_10_1
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_10_2
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_10_3
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_10_4
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_10_5
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_10_6
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_10_7
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_10_8
+2025-05-29 13:08:15,220 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_A_10_9
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_1_2
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_1_3
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_1_4
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_1_5
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_1_6
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_1_7
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_1_8
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_1_9
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_1_10
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_2_1
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_2_3
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_2_4
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_2_5
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_2_6
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_2_7
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_2_8
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_2_9
+2025-05-29 13:08:15,221 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_2_10
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_3_1
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_3_2
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_3_4
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_3_5
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_3_6
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_3_7
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_3_8
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_3_9
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_3_10
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_4_1
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_4_2
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_4_3
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_4_5
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_4_6
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_4_7
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_4_8
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_4_9
+2025-05-29 13:08:15,222 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_4_10
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_5_1
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_5_2
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_5_3
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_5_4
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_5_6
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_5_7
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_5_8
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_5_9
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_5_10
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_6_1
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_6_2
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_6_3
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_6_4
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_6_5
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_6_7
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_6_8
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_6_9
+2025-05-29 13:08:15,223 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_6_10
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_7_1
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_7_2
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_7_3
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_7_4
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_7_5
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_7_6
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_7_8
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_7_9
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_7_10
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_8_1
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_8_2
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_8_3
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_8_4
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_8_5
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_8_6
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_8_7
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_8_9
+2025-05-29 13:08:15,224 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_8_10
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_9_1
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_9_2
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_9_3
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_9_4
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_9_5
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_9_6
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_9_7
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_9_8
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_9_10
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_10_1
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_10_2
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_10_3
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_10_4
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_10_5
+2025-05-29 13:08:15,225 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_10_6
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_10_7
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_10_8
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_B_10_9
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_1_1
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_1_2
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_1_3
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_1_4
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_1_5
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_1_6
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_1_7
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_1_8
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_1_9
+2025-05-29 13:08:15,226 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_1_10
+2025-05-29 13:08:15,227 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_2_1
+2025-05-29 13:08:15,227 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_2_2
+2025-05-29 13:08:15,227 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_2_3
+2025-05-29 13:08:15,227 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_2_4
+2025-05-29 13:08:15,227 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_2_5
+2025-05-29 13:08:15,227 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_2_6
+2025-05-29 13:08:15,228 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_2_7
+2025-05-29 13:08:15,228 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_2_8
+2025-05-29 13:08:15,228 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_2_9
+2025-05-29 13:08:15,228 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_2_10
+2025-05-29 13:08:15,228 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_3_1
+2025-05-29 13:08:15,228 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_3_2
+2025-05-29 13:08:15,228 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_3_3
+2025-05-29 13:08:15,228 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_3_4
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_3_5
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_3_6
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_3_7
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_3_8
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_3_9
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_3_10
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_4_1
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_4_2
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_4_3
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_4_4
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_4_5
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_4_6
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_4_7
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_4_8
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_4_9
+2025-05-29 13:08:15,229 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_4_10
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_5_1
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_5_2
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_5_3
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_5_4
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_5_5
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_5_6
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_5_7
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_5_8
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_5_9
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_5_10
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_6_1
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_6_2
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_6_3
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_6_4
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_6_5
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_6_6
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_6_7
+2025-05-29 13:08:15,230 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_6_8
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_6_9
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_6_10
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_7_1
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_7_2
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_7_3
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_7_4
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_7_5
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_7_6
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_7_7
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_7_8
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_7_9
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_7_10
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_8_1
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_8_2
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_8_3
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_8_4
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_8_5
+2025-05-29 13:08:15,231 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_8_6
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_8_7
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_8_8
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_8_9
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_8_10
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_9_1
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_9_2
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_9_3
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_9_4
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_9_5
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_9_6
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_9_7
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_9_8
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_9_9
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_9_10
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_10_1
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_10_2
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_10_3
+2025-05-29 13:08:15,232 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_10_4
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_10_5
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_10_6
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_10_7
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_10_8
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_10_9
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: 値\_AB_10_10
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: 失敗したテスト名
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: エラーの詳細スタックトレースやメッセージ
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: 期待した結果
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: 実際の結果
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,233 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: XX.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,234 [WARNING] utils.report_generator: 未知のプレースホルダー: XX.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: XX.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,235 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: XX.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,236 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,237 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,237 [WARNING] utils.report_generator: 未知のプレースホルダー: X.X
+2025-05-29 13:08:15,237 [WARNING] utils.report_generator: 未知のプレースホルダー: XX.X
+2025-05-29 13:08:15,237 [WARNING] utils.report_generator: 未知のプレースホルダー: XXMb
+2025-05-29 13:08:15,237 [WARNING] utils.report_generator: 未知のプレースホルダー: YYYYMMDD_HHMMSS
+2025-05-29 13:08:15,237 [WARNING] utils.report_generator: 未知のプレースホルダー: YYYYMMDD_HHMMSS
+2025-05-29 13:08:15,237 [WARNING] utils.report_generator: 未知のプレースホルダー: YYYYMMDD_HHMMSS
+2025-05-29 13:08:15,237 [WARNING] utils.report_generator: 未知のプレースホルダー: テスト実行において特筆すべき情報や注意点があれば記載
+2025-05-29 13:08:15,237 [INFO] utils.report_generator: テスト結果から直接暗号化ファイル名を取得しました: output/crypto_storage_7390f1a9-0d5b-47b8-bb37-16ca9bec42e4.json
+2025-05-29 13:08:15,237 [ERROR] utils.report_generator: テストレポートの生成中にエラーが発生しました: 'NoneType' object has no attribute 'replace'
+2025-05-29 13:08:15,238 [ERROR] utils.report_generator: 'NoneType' object has no attribute 'replace'
+Traceback (most recent call last):
+  File "/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/utils/report_generator.py", line 864, in generate_report
+    ph_value = get_placeholder_value(ph, current_test_result, analysis_results, first_test_data, all_test_results)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/utils/report_generator.py", line 650, in get_placeholder_value
+    map_key = get_partition_map_key_from_stdout(stdout, partition)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/dev/works/VSCode/secret-sharing-demos-20250510/method_13_shamir_multi_plaintext_system/test/utils/report_generator.py", line 185, in get_partition_map_key_from_stdout
+    stdout_oneline = stdout.replace('\n', ' ')
+                     ^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'replace'
+2025-05-29 13:08:15,240 [ERROR] test: テストレポートの生成に失敗しました
+2025-05-29 13:08:15,266 [INFO] test: テスト実行が完了しました
+2025-05-29 13:08:15,266 [INFO] test: テスト結果: 合計=1, 成功=1, 失敗=0

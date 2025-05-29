@@ -194,8 +194,9 @@ class MapIntersectionAnalyzer:
                     intersection_rate = self.calculate_intersection_rate(a_map_i["map"], a_map_j["map"])
 
                     # 両方向のキーに同じ値を設定（レポート要件維持）
-                    key_ij = (a_map_i["iteration"], a_map_j["iteration"])
-                    key_ji = (a_map_j["iteration"], a_map_i["iteration"])
+                    # JSONシリアライゼーション対応：タプルキーを文字列キーに変換
+                    key_ij = f"{a_map_i['iteration']}-{a_map_j['iteration']}"
+                    key_ji = f"{a_map_j['iteration']}-{a_map_i['iteration']}"
 
                     analysis_results["a_map_intersection"][key_ij] = intersection_rate
                     analysis_results["a_map_intersection"][key_ji] = intersection_rate  # 対称値
@@ -208,8 +209,9 @@ class MapIntersectionAnalyzer:
                     intersection_rate = self.calculate_intersection_rate(b_map_i["map"], b_map_j["map"])
 
                     # 両方向のキーに同じ値を設定（レポート要件維持）
-                    key_ij = (b_map_i["iteration"], b_map_j["iteration"])
-                    key_ji = (b_map_j["iteration"], b_map_i["iteration"])
+                    # JSONシリアライゼーション対応：タプルキーを文字列キーに変換
+                    key_ij = f"{b_map_i['iteration']}-{b_map_j['iteration']}"
+                    key_ji = f"{b_map_j['iteration']}-{b_map_i['iteration']}"
 
                     analysis_results["b_map_intersection"][key_ij] = intersection_rate
                     analysis_results["b_map_intersection"][key_ji] = intersection_rate  # 対称値
@@ -219,8 +221,8 @@ class MapIntersectionAnalyzer:
             for j, b_map in enumerate(b_maps):
                 # 交差率を計算
                 intersection_rate = self.calculate_intersection_rate(a_map["map"], b_map["map"])
-                # キーは (iteration_a, iteration_b) という形式
-                key = (a_map["iteration"], b_map["iteration"])
+                # JSONシリアライゼーション対応：タプルキーを文字列キーに変換
+                key = f"{a_map['iteration']}-{b_map['iteration']}"
                 analysis_results["a_b_map_intersection"][key] = intersection_rate
 
         # 平均交差率を計算
@@ -274,8 +276,8 @@ class MapIntersectionAnalyzer:
                     # 同一マップの交差率は100%（または'-'として表示）
                     row_data[j] = 100.0
                 else:
-                    # (i, j)のキーがあれば値を取得、なければデフォルト値
-                    key = (i, j)
+                    # JSONシリアライゼーション対応：文字列キーで参照
+                    key = f"{i}-{j}"
                     row_data[j] = analysis_results["a_map_intersection"].get(key, 0.0)
             a_map_table[i] = row_data
         analysis_results["a_map_table"] = a_map_table
@@ -289,8 +291,8 @@ class MapIntersectionAnalyzer:
                     # 同一マップの交差率は100%（または'-'として表示）
                     row_data[j] = 100.0
                 else:
-                    # (i, j)のキーがあれば値を取得、なければデフォルト値
-                    key = (i, j)
+                    # JSONシリアライゼーション対応：文字列キーで参照
+                    key = f"{i}-{j}"
                     row_data[j] = analysis_results["b_map_intersection"].get(key, 0.0)
             b_map_table[i] = row_data
         analysis_results["b_map_table"] = b_map_table
@@ -300,8 +302,8 @@ class MapIntersectionAnalyzer:
         for i in range(1, test_count + 1):
             row_data = {}
             for j in range(1, test_count + 1):
-                # (i, j)のキーがあれば値を取得、なければデフォルト値
-                key = (i, j)
+                # JSONシリアライゼーション対応：文字列キーで参照
+                key = f"{i}-{j}"
                 row_data[j] = analysis_results["a_b_map_intersection"].get(key, 0.0)
             ab_map_table[i] = row_data
         analysis_results["ab_map_table"] = ab_map_table

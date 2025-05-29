@@ -140,8 +140,10 @@ class TestResultFileManager:
                 test_id=test_id,
                 success=result.get("success", False),
                 storage_filepath=result.get("storage_filename"),  # storage_filename -> storage_filepath
-                password_a=result.get("password_a"),
-                password_b=result.get("password_b"),
+                password_a_random=result.get("password_a_random"),
+                password_b_random=result.get("password_b_random"),
+                password_a_cli=result.get("password_a_cli"),
+                password_b_cli=result.get("password_b_cli"),
                 cli_args=result.get("cli_args"),
                 stdout=result.get("stdout"),
                 stderr=result.get("stderr"),

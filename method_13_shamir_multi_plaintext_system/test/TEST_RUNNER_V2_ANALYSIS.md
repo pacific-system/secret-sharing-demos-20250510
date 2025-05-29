@@ -20,67 +20,47 @@
 5. **設定ファイル読み込み** - load_config()実行、失敗時は即座終了（行 67-72）
 6. **設定データファイル保存** - file_manager.update_config_data(config)実行（行 75-76）
    - 6.1 **設定データ構造化** - ConfigData オブジェクト生成
-   - 6.2 **設定値フォールバック処理** - test_repeat_count=config.get('reporting', {}).get('test_repeat_count', 1)でデフォルト値 1 を採用、各システムパラメータも get()で None 許容
-   - 6.3 **JSON ファイル更新** - 設定ファイル読み込み完了をファイルに記録
+   - 6.2 **JSON ファイル更新** - 設定ファイル読み込み完了をファイルに記録
 7. **テストケース検出** - TestCaseDiscoverer().discover_test_cases()実行（行 79-85）
    - 7.1 **ディレクトリスキャン** - test_cases/配下の 3 ディレクトリを検索
-   - 7.2 **ディレクトリ未存在時フォールバック** - os.path.exists()でディレクトリが存在しない場合は continue で次のディレクトリへ、警告ログのみ出力
-   - 7.3 **ファイルパターンマッチ** - test\_\*.py ファイルを検索
-   - 7.4 **動的モジュールインポート** - importlib.import_module()でロード
-   - 7.5 **モジュールロード失敗時フォールバック** - Exception 発生時は log_error()でエラーログ出力のみ、処理継続
-   - 7.6 **クラス検査** - BaseTest 継承クラスを検出
-   - 7.7 **インスタンス化と ID 検証** - test_id 属性の有効性確認
+   - 7.2 **ファイルパターンマッチ** - test\_\*.py ファイルを検索
+   - 7.3 **動的モジュールインポート** - importlib.import_module()でロード
+   - 7.4 **クラス検査** - BaseTest 継承クラスを検出
+   - 7.5 **インスタンス化と ID 検証** - test_id 属性の有効性確認
 8. **テストケース数メタデータ更新** - file_manager.update_metadata()実行（行 87）
 9. **分析モジュール検出** - AnalyzerDiscoverer().discover_analyzers()実行（行 90-94）
    - 9.1 **分析ディレクトリスキャン** - analysis/ディレクトリを検索
-   - 9.2 **分析ディレクトリ未存在時フォールバック** - os.path.exists()で analysis/ディレクトリが存在しない場合は空辞書{}を返却、警告ログのみ出力
-   - 9.3 **アナライザーファイル検索** - \*\_analyzer.py パターンマッチ
-   - 9.4 **アナライザーロード失敗時フォールバック** - Exception 発生時は log_error()でエラーログ出力のみ、処理継続
-   - 9.5 **アナライザークラス検出** - \*Analyzer で終わるクラス名を検索
-   - 9.6 **name 属性検証** - 有効な name 属性を持つかチェック
+   - 9.2 **アナライザーファイル検索** - \*\_analyzer.py パターンマッチ
+   - 9.3 **アナライザークラス検出** - \*Analyzer で終わるクラス名を検索
+   - 9.4 **name 属性検証** - 有効な name 属性を持つかチェック
 10. **分析モジュール数メタデータ更新** - file_manager.update_metadata()実行（行 96）
-    - 10.1 **分析モジュール未発見時の継続処理** - analyzers={}の場合でも log_warning()のみで処理継続、analyzers_discovered=0 で記録
 11. **テスト実行** - test_executor.run_tests(test_cases)実行（行 99）
-    - 11.1 **繰り返し回数フォールバック処理** - repeat_count = 1 をデフォルト値として設定、設定ファイルから取得失敗時は 1 回実行
-    - 11.2 **繰り返し回数範囲制限フォールバック** - repeat_count > 10 の場合は 10 に制限、repeat_count < 1 の場合は 1 に制限、警告ログ出力
-    - 11.3 **イテレーションループ開始** - 指定回数分の繰り返し実行
-    - 11.4 **テストケース有効性チェック** - is_test_enabled()で確認
-    - 11.5 **無効テスト時フォールバック** - is_test_enabled()=false の場合は continue でスキップ、情報ログのみ出力
-    - 11.6 **テストインスタンス生成** - 各テストクラスのインスタンス化
-    - 11.7 **個別テスト実行** - test_instance.run()呼び出し
-    - 11.8 **テスト実行失敗時フォールバック** - Exception 発生時は{"test_id": test_id, "success": False, "error": str(e)}の失敗結果を生成
-    - 11.9 **CLI レスポンス受信記録** - file_manager.update_cli_response_received()実行
-    - 11.10 **パスワード読み込み記録** - file_manager.update_password_loaded()実行
-    - 11.11 **結果取得フォールバック処理** - result.get("success", False)で success 未定義時は False を採用
-    - 11.12 **テスト結果ログ保存** - log_test_result()でログファイルに永続化
-    - 11.13 **イテレーション結果ファイル保存** - file_manager.add_iteration_result()実行
+    - 11.1 **繰り返し回数設定** - 設定ファイルから読み込み（1-10 回制限）
+    - 11.2 **イテレーションループ開始** - 指定回数分の繰り返し実行
+    - 11.3 **テストケース有効性チェック** - is_test_enabled()で確認
+    - 11.4 **テストインスタンス生成** - 各テストクラスのインスタンス化
+    - 11.5 **個別テスト実行** - test_instance.run()呼び出し
+    - 11.6 **CLI レスポンス受信記録** - file_manager.update_cli_response_received()実行
+    - 11.7 **パスワード読み込み記録** - file_manager.update_password_loaded()実行
+    - 11.8 **テスト結果ログ保存** - log_test_result()でログファイルに永続化
+    - 11.9 **イテレーション結果ファイル保存** - file_manager.add_iteration_result()実行
 12. **最新テスト結果取得** - test_executor.get_latest_test_results()実行（行 102）
-    - 12.1 **実行データ未存在時フォールバック** - execution_data 未存在または iterations 空の場合は空辞書{}を返却
 13. **分析実行** - analysis_executor.run_analysis()実行（行 103-106）
     - 13.1 **分析有効性チェック** - is_analysis_enabled()で確認
-    - 13.2 **無効分析時フォールバック** - is_analysis_enabled()=false の場合は continue でスキップ、情報ログのみ出力
-    - 13.3 **分析インスタンス生成** - analyzer_class()でインスタンス化
-    - 13.4 **map_intersection 特別処理** - MapIntersectionAnalyzer.analyze_with_file_tracking()実行
-    - 13.5 **分析実行失敗時フォールバック** - Exception 発生時は{"name": analyzer_id, "pass": False, "error": str(e)}のエラー結果を生成
-    - 13.6 **分析結果取得フォールバック処理** - result.get("pass", False)で pass 未定義時は False を採用
-    - 13.7 **比較一回ごとファイル記録** - file_manager.add_map_comparison()実行
-    - 13.8 **比較結果記録失敗時フォールバック** - 比較結果記録で Exception 発生時は warning ログのみ出力、処理継続
-    - 13.9 **その他分析結果ファイル記録** - file_manager.add_other_analysis_result()実行
+    - 13.2 **分析インスタンス生成** - analyzer_class()でインスタンス化
+    - 13.3 **map_intersection 特別処理** - MapIntersectionAnalyzer.analyze_with_file_tracking()実行
+    - 13.4 **比較一回ごとファイル記録** - file_manager.add_map_comparison()実行
+    - 13.5 **その他分析結果ファイル記録** - file_manager.add_other_analysis_result()実行
 14. **レポート生成** - \_generate_and_save_report()実行（行 109）
     - 14.1 **レポート生成開始記録** - file_manager.start_report_generation()実行
     - 14.2 **レポート生成関数の引数不整合** - generate_report()に result_file_path を渡しているが、実際の関数は all_test_results を期待
-    - 14.3 **レポート生成失敗時フォールバック** - report=None の場合は log_error()でエラーログのみ出力、処理継続
-    - 14.4 **レポート保存失敗時フォールバック** - save_report()=False の場合は log_error()でエラーログのみ出力、処理継続
-    - 14.5 **レポート保存** - save_report()実行
-    - 14.6 **レポート生成完了記録** - file_manager.complete_report_generation()実行
-    - 14.7 **レポート生成例外時フォールバック** - Exception 発生時は log_error()でエラーログのみ出力、処理継続
+    - 14.3 **レポート保存** - save_report()実行
+    - 14.4 **レポート生成完了記録** - file_manager.complete_report_generation()実行
 15. **テスト完了ログ** - "テスト実行が完了しました"メッセージ出力（行 112）
 16. **結果集計** - 成功数と失敗数をカウント（行 115-116）
-    - 16.1 **結果集計フォールバック処理** - result.get("success", False)で各テスト結果の success 未定義時は False を採用
 17. **結果サマリーログ** - 合計/成功/失敗数を出力（行 118）
 18. **終了コード決定** - テスト成功/失敗で 0/1 を返却（行 121）
-19. **メイン例外時フォールバック** - run()メソッド全体で Exception 発生時は log_error()と file_manager.mark_error()実行後、return 1 で失敗終了
-20. **プロセス終了** - sys.exit()で main()の戻り値を終了コードに設定（行 175）
+19. **プロセス終了** - sys.exit()で main()の戻り値を終了コードに設定（行 175）
 
 ## 2 実装不足・問題点
 

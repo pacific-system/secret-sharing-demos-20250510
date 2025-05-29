@@ -754,16 +754,16 @@ def extract_password_from_test_result(test_result: Dict[str, Any], partition: st
     Returns:
         パスワード文字列、取得できない場合はエラーメッセージ
     """
-    # テスト結果から直接パスワードを取得（明示的に保存されている場合）
-    direct_password_key = f"password_{partition.lower()}"
-    if direct_password_key in test_result and test_result[direct_password_key]:
-        password = test_result[direct_password_key]
-        logger.info(f"{partition.upper()}領域用パスワードをテスト結果から直接取得しました: {password}")
+    # テスト結果からランダムパスワードを取得（新しいパスワード管理システム）
+    random_password_key = f"password_{partition.lower()}_random"
+    if random_password_key in test_result and test_result[random_password_key]:
+        password = test_result[random_password_key]
+        logger.info(f"{partition.upper()}領域用ランダムパスワードをテスト結果から取得しました: {password}")
         return password
 
-    # パスワードが見つからない場合は異常として扱う
-    logger.warning(f"{partition.upper()}領域用パスワードが保存されていません - テスト異常")
-    return f"（{partition.upper()}用パスワードが取得できません - テスト失敗）"
+    # ランダムパスワードが見つからない場合は異常として扱う
+    logger.warning(f"{partition.upper()}領域用ランダムパスワードが保存されていません")
+    return f"（{partition.upper()}用ランダムパスワードが取得できません）"
 
 def generate_report(test_results: Dict[str, Dict[str, Any]], analysis_results: Dict[str, Dict[str, Any]], all_test_results: List[Dict[str, Dict[str, Any]]] = None) -> Optional[str]:
     """

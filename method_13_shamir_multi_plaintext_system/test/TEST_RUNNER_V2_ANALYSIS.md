@@ -3,14 +3,14 @@
 ## 1 メイン処理シーケンス
 
 1. **実行環境確定** - プロセス冒頭で test_runner_V2.py の絶対パス取得（行 32-37）
-   - 1.1 **test_runner_V2.py 絶対パス取得** - os.path.abspath(**file**)で TEST_RUNNER_V2_FILE_PATH 取得
-   - 1.2 **実行ディレクトリ導出** - os.path.dirname()で TEST_RUNNER_V2_DIR 取得
-   - 1.3 **カレントディレクトリ変更** - os.chdir(TEST_RUNNER_V2_DIR)で実行環境を確定
+   - 1.1 **test_runner_V2.py 絶対パス取得** - os.path.abspath(**file**)で TEST_RUNNER_V2_FILE_PATH 取得（行 32）
+   - 1.2 **実行ディレクトリ導出** - os.path.dirname()で TEST_RUNNER_V2_DIR 取得（行 33）
+   - 1.3 **カレントディレクトリ変更** - os.chdir(TEST_RUNNER_V2_DIR)で実行環境を確定（行 36）
 2. **ログ設定初期化** - setup_logger()でログ環境構築（行 47、実行環境確定後）
    - 2.1 **ログディレクトリ作成** - logs/ディレクトリの自動作成（確定された実行環境下）
    - 2.2 **ログファイル生成** - test*log*{timestamp}.log ファイル作成
    - 2.3 **ハンドラー設定** - コンソール出力とファイル出力の両方設定
-3. **TestRunnerV2 インスタンス生成** - main()で TestRunnerV2()初期化（行 182）
+3. **TestRunnerV2 インスタンス生成** - main()で TestRunnerV2()初期化（行 342）
    - 3.1 **ファイルマネージャー初期化** - TestResultFileManager()生成（行 54）
    - 3.2 **テスト実行器初期化** - TestExecutor(file_manager)生成（行 55）
    - 3.3 **分析実行器初期化** - AnalysisExecutor(file_manager)生成（行 56）
@@ -23,91 +23,68 @@
    - 5.3 **ファイル名決定** - test*results*{UUID}\_{TIMESTAMP}.json
    - 5.4 **results ディレクトリ作成** - results/ディレクトリの自動作成
    - 5.5 **初期 JSON ファイル書き込み** - 実行開始時の初期化データ保存
-6. **設定ファイル読み込み** - load_config()実行、失敗時は即座終了（行 76-81）
-   - 6.1 **設定ファイル読み込み失敗時の即座終了** - config が None の場合、エラーログ出力と file_manager.mark_error()実行後、sys.exit(1)で即座終了
-7. **設定データファイル保存** - file_manager.update_config_data(config)実行（行 84-85）
+   - 5.6 **結果ファイルパス取得** - result_file_path 変数に格納（行 73）
+   - 5.7 **初期化完了ログ** - "結果ファイルを初期化しました: {result_file_path}"ログ出力（行 74）
+6. **設定ファイル読み込み** - load_config()実行、失敗時は即座終了（行 77-82）
+   - 6.1 **設定ファイル読み込み実行** - config = load_config()で設定データ取得（行 77）
+   - 6.2 **設定ファイル読み込み失敗時の即座終了** - if not config:で None 判定（行 78）
+   - 6.3 **エラーメッセージ生成** - error_msg = "設定ファイルの読み込みに失敗しました"（行 79）
+   - 6.4 **エラーログ出力** - log_error(error_msg)実行（行 80）
+   - 6.5 **ファイルマネージャーエラー記録** - self.file_manager.mark_error(error_msg)実行（行 81）
+   - 6.6 **プロセス即座終了** - sys.exit(1)で終了コード 1 で即座終了（行 82）
+7. **設定データファイル保存** - file_manager.update_config_data(config)実行（行 85-86）
    - 7.1 **設定データ構造化** - ConfigData オブジェクト生成
    - 7.1.1 **test_repeat_count フォールバック** - config.get('reporting', {}).get('test_repeat_count', 1) でデフォルト値 1 を採用
    - 7.1.2 **システムパラメータ未設定時の None 採用** - partition_size, active_shares 等が設定ファイルにない場合は None を採用
    - 7.2 **JSON ファイル更新** - 設定ファイル読み込み完了をファイルに記録
-8. **テストケース検出** - TestCaseDiscoverer().discover_test_cases()実行（行 88-94）
-   - 8.0 **TestCaseDiscoverer インスタンス生成** - discoverer = TestCaseDiscoverer()でインスタンス化（行 88）
+   - 7.3 **設定記録完了ログ** - "設定ファイルをファイルに記録しました"ログ出力（行 86）
+8. **テストケース検出** - TestCaseDiscoverer().discover_test_cases()実行（行 89-95）
+   - 8.0 **TestCaseDiscoverer インスタンス生成** - discoverer = TestCaseDiscoverer()でインスタンス化（行 89）
    - 8.0.1 **テスト用絶対パス取得** - TestCaseDiscoverer.**init**()内で**file**を使用して test_runner_V2_test_executor.py の絶対パス取得
    - 8.0.2 **テストベースディレクトリ導出** - os.path.dirname()で test ディレクトリの絶対パスを導出して self.base_dir に設定
-   - 8.1 **ディレクトリスキャン** - test_cases/配下の 3 ディレクトリを検索
-     - 8.1.1 **crypto_storage_creation 検索** - test*cases/crypto_storage_creation/test*\*.py ファイルを検索
-       - 8.1.1.1 **test_cc_001_basic_creation.py 検出** - test_cc_001_basic_creation.py ファイルを動的インポート
-     - 8.1.2 **crypto_storage_update 検索** - test*cases/crypto_storage_update/test*\*.py ファイルを検索
-       - 8.1.2.1 **該当ファイルなしのスキップ処理** - test\_\*.py ファイルが存在しない場合はスキップ
-     - 8.1.3 **crypto_storage_read 検索** - test*cases/crypto_storage_read/test*\*.py ファイルを検索
-       - 8.1.3.1 **該当ファイルなしのスキップ処理** - test\_\*.py ファイルが存在しない場合はスキップ
-   - 8.1.4 **ディレクトリ未存在時のスキップ処理** - os.path.exists()でディレクトリが存在しない場合は continue でスキップ
-   - 8.2 **動的モジュールインポート** - importlib.import_module()でロード
-   - 8.2.1 **モジュールロード失敗時の継続処理** - Exception 発生時は log_error()でエラー記録後、処理継続
-   - 8.2.2 **クロスプラットフォーム対応** - os.sep を使用して Windows/Linux 両対応のモジュール名生成
-   - 8.3 **クラス検査** - BaseTest 継承クラスを検出
-   - 8.4 **インスタンス化と ID 検証** - test_id 属性の有効性確認
-   - 8.5 **テストケース未発見時の即座終了** - test_cases が空の場合、エラーログ出力と file_manager.mark_error()実行後、sys.exit(1)で即座終了
-9. **テストケース数メタデータ更新** - file_manager.update_metadata()実行（行 96）
-   - 9.1 **検出テストケース一覧ログ** - 検出されたテストケースのキー一覧をログ出力（行 97）
-10. **分析モジュール検出** - AnalyzerDiscoverer().discover_analyzers()実行（行 100-106）
-    - 10.0 **AnalyzerDiscoverer インスタンス生成** - analyzer_discoverer = AnalyzerDiscoverer()でインスタンス化（行 100）
+   - 8.1 **テストケース検出実行** - test_cases = discoverer.discover_test_cases()でテストケース辞書取得（行 90）
+   - 8.2 **テストケース未発見時の即座終了** - if not test_cases:で空判定（行 91）
+   - 8.3 **エラーメッセージ生成** - error_msg = "テストケースが見つかりませんでした"（行 92）
+   - 8.4 **エラーログ出力** - log_error(error_msg)実行（行 93）
+   - 8.5 **ファイルマネージャーエラー記録** - self.file_manager.mark_error(error_msg)実行（行 94）
+   - 8.6 **プロセス即座終了** - sys.exit(1)で終了コード 1 で即座終了（行 95）
+9. **テストケース数メタデータ更新** - file_manager.update_metadata()実行（行 98）
+   - 9.1 **検出テストケース数記録** - test_cases_discovered=len(test_cases)でテストケース数をメタデータに記録（行 98）
+   - 9.2 **検出テストケース一覧ログ** - "検出されたテストケース: {list(test_cases.keys())}"ログ出力（行 99）
+10. **分析モジュール検出** - AnalyzerDiscoverer().discover_analyzers()実行（行 102-108）
+    - 10.0 **AnalyzerDiscoverer インスタンス生成** - analyzer_discoverer = AnalyzerDiscoverer()でインスタンス化（行 102）
     - 10.0.1 **分析用絶対パス取得** - AnalyzerDiscoverer.**init**()内で**file**を使用して test_runner_V2_analysis_executor.py の絶対パス取得
     - 10.0.2 **分析ベースディレクトリ導出** - os.path.dirname()で test ディレクトリの絶対パスを導出して self.base_dir に設定
-    - 10.1 **分析ディレクトリスキャン** - analysis/ディレクトリを検索
-      - 10.1.1 **key_length_analyzer.py 検出** - key_length_analyzer.py ファイルを動的インポート
-      - 10.1.2 **map_intersection_analyzer.py 検出** - map_intersection_analyzer.py ファイルを動的インポート
-    - 10.1.3 **分析ディレクトリ未存在時の空辞書返却** - analysis/ディレクトリが存在しない場合は空の analyzers 辞書を返却
-    - 10.2 **アナライザークラス検出** - \*Analyzer で終わるクラス名を検索
-    - 10.3 **name 属性検証** - 有効な name 属性を持つかチェック
-    - 10.4 **分析モジュール未発見時の警告継続** - analyzers が空の場合は"分析なしでテスト実行を継続します"警告ログ出力後、処理継続
-    - 10.5 **検出分析モジュール一覧ログ** - 検出された分析モジュールのキー一覧をログ出力（行 104）
-    - 10.6 **クロスプラットフォーム対応** - os.sep を使用して Windows/Linux 両対応のモジュール名生成
-11. **分析モジュール数メタデータ更新** - file_manager.update_metadata()実行（行 107）
-12. **テスト実行（JSON ファイル専用）** - test_executor.run_tests(test_cases)実行（行 110）
+    - 10.1 **分析モジュール検出実行** - analyzers = analyzer_discoverer.discover_analyzers()で分析モジュール辞書取得（行 103）
+    - 10.2 **分析モジュール未発見時の継続処理** - if not analyzers:で空判定（行 104）
+    - 10.3 **継続警告ログ出力** - "分析モジュールが見つかりませんでした。分析なしでテスト実行を継続します。"警告ログ出力（行 106）
+    - 10.4 **分析モジュール発見時のログ出力** - else:ブロックで"検出された分析モジュール: {list(analyzers.keys())}"ログ出力（行 108）
+11. **分析モジュール数メタデータ更新** - file_manager.update_metadata()実行（行 111）
+    - 11.1 **検出分析モジュール数記録** - analyzers_discovered=len(analyzers)で分析モジュール数をメタデータに記録（行 111）
+12. **テスト実行（JSON ファイル専用）** - test_executor.run_tests(test_cases)実行（行 114）
     - 12.0 **メモリ上データ排除** - メモリ上のデータを返さず、JSON ファイルのみに保存
-    - 12.1 **繰り返し回数設定** - 設定ファイルから読み込み（1-10 回制限）
-    - 12.1.1 **repeat_count デフォルト値採用** - 設定ファイルが読み込めない場合は repeat_count = 1 をデフォルト値として採用
-    - 12.1.2 **repeat_count 上限制限フォールバック** - repeat_count > 10 の場合は 10 に制限、< 1 の場合は 1 に制限
-    - 12.2 **イテレーションループ開始** - 指定回数分の繰り返し実行
-    - 12.3 **テストケース有効性チェック** - is_test_enabled()で確認
-    - 12.3.1 **無効テストのスキップ処理** - is_test_enabled()が False の場合は continue でスキップ
-    - 12.4 **テストインスタンス生成** - 各テストクラスのインスタンス化
-    - 12.5 **個別テスト実行** - test_instance.run()呼び出し
-    - 12.5.1 **テスト実行失敗時のエラー結果生成** - Exception 発生時は{"test_id": test_id, "success": False, "error": str(e)}の失敗結果を生成
-    - 12.6 **CLI レスポンス受信記録** - file_manager.update_cli_response_received()実行
-    - 12.7 **パスワード読み込み記録** - file_manager.update_password_loaded()実行
-    - 12.8 **テスト結果ログ保存** - log_test_result()でログファイルに永続化
-    - 12.8.1 **success フィールドのデフォルト値採用** - result.get("success", False)で success フィールドが存在しない場合は False を採用
-    - 12.9 **イテレーション結果ファイル保存** - file_manager.add_iteration_result()実行
-    - 12.9.1 **execution_time デフォルト値採用** - result.get("execution_time", 0.0)で実行時間が取得できない場合は 0.0 を採用
-13. **分析実行（JSON ファイル専用）** - analysis_executor.run_analysis_from_json_file(analyzers)実行（行 113-114）
+    - 12.1 **テスト実行メソッド呼び出し** - self.test_executor.run_tests(test_cases)で戻り値なしのテスト実行（行 114）
+    - 12.2 **テスト実行完了ログ** - "テスト実行が完了し、結果を JSON ファイルに保存しました"ログ出力（行 115）
+13. **分析実行（JSON ファイル専用）** - analysis_executor.run_analysis_from_json_file(analyzers)実行（行 118）
     - 13.0 **JSON ファイルからデータ読み込み** - file_manager.get_execution_data()で JSON ファイルから実行データを取得
-    - 13.1 **分析用データ構築** - JSON データから latest_test_results と all_test_results を構築
-    - 13.2 **分析有効性チェック** - is_analysis_enabled()で確認
-    - 13.3 **分析インスタンス生成** - analyzer_class()でインスタンス化
-    - 13.4 **map_intersection 特別処理** - MapIntersectionAnalyzer.analyze_with_file_tracking()実行
-    - 13.5 **比較一回ごとファイル記録** - file_manager.add_map_comparison()実行
-    - 13.6 **その他分析結果ファイル記録** - file_manager.add_other_analysis_result()実行
-14. **レポート生成（JSON ファイル専用）** - \_generate_and_save_report_from_json()実行（行 117）
+    - 13.1 **分析実行メソッド呼び出し** - self.analysis_executor.run_analysis_from_json_file(analyzers)で戻り値なしの分析実行（行 118）
+    - 13.2 **分析実行完了ログ** - "分析実行が完了し、結果を JSON ファイルに保存しました"ログ出力（行 119）
+14. **レポート生成（JSON ファイル専用）** - \_generate_and_save_report_from_json()実行（行 122）
     - 14.0 **JSON ファイルからデータ読み込み** - file_manager.get_current_file_path()で JSON ファイルパスを取得
-    - 14.1 **レポート生成開始記録** - file_manager.start_report_generation()実行
-    - 14.2 **JSON ファイルベースレポート生成** - generate_report_from_json_file()で JSON ファイルからレポート生成
-    - 14.3 **データ変換処理** - JSON データを既存の generate_report()関数で使用できる形式に変換
-    - 14.4 **レポート保存** - save_report()実行
-    - 14.4.1 **レポート生成失敗時の継続処理** - report が None または False の場合は log_error()でエラー記録と file_manager.complete_report_generation(None)実行後、処理継続
-    - 14.4.2 **レポート保存失敗時の継続処理** - save_report()が False を返した場合は log_error()でエラー記録と file_manager.complete_report_generation(None)実行後、処理継続
-    - 14.5 **レポート生成完了記録** - file_manager.complete_report_generation()実行
-    - 14.5.1 **レポート生成例外時の継続処理** - Exception 発生時は log_error()でエラー記録、try-except 内で file_manager.complete_report_generation(None)実行後、処理継続
-15. **テスト完了ログ** - "テスト実行が完了しました"メッセージ出力（行 120）
-16. **結果集計（JSON ファイル専用）** - \_count_results_from_json()で成功数と失敗数をカウント（行 123）
+    - 14.1 **レポート生成メソッド呼び出し** - self.\_generate_and_save_report_from_json()で戻り値なしのレポート生成（行 122）
+15. **テスト完了ログ** - "テスト実行が完了しました"メッセージ出力（行 125）
+16. **結果集計（JSON ファイル専用）** - \_count_results_from_json()で成功数と失敗数をカウント（行 128）
     - 16.1 **JSON ファイルからデータ取得** - file_manager.get_execution_data()で JSON ファイルから実行データを取得
-    - 16.2 **最新イテレーション結果取得** - 最新のイテレーション結果から成功・失敗数をカウント
-    - 16.3 **success フィールドのデフォルト値採用** - test_result.success で成功・失敗を判定
-17. **結果サマリーログ** - 合計/成功/失敗数を出力（行 125）
-18. **終了コード決定** - テスト成功/失敗で 0/1 を返却（行 128）
-19. **プロセス終了** - sys.exit()で main()の戻り値を終了コードに設定（行 188）
-    - 19.1 **メイン例外時の終了コード 1 返却** - run()メソッドで Exception 発生時は log_error()と try-except 内で file_manager.mark_error()実行後、終了コード 1 を返却
+    - 16.2 **結果カウントメソッド呼び出し** - success_count, failure_count = self.\_count_results_from_json()でタプル取得（行 128）
+17. **結果サマリーログ** - 合計/成功/失敗数を出力（行 130）
+    - 17.1 **結果サマリー計算** - success_count + failure_count で合計数計算
+    - 17.2 **結果サマリーログ出力** - "テスト結果: 合計={success_count + failure_count}, 成功={success_count}, 失敗={failure_count}"ログ出力（行 130）
+18. **終了コード決定** - テスト成功/失敗で 0/1 を返却（行 133）
+    - 18.1 **終了コード判定** - return 0 if failure_count == 0 else 1 で失敗数ゼロなら 0、それ以外は 1 を返却（行 133）
+19. **プロセス終了** - sys.exit()で main()の戻り値を終了コードに設定（行 346）
+    - 19.1 **メイン例外時の終了コード 1 返却** - run()メソッドで Exception 発生時は log_error()と try-except 内で file_manager.mark_error()実行後、終了コード 1 を返却（行 135-144）
+    - 19.2 **main()関数実行** - runner = TestRunnerV2()でインスタンス生成、return runner.run()で実行（行 342-343）
+    - 19.3 **プロセス終了実行** - sys.exit(main())で main()の戻り値を終了コードに設定（行 346）
 
 ## 2 実装不足・問題点
 

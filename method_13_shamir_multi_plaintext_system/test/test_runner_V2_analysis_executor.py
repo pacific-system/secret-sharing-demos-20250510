@@ -27,6 +27,23 @@ class AnalyzerDiscoverer:
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        # test_runner_V2.pyの絶対パスを基準にベースディレクトリを取得
+        self.base_dir = self._get_analysis_base_directory()
+
+    def _get_analysis_base_directory(self) -> str:
+        """
+        テストランナーV2の絶対パスを基準に分析ベースディレクトリを取得
+
+        Returns:
+            分析ディレクトリのベースパス
+        """
+        # 現在のファイル（test_runner_V2_analysis_executor.py）の絶対パス
+        current_file = os.path.abspath(__file__)
+        # testディレクトリ（test_runner_V2.pyがある場所）
+        test_dir = os.path.dirname(current_file)
+
+        self.logger.info(f"分析ベースディレクトリを設定しました: {test_dir}")
+        return test_dir
 
     def discover_analyzers(self) -> Dict[str, Any]:
         """
@@ -38,20 +55,25 @@ class AnalyzerDiscoverer:
         log_info("分析モジュールを検出しています...")
         analyzers = {}
 
-        # 分析モジュールのディレクトリパス
-        analyze_dir = "analysis"
+        # 分析モジュールのディレクトリパス（絶対パスで構築）
+        analyze_dir_name = "analysis"
+        analyze_dir = os.path.join(self.base_dir, analyze_dir_name)
 
         # ディレクトリが存在するか確認
         if not os.path.exists(analyze_dir):
             log_warning(f"分析モジュールディレクトリが見つかりません: {analyze_dir}")
+            log_warning(f"  ベースディレクトリ: {self.base_dir}")
+            log_warning(f"  相対パス: {analyze_dir_name}")
             return analyzers
+
+        log_info(f"分析モジュールディレクトリを検索中: {analyze_dir}")
 
         # Pythonファイルを検索
         search_pattern = os.path.join(analyze_dir, "*_analyzer.py")
         for analyzer_file in glob.glob(search_pattern):
             # ファイル名からモジュール名を作成
-            rel_path = os.path.relpath(analyzer_file)
-            module_name = rel_path.replace(".py", "").replace("/", ".")
+            rel_path = os.path.relpath(analyzer_file, self.base_dir)
+            module_name = rel_path.replace(".py", "").replace(os.sep, ".")
 
             try:
                 # モジュールをインポート
@@ -74,6 +96,7 @@ class AnalyzerDiscoverer:
 
         if not analyzers:
             log_warning("分析モジュールが見つかりませんでした")
+            log_warning(f"検索対象ベースディレクトリ: {self.base_dir}")
         else:
             log_info(f"検出された分析モジュール数: {len(analyzers)}")
 
@@ -173,9 +196,126 @@ class AnalysisExecutor:
         self.map_analyzer = MapIntersectionAnalyzer(file_manager)
         self.logger = logging.getLogger(__name__)
 
+    def run_analysis_from_json_file(self, analyzers: Dict[str, Any]) -> None:
+        """
+        JSONファイルからデータを読み込んで分析処理を実行する（メモリ上のデータは使用しない）
+
+        Args:
+            analyzers: 分析モジュールのディクショナリ（分析ID -> 分析クラス）
+        """
+        log_info("JSONファイルからデータを読み込んで分析処理を実行しています...")
+
+        try:
+            # JSONファイルから実行データを取得
+            execution_data = self.file_manager.get_execution_data()
+            if not execution_data or not execution_data.test_execution["iterations"]:
+                log_warning("JSONファイルからテスト実行データを取得できませんでした。分析をスキップします。")
+                return
+
+            # JSONデータから分析用データを構築
+            latest_test_results = {}
+            all_test_results = []
+
+            # 最新のイテレーション結果を取得
+            latest_iteration = execution_data.test_execution["iterations"][-1]
+            for test_id, test_result in latest_iteration.test_results.items():
+                latest_test_results[test_id] = {
+                    "test_id": test_result.test_id,
+                    "success": test_result.success,
+                    "storage_filename": test_result.storage_filepath,
+                    "password_a": test_result.password_a,
+                    "password_b": test_result.password_b,
+                    "cli_args": test_result.cli_args,
+                    "stdout": test_result.stdout,
+                    "stderr": test_result.stderr,
+                    "exit_code": test_result.exit_code,
+                    "partition_map_a": test_result.partition_map_a,
+                    "partition_map_b": test_result.partition_map_b,
+                    "execution_time": test_result.execution_time,
+                    "performance_data": test_result.performance_data,
+                    "error": test_result.error
+                }
+
+            # 全イテレーション結果を構築
+            for iteration_result in execution_data.test_execution["iterations"]:
+                results_dict = {}
+                for test_id, test_result in iteration_result.test_results.items():
+                    results_dict[test_id] = {
+                        "test_id": test_result.test_id,
+                        "success": test_result.success,
+                        "storage_filename": test_result.storage_filepath,
+                        "password_a": test_result.password_a,
+                        "password_b": test_result.password_b,
+                        "cli_args": test_result.cli_args,
+                        "stdout": test_result.stdout,
+                        "stderr": test_result.stderr,
+                        "exit_code": test_result.exit_code,
+                        "partition_map_a": test_result.partition_map_a,
+                        "partition_map_b": test_result.partition_map_b,
+                        "execution_time": test_result.execution_time,
+                        "performance_data": test_result.performance_data,
+                        "error": test_result.error
+                    }
+
+                all_test_results.append({
+                    "iteration": iteration_result.iteration,
+                    "results": results_dict
+                })
+
+            log_info(f"JSONファイルから読み込み完了: 最新結果={len(latest_test_results)}件, 全結果={len(all_test_results)}イテレーション")
+
+            # 分析実行（JSONから読み込んだデータを使用）
+            for analyzer_id, analyzer_class in analyzers.items():
+                # 分析が有効かどうかをチェック
+                if not is_analysis_enabled(analyzer_id):
+                    log_info(f"分析 {analyzer_id} は設定で無効化されているためスキップします")
+                    continue
+
+                try:
+                    # 分析インスタンス生成
+                    analyzer_instance = analyzer_class()
+
+                    # 分析実行
+                    log_info(f"分析 {analyzer_id} ({analyzer_class.__name__}) を実行しています...")
+
+                    # 特定のアナライザーには all_test_results を渡す
+                    if analyzer_id == "map_intersection" and all_test_results:
+                        # マップ交差分析の特別処理
+                        result = self.map_analyzer.analyze_with_file_tracking(
+                            analyzer_instance, latest_test_results, all_test_results
+                        )
+                        log_info(f"パーティションMAP交差分析にall_test_resultsを渡しました（テスト実行数: {len(all_test_results)}）")
+                        # パーティションマップキー評価は合否判定を行わず、データのみ記録
+                        log_info(f"分析 {analyzer_id} の実行完了: パーセンテージデータを記録しました")
+                    else:
+                        result = analyzer_instance.analyze(latest_test_results)
+                        # 結果をログ出力（map_intersection以外のアナライザーのみ）
+                        success = result.get("pass", False)
+                        status = "合格" if success else "不合格"
+                        log_info(f"分析 {analyzer_id} の実行結果: {status}")
+
+                        # その他の分析結果をファイルに記録
+                        self.file_manager.add_other_analysis_result(analyzer_id, result)
+
+                except Exception as e:
+                    log_error(f"分析 {analyzer_id} の実行中にエラーが発生しました: {str(e)}")
+                    error_result = {
+                        "name": analyzer_id,
+                        "pass": False,
+                        "error": str(e)
+                    }
+
+                    # エラー結果もファイルに記録
+                    self.file_manager.add_other_analysis_result(analyzer_id, error_result)
+
+            log_info(f"JSONファイルベースの分析処理が完了しました")
+
+        except Exception as e:
+            log_error(f"JSONファイルからの分析実行中にエラーが発生しました: {str(e)}")
+
     def run_analysis(self, analyzers: Dict[str, Any], latest_test_results: Dict[str, Any], all_test_results: List[Dict[str, Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
         """
-        分析処理を実行する
+        分析処理を実行する（旧メソッド - 非推奨）
 
         Args:
             analyzers: 分析モジュールのディクショナリ（分析ID -> 分析クラス）
@@ -185,57 +325,14 @@ class AnalysisExecutor:
         Returns:
             分析結果のディクショナリ（分析ID -> 分析結果）
         """
-        log_info("分析処理を実行しています...")
-        analysis_results = {}
+        # このメソッドは互換性のために残すが、使用は非推奨
+        log_warning("run_analysis()は非推奨です。run_analysis_from_json_file()を使用してください")
 
-        for analyzer_id, analyzer_class in analyzers.items():
-            # 分析が有効かどうかをチェック
-            if not is_analysis_enabled(analyzer_id):
-                log_info(f"分析 {analyzer_id} は設定で無効化されているためスキップします")
-                continue
+        # JSONファイルベースの分析を実行
+        self.run_analysis_from_json_file(analyzers)
 
-            try:
-                # 分析インスタンス生成
-                analyzer_instance = analyzer_class()
-
-                # 分析実行
-                log_info(f"分析 {analyzer_id} ({analyzer_class.__name__}) を実行しています...")
-
-                # 特定のアナライザーには all_test_results を渡す
-                if analyzer_id == "map_intersection" and all_test_results:
-                    # マップ交差分析の特別処理
-                    result = self.map_analyzer.analyze_with_file_tracking(
-                        analyzer_instance, latest_test_results, all_test_results
-                    )
-                    log_info(f"パーティションMAP交差分析にall_test_resultsを渡しました（テスト実行数: {len(all_test_results)}）")
-                    # パーティションマップキー評価は合否判定を行わず、データのみ記録
-                    log_info(f"分析 {analyzer_id} の実行完了: パーセンテージデータを記録しました")
-                else:
-                    result = analyzer_instance.analyze(latest_test_results)
-                    # 結果をログ出力（map_intersection以外のアナライザーのみ）
-                    success = result.get("pass", False)
-                    status = "合格" if success else "不合格"
-                    log_info(f"分析 {analyzer_id} の実行結果: {status}")
-
-                    # その他の分析結果をファイルに記録
-                    self.file_manager.add_other_analysis_result(analyzer_id, result)
-
-                # 結果を記録
-                analysis_results[analyzer_id] = result
-            except Exception as e:
-                log_error(f"分析 {analyzer_id} の実行中にエラーが発生しました: {str(e)}")
-                error_result = {
-                    "name": analyzer_id,
-                    "pass": False,
-                    "error": str(e)
-                }
-                analysis_results[analyzer_id] = error_result
-
-                # エラー結果もファイルに記録
-                self.file_manager.add_other_analysis_result(analyzer_id, error_result)
-
-        log_info(f"実行された分析数: {len(analysis_results)}")
-        return analysis_results
+        # 互換性のために分析結果を返す
+        return self.get_analysis_results_for_compatibility()
 
     def get_analysis_results_for_compatibility(self) -> Dict[str, Dict[str, Any]]:
         """

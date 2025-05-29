@@ -29,6 +29,23 @@ class TestCaseDiscoverer:
 
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        # test_runner_V2.pyの絶対パスを基準にベースディレクトリを取得
+        self.base_dir = self._get_test_base_directory()
+
+    def _get_test_base_directory(self) -> str:
+        """
+        テストランナーV2の絶対パスを基準にテストベースディレクトリを取得
+
+        Returns:
+            テストディレクトリのベースパス
+        """
+        # 現在のファイル（test_runner_V2_test_executor.py）の絶対パス
+        current_file = os.path.abspath(__file__)
+        # testディレクトリ（test_runner_V2.pyがある場所）
+        test_dir = os.path.dirname(current_file)
+
+        self.logger.info(f"テストベースディレクトリを設定しました: {test_dir}")
+        return test_dir
 
     def discover_test_cases(self) -> Dict[str, Type[BaseTest]]:
         """
@@ -40,25 +57,32 @@ class TestCaseDiscoverer:
         log_info("テストケースを検出しています...")
         test_cases = {}
 
-        # テストケースのディレクトリパス
-        test_dirs = [
+        # テストケースのディレクトリパス（絶対パスで構築）
+        test_dir_names = [
             "test_cases/crypto_storage_creation",
             "test_cases/crypto_storage_update",
             "test_cases/crypto_storage_read"
         ]
 
-        for test_dir in test_dirs:
+        for test_dir_name in test_dir_names:
+            # 絶対パスでテストディレクトリを構築
+            test_dir = os.path.join(self.base_dir, test_dir_name)
+
             # ディレクトリが存在するか確認
             if not os.path.exists(test_dir):
                 log_warning(f"テストディレクトリが見つかりません: {test_dir}")
+                log_warning(f"  ベースディレクトリ: {self.base_dir}")
+                log_warning(f"  相対パス: {test_dir_name}")
                 continue
+
+            log_info(f"テストディレクトリを検索中: {test_dir}")
 
             # Pythonファイルを検索
             search_pattern = os.path.join(test_dir, "test_*.py")
             for test_file in glob.glob(search_pattern):
                 # ファイル名からモジュール名を作成
-                rel_path = os.path.relpath(test_file)
-                module_name = rel_path.replace(".py", "").replace("/", ".")
+                rel_path = os.path.relpath(test_file, self.base_dir)
+                module_name = rel_path.replace(".py", "").replace(os.sep, ".")
 
                 try:
                     # モジュールをインポート
@@ -81,6 +105,7 @@ class TestCaseDiscoverer:
 
         if not test_cases:
             log_warning("テストケースが見つかりませんでした")
+            log_warning(f"検索対象ベースディレクトリ: {self.base_dir}")
         else:
             log_info(f"検出されたテストケース数: {len(test_cases)}")
 
@@ -100,16 +125,13 @@ class TestExecutor:
         self.file_manager = file_manager
         self.logger = logging.getLogger(__name__)
 
-    def run_tests(self, test_cases: Dict[str, Type[BaseTest]] = None, verbose: bool = False) -> List[Dict[str, Dict[str, Any]]]:
+    def run_tests(self, test_cases: Dict[str, Type[BaseTest]] = None, verbose: bool = False) -> None:
         """
-        テストケースを実行する
+        テストケースを実行する（JSONファイルのみに保存、メモリ上のデータは返さない）
 
         Args:
             test_cases: テストケースのディクショナリ（テストID -> テストクラス）。Noneの場合は自動検出する
             verbose: 詳細なログ出力を行うかどうか
-
-        Returns:
-            全テスト実行結果のリスト（互換性のため）
         """
         # テストケースが指定されていない場合は自動検出
         if test_cases is None:
@@ -131,9 +153,6 @@ class TestExecutor:
                 repeat_count = 1
 
         log_info(f"テストを{repeat_count}回繰り返し実行します...")
-
-        # 互換性のための戻り値用リスト
-        all_test_results = []
 
         for iteration in range(repeat_count):
             log_info(f"テスト実行 #{iteration+1}/{repeat_count} を開始します...")
@@ -186,18 +205,10 @@ class TestExecutor:
 
             log_info(f"テスト実行 #{iteration+1}/{repeat_count} 完了: 実行されたテスト数: {len(test_results)}")
 
-            # ファイルマネージャーにイテレーション結果を保存
+            # ファイルマネージャーにイテレーション結果を保存（JSONファイルのみ）
             self.file_manager.add_iteration_result(iteration + 1, test_results)
 
-            # 互換性のための戻り値用データ構造
-            iteration_results = {
-                "iteration": iteration + 1,
-                "results": test_results
-            }
-            all_test_results.append(iteration_results)
-
         log_info(f"全{repeat_count}回のテスト実行が完了しました")
-        return all_test_results
 
     def get_latest_test_results(self) -> Dict[str, Any]:
         """

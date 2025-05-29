@@ -148,7 +148,7 @@ def discover_analyzers() -> Dict[str, Any]:
 
     return analyzers
 
-def run_tests(test_cases: Dict[str, Type[BaseTest]] = None, verbose: bool = False) -> tuple[Dict[str, Dict[str, Any]], List[Dict[str, Dict[str, Any]]]]:
+def run_tests(test_cases: Dict[str, Type[BaseTest]] = None, verbose: bool = False) -> List[Dict[str, Dict[str, Any]]]:
     """
     テストケースを実行する
 
@@ -157,7 +157,7 @@ def run_tests(test_cases: Dict[str, Type[BaseTest]] = None, verbose: bool = Fals
         verbose: 詳細なログ出力を行うかどうか
 
     Returns:
-        (最新のテスト結果のディクショナリ, 全テスト実行結果のリスト)
+        全テスト実行結果のリスト（各要素は {"iteration": 回数, "results": テスト結果辞書} の形式）
     """
     # テストケースが指定されていない場合は自動検出
     if test_cases is None:
@@ -180,7 +180,6 @@ def run_tests(test_cases: Dict[str, Type[BaseTest]] = None, verbose: bool = Fals
     log_info(f"テストを{repeat_count}回繰り返し実行します...")
 
     all_test_results = []
-    latest_test_results = {}
 
     for iteration in range(repeat_count):
         log_info(f"テスト実行 #{iteration+1}/{repeat_count} を開始します...")
@@ -237,26 +236,27 @@ def run_tests(test_cases: Dict[str, Type[BaseTest]] = None, verbose: bool = Fals
         }
         all_test_results.append(iteration_results)
 
-        # 最新のテスト結果も保持
-        latest_test_results = test_results
-
     log_info(f"全{repeat_count}回のテスト実行が完了しました")
-    return latest_test_results, all_test_results
+    return all_test_results
 
-def run_analysis(analyzers: Dict[str, Any], test_results: Dict[str, Dict[str, Any]], all_test_results: List[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Dict[str, Any]]:
+def run_analysis(analyzers: Dict[str, Any], all_test_results: List[Dict[str, Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
     """
     分析処理を実行する
 
     Args:
         analyzers: 分析モジュールのディクショナリ（分析ID -> 分析クラス）
-        test_results: テスト結果のディクショナリ（テストID -> テスト結果）
-        all_test_results: 全テスト実行結果のリスト（複数回テスト実行時）
+        all_test_results: 全テスト実行結果のリスト（各要素は {"iteration": 回数, "results": テスト結果辞書} の形式）
 
     Returns:
         分析結果のディクショナリ（分析ID -> 分析結果）
     """
     log_info("分析処理を実行しています...")
     analysis_results = {}
+
+    # 最新のテスト結果を取得
+    latest_test_results = {}
+    if all_test_results:
+        latest_test_results = all_test_results[-1]["results"]
 
     for analyzer_id, analyzer_class in analyzers.items():
         # 分析が有効かどうかをチェック
@@ -273,15 +273,16 @@ def run_analysis(analyzers: Dict[str, Any], test_results: Dict[str, Dict[str, An
 
             # 特定のアナライザーには all_test_results を渡す
             if analyzer_id == "map_intersection" and all_test_results:
-                result = analyzer_instance.analyze(test_results, all_test_results)
+                result = analyzer_instance.analyze(latest_test_results, all_test_results)
                 log_info(f"パーティションMAP交差分析にall_test_resultsを渡しました（テスト実行数: {len(all_test_results)}）")
+                # パーティションマップキー評価は合否判定を行わず、データのみ記録
+                log_info(f"分析 {analyzer_id} の実行完了: パーセンテージデータを記録しました")
             else:
-                result = analyzer_instance.analyze(test_results)
-
-            # 結果をログ出力
-            success = result.get("pass", False)
-            status = "合格" if success else "不合格"
-            log_info(f"分析 {analyzer_id} の実行結果: {status}")
+                result = analyzer_instance.analyze(latest_test_results)
+                # 結果をログ出力（map_intersection以外のアナライザーのみ）
+                success = result.get("pass", False)
+                status = "合格" if success else "不合格"
+                log_info(f"分析 {analyzer_id} の実行結果: {status}")
 
             # 結果を記録
             analysis_results[analyzer_id] = result
@@ -318,14 +319,19 @@ def main():
         log_warning("分析モジュールが見つかりませんでした")
 
     # テスト実行
-    test_results, all_test_results = run_tests(test_cases)
+    all_test_results = run_tests(test_cases)
 
     # 分析実行
-    analysis_results = run_analysis(analyzers, test_results, all_test_results)
+    analysis_results = run_analysis(analyzers, all_test_results)
 
     # レポート生成
     log_info("テストレポートを生成しています...")
-    report = generate_report(test_results, analysis_results, all_test_results)
+    # 最新のテスト結果を取得
+    latest_test_results = {}
+    if all_test_results:
+        latest_test_results = all_test_results[-1]["results"]
+
+    report = generate_report(latest_test_results, analysis_results, all_test_results)
     if report:
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         report_filename = f"test_report_{timestamp}.md"
@@ -339,10 +345,10 @@ def main():
     log_info("テスト実行が完了しました")
 
     # 成功数と失敗数をカウント
-    success_count = sum(1 for result in test_results.values() if result.get("success", False))
-    failure_count = len(test_results) - success_count
+    success_count = sum(1 for result in all_test_results[-1]["results"].values() if result.get("success", False))
+    failure_count = len(all_test_results[-1]["results"]) - success_count
 
-    log_info(f"テスト結果: 合計={len(test_results)}, 成功={success_count}, 失敗={failure_count}")
+    log_info(f"テスト結果: 合計={len(all_test_results[-1]['results'])}, 成功={success_count}, 失敗={failure_count}")
 
     # すべてのテストが成功した場合は0、そうでない場合は1を返す
     return 0 if failure_count == 0 else 1

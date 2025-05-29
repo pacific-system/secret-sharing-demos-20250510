@@ -35,7 +35,7 @@ import logging
 from typing import Dict, Any, Optional, List
 
 from utils.cli_runner import run_cli_command
-from utils.password_manager import get_password_for_partition
+from utils.password_manager import get_password_for_partition, get_two_random_passwords
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +51,90 @@ class BaseTest:
         self.test_name = ""
         self.results = {}
         self.logger = logger  # クラスレベルのロガーを設定
+        # ランダムパスワードを事前に取得
+        self._initialize_random_passwords()
         logger.info(f"テストケース {self.__class__.__name__} を初期化しました")
+
+    def _initialize_random_passwords(self):
+        """ランダムパスワードを初期化する"""
+        password_a, password_b = get_two_random_passwords()
+        if password_a and password_b:
+            self.results["password_a_random"] = password_a
+            self.results["password_b_random"] = password_b
+            logger.info(f"ランダムパスワードを初期化しました（A: {len(password_a)}文字, B: {len(password_b)}文字）")
+        else:
+            logger.error("ランダムパスワードの初期化に失敗しました")
+            self.results["password_a_random"] = None
+            self.results["password_b_random"] = None
+
+    def get_random_password(self, partition: str) -> str:
+        """
+        事前に決定されたランダムパスワードを取得する
+
+        Args:
+            partition: パーティション識別子（'A' または 'B'）
+
+        Returns:
+            ランダムパスワード文字列
+        """
+        partition_lower = partition.lower()
+        password_key = f"password_{partition_lower}_random"
+
+        if password_key in self.results and self.results[password_key]:
+            password = self.results[password_key]
+            logger.info(f"パーティション {partition} のランダムパスワードを取得しました（長さ: {len(password)}）")
+            return password
+        else:
+            logger.error(f"パーティション {partition} のランダムパスワードが見つかりません")
+            raise ValueError(f"パーティション {partition} のランダムパスワードが見つかりません")
+
+    def set_cli_password(self, partition: str, password: str):
+        """
+        CLIレスポンスから取得したパスワードを設定する
+
+        Args:
+            partition: パーティション識別子（'A' または 'B'）
+            password: CLIから取得したパスワード
+        """
+        partition_lower = partition.lower()
+        password_key = f"password_{partition_lower}_cli"
+        self.results[password_key] = password
+        logger.info(f"パーティション {partition} のCLIパスワードを設定しました（長さ: {len(password)}）")
+
+    def get_cli_password(self, partition: str) -> Optional[str]:
+        """
+        CLIレスポンスから取得したパスワードを取得する
+
+        Args:
+            partition: パーティション識別子（'A' または 'B'）
+
+        Returns:
+            CLIパスワード文字列、設定されていない場合はNone
+        """
+        partition_lower = partition.lower()
+        password_key = f"password_{partition_lower}_cli"
+
+        if password_key in self.results:
+            password = self.results[password_key]
+            if password:
+                logger.info(f"パーティション {partition} のCLIパスワードを取得しました（長さ: {len(password)}）")
+                return password
+
+        logger.warning(f"パーティション {partition} のCLIパスワードが設定されていません")
+        return None
+
+    def get_password(self, partition: str) -> str:
+        """
+        指定されたパーティション用のパスワードを取得する（互換性のため残存）
+
+        Args:
+            partition: パーティション識別子（'A' または 'B'）
+
+        Returns:
+            パスワード文字列
+        """
+        # 新しい実装では、ランダムパスワードを返す
+        return self.get_random_password(partition)
 
     def run(self):
         """
@@ -64,34 +147,6 @@ class BaseTest:
             サブクラスでオーバーライドする必要があります
         """
         raise NotImplementedError("サブクラスで実装する必要があります")
-
-    def get_password(self, partition: str) -> str:
-        """
-        指定されたパーティション用のパスワードを取得する
-
-        Args:
-            partition: パーティション識別子（'A' または 'B'）
-
-        Returns:
-            パスワード文字列
-        """
-        password = get_password_for_partition(partition)
-        if not password:
-            # パスワードが取得できない場合はエラーを記録
-            logger.error(f"パーティション {partition} 用のパスワードが取得できませんでした")
-            raise ValueError(f"パーティション {partition} 用のパスワードが取得できません")
-
-        # 長さのみをログに記録（セキュリティのため）
-        logger.debug(f"パーティション {partition} 用のパスワードを取得しました（長さ: {len(password)}）")
-
-        # デバッグ情報：実際のパスワード値をログに出力
-        logger.info(f"DEBUG: パーティション {partition} の実際のパスワード: {password}")
-
-        # テスト結果に明示的にパスワードを保存（小文字の識別子を使用）
-        partition_lower = partition.lower()
-        self.results[f"password_{partition_lower}"] = password
-
-        return password
 
     def check_file_exists(self, filepath: str) -> bool:
         """

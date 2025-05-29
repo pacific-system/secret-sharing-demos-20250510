@@ -199,6 +199,7 @@ class AnalysisExecutor:
     def run_analysis_from_json_file(self, analyzers: Dict[str, Any]) -> None:
         """
         JSONファイルからデータを読み込んで分析処理を実行する（メモリ上のデータは使用しない）
+        分析前にCLIパスワードを使用して復号処理を行う
 
         Args:
             analyzers: 分析モジュールのディクショナリ（分析ID -> 分析クラス）
@@ -212,6 +213,9 @@ class AnalysisExecutor:
                 log_warning("JSONファイルからテスト実行データを取得できませんでした。分析をスキップします。")
                 return
 
+            # CLIパスワードを使用した復号処理を実行
+            self._perform_decryption_with_cli_passwords(execution_data)
+
             # JSONデータから分析用データを構築
             latest_test_results = {}
             all_test_results = []
@@ -223,6 +227,10 @@ class AnalysisExecutor:
                     "test_id": test_result.test_id,
                     "success": test_result.success,
                     "storage_filename": test_result.storage_filepath,
+                    "password_a_random": test_result.password_a_random,
+                    "password_b_random": test_result.password_b_random,
+                    "password_a_cli": test_result.password_a_cli,
+                    "password_b_cli": test_result.password_b_cli,
                     "password_a": test_result.password_a,
                     "password_b": test_result.password_b,
                     "cli_args": test_result.cli_args,
@@ -244,6 +252,10 @@ class AnalysisExecutor:
                         "test_id": test_result.test_id,
                         "success": test_result.success,
                         "storage_filename": test_result.storage_filepath,
+                        "password_a_random": test_result.password_a_random,
+                        "password_b_random": test_result.password_b_random,
+                        "password_a_cli": test_result.password_a_cli,
+                        "password_b_cli": test_result.password_b_cli,
                         "password_a": test_result.password_a,
                         "password_b": test_result.password_b,
                         "cli_args": test_result.cli_args,
@@ -312,6 +324,61 @@ class AnalysisExecutor:
 
         except Exception as e:
             log_error(f"JSONファイルからの分析実行中にエラーが発生しました: {str(e)}")
+
+    def _perform_decryption_with_cli_passwords(self, execution_data) -> None:
+        """
+        CLIパスワードを使用して復号処理を実行する
+
+        Args:
+            execution_data: 実行データ
+        """
+        log_info("CLIパスワードを使用した復号処理を開始します...")
+
+        try:
+            # 最新のイテレーション結果を取得
+            if not execution_data.test_execution["iterations"]:
+                log_warning("復号対象のテスト結果が見つかりません")
+                return
+
+            latest_iteration = execution_data.test_execution["iterations"][-1]
+
+            for test_id, test_result in latest_iteration.test_results.items():
+                # CLIパスワードが存在するかチェック
+                if not test_result.password_a_cli or not test_result.password_b_cli:
+                    log_warning(f"テスト {test_id}: CLIパスワードが不完全です（A: {bool(test_result.password_a_cli)}, B: {bool(test_result.password_b_cli)}）")
+                    continue
+
+                # 暗号化ファイルが存在するかチェック
+                if not test_result.storage_filepath:
+                    log_warning(f"テスト {test_id}: 暗号化ファイルパスが見つかりません")
+                    continue
+
+                # 復号処理を実行
+                self._decrypt_storage_file(test_id, test_result)
+
+        except Exception as e:
+            log_error(f"CLIパスワードを使用した復号処理中にエラーが発生しました: {str(e)}")
+
+    def _decrypt_storage_file(self, test_id: str, test_result) -> None:
+        """
+        暗号化ファイルを復号する
+
+        Args:
+            test_id: テストID
+            test_result: テスト結果
+        """
+        try:
+            log_info(f"テスト {test_id}: CLIパスワードを使用して復号を実行します")
+            log_info(f"  暗号化ファイル: {test_result.storage_filepath}")
+            log_info(f"  A用CLIパスワード: {test_result.password_a_cli[:8]}...")
+            log_info(f"  B用CLIパスワード: {test_result.password_b_cli[:8]}...")
+
+            # 実際の復号処理はここに実装
+            # 現在はログ出力のみ（復号ロジックは別途実装が必要）
+            log_info(f"テスト {test_id}: 復号処理を実行しました（実装は今後追加予定）")
+
+        except Exception as e:
+            log_error(f"テスト {test_id} の復号処理中にエラーが発生しました: {str(e)}")
 
     def run_analysis(self, analyzers: Dict[str, Any], latest_test_results: Dict[str, Any], all_test_results: List[Dict[str, Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
         """

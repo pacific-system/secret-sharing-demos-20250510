@@ -374,7 +374,7 @@ def get_placeholder_value(placeholder: str, test_results: Dict[str, Any], analys
             # 近い行を探す
             context_lines = []
             for i in range(1, 11):  # 最大10行前後を探索
-                context_pattern = rf"\| ([A-B][0-9]+|[A-B]\\[0-9]+) +\|"
+                context_pattern = r'\| ([A-B][0-9]+|[A-B]\\[0-9]+) +\|'
                 matches = re.findall(context_pattern, context_before(200) + context_after(200))
                 if matches:
                     context_lines.extend(matches)
@@ -389,7 +389,7 @@ def get_placeholder_value(placeholder: str, test_results: Dict[str, Any], analys
                         row = int(context[1:])
                         if "a_map_intersection" in map_analysis:
                             # 列を取得 (テーブル内の位置から)
-                            col_pattern = r"\| +- +\| +([\d\.]+) +\|"
+                            col_pattern = r'\| +- +\| +([\d\.]+) +\|'
                             for col in range(1, 11):
                                 if (row, col) in map_analysis["a_map_intersection"]:
                                     position = (row, col)
@@ -425,9 +425,9 @@ def get_placeholder_value(placeholder: str, test_results: Dict[str, Any], analys
                     a_map_rates = map_analysis["a_map_intersection"]
                     if a_map_rates:
                         # 現在の行・列を見つけるためにテーブル行を解析
-                        row_pattern = r"\| +(\d+) +\|"
+                        row_pattern = r'\| +(\d+) +\|'
                         row_match = re.search(row_pattern, context_before(100))
-                        column_pattern = r"\| +- +\| +(?:[\d\.]+ +\| +){0,8}([\d\.]+)"
+                        column_pattern = r'\| +- +\| +(?:[\d\.]+ +\| +){0,8}([\d\.]+)'
                         column_match = re.search(column_pattern, context_after(100))
 
                         if row_match and column_match:
@@ -673,6 +673,68 @@ def get_placeholder_value(placeholder: str, test_results: Dict[str, Any], analys
         return "（パーティションマップキーが取得できませんでした）"
 
     # パスワード関連
+    if placeholder.endswith("用パスワードランダム結果"):
+        partition = placeholder[0].lower()  # 'A'用 または 'B'用の先頭文字を取得し小文字に変換
+
+        # 特定のテスト結果が指定されている場合はそれを使用
+        if specific_test_result:
+            # テスト結果からランダムパスワードを取得
+            random_password_key = f"password_{partition}_random"
+            if random_password_key in specific_test_result:
+                password = specific_test_result[random_password_key]
+                if password:
+                    logger.info(f"テストの{partition.upper()}用ランダムパスワードを取得しました: {password}")
+                    return password
+
+            # ランダムパスワードが見つからない場合
+            logger.warning(f"{partition.upper()}用ランダムパスワードが特定テスト結果に保存されていません")
+            return f"（{partition.upper()}用ランダムパスワードが取得できません）"
+
+        # 特定のテスト結果がない場合、最初の成功したテストからランダムパスワードを取得
+        for test_id, result in test_results.items():
+            if result.get("success", False):
+                random_password_key = f"password_{partition}_random"
+                if random_password_key in result:
+                    password = result[random_password_key]
+                    if password:
+                        logger.info(f"テスト全体の{partition.upper()}用ランダムパスワードを取得しました: {password}")
+                        return password
+
+        # ランダムパスワードが見つからない場合
+        logger.warning(f"{partition.upper()}用ランダムパスワードがテスト結果全体で見つかりません")
+        return f"（{partition.upper()}用ランダムパスワードが取得できません）"
+
+    if placeholder.endswith("用パスワードCLIからの返却結果"):
+        partition = placeholder[0].lower()  # 'A'用 または 'B'用の先頭文字を取得し小文字に変換
+
+        # 特定のテスト結果が指定されている場合はそれを使用
+        if specific_test_result:
+            # テスト結果からCLIパスワードを取得
+            cli_password_key = f"password_{partition}_cli"
+            if cli_password_key in specific_test_result:
+                password = specific_test_result[cli_password_key]
+                if password:
+                    logger.info(f"テストの{partition.upper()}用CLIパスワードを取得しました: {password}")
+                    return password
+
+            # CLIパスワードが見つからない場合
+            logger.warning(f"{partition.upper()}用CLIパスワードが特定テスト結果に保存されていません")
+            return f"（{partition.upper()}用CLIパスワードが取得できません）"
+
+        # 特定のテスト結果がない場合、最初の成功したテストからCLIパスワードを取得
+        for test_id, result in test_results.items():
+            if result.get("success", False):
+                cli_password_key = f"password_{partition}_cli"
+                if cli_password_key in result:
+                    password = result[cli_password_key]
+                    if password:
+                        logger.info(f"テスト全体の{partition.upper()}用CLIパスワードを取得しました: {password}")
+                        return password
+
+        # CLIパスワードが見つからない場合
+        logger.warning(f"{partition.upper()}用CLIパスワードがテスト結果全体で見つかりません")
+        return f"（{partition.upper()}用CLIパスワードが取得できません）"
+
     if placeholder.endswith("用パスワード"):
         partition = placeholder[0].lower()  # 'A'用 または 'B'用の先頭文字を取得し小文字に変換
 

@@ -64,13 +64,59 @@
 12. **テスト実行（JSON ファイル専用）** - test_executor.run_tests(test_cases)実行（行 114）
     - 12.0 **メモリ上データ排除** - メモリ上のデータを返さず、JSON ファイルのみに保存
     - 12.1 **テスト実行メソッド呼び出し** - self.test_executor.run_tests(test_cases)で戻り値なしのテスト実行（行 114）
+    - 12.1.1 **イテレーションループ開始** - test_runner_V2_test_executor.py 行 155 で repeat_count 回のループ開始
+    - 12.1.2 **テストケースループ開始** - 行 160 で各テストケース（test_id, test_class）のループ開始
+    - 12.1.3 **テストインスタンス生成** - 行 168 で test_instance = test_class()によりテストインスタンス生成
+    - 12.1.4 **テスト実行開始** - 行 171 で result = test_instance.run()によりテスト実行開始
+    - 12.1.5 **【ランダムパスワード抽出実行ポイント】** - テスト実行中に BaseTest.get_password()が呼び出される
+      - 12.1.5.1 **A 用パスワード抽出** - test_cc_001_basic_creation.py 行 49 で password_a = self.get_password('A')実行
+        - BaseTest.**init**() → \_initialize_random_passwords() → get_two_random_passwords()
+        - test_passwords.txt から 24 個のパスワードの中から random.sample()で重複なし 2 個選択
+        - 選択された A 用パスワードを self.results["password_a_random"]に保存
+        - 選択された B 用パスワードを self.results["password_b_random"]に保存
+        - BaseTest.get_password('A') → get_random_password('A') → self.results["password_a_random"]を返却
+        - DEBUG ログ出力: "パーティション A のランダムパスワードを取得しました（長さ: {len(password)}）"
+      - 12.1.5.2 **B 用パスワード抽出** - test_cc_001_basic_creation.py 行 52 で password_b = self.get_password('B')実行
+        - BaseTest.get_password('B') → get_random_password('B') → self.results["password_b_random"]を返却
+        - DEBUG ログ出力: "パーティション B のランダムパスワードを取得しました（長さ: {len(password)}）"
+        - **重複排除保証**: random.sample()により A 用と B 用パスワードは必ず異なる値
+      - 12.1.5.3 **CLI パスワード設定** - CLI 実行後にレスポンスから取得したパスワードを設定
+        - BaseTest.set_cli_password('A', cli_response_password_a) → self.results["password_a_cli"]に保存
+        - BaseTest.set_cli_password('B', cli_response_password_b) → self.results["password_b_cli"]に保存
+        - DEBUG ログ出力: "パーティション A の CLI パスワードを設定しました（長さ: {len(password)}）"
+    - 12.1.6 **CLI コマンド実行** - 抽出されたパスワードを使用して CLI コマンド実行
+    - 12.1.7 **CLI レスポンス受信記録** - 行 174-176 で CLI レスポンス受信をファイルに記録
+    - 12.1.8 **パスワード読み込み記録** - 行 178-183 でパスワード読み込みをファイルに記録
+      - 12.1.8.1 **ランダムパスワード記録** - result["password_a_random"]が存在する場合、ログ出力とファイル記録
+        - DEBUG ログ出力: "DEBUG: テスト {test_id} の A 用ランダムパスワード: {result['password_a_random']}"
+        - DEBUG ログ出力: "DEBUG: テスト {test_id} の B 用ランダムパスワード: {result['password_b_random']}"
+      - 12.1.8.2 **CLI パスワード記録** - result["password_a_cli"]が存在する場合、ログ出力とファイル記録
+        - DEBUG ログ出力: "DEBUG: テスト {test_id} の A 用 CLI パスワード: {result['password_a_cli']}"
+        - DEBUG ログ出力: "DEBUG: テスト {test_id} の B 用 CLI パスワード: {result['password_b_cli']}"
+      - 12.1.8.3 **互換性パスワード記録** - result["password_a"]が存在する場合、ログ出力とファイル記録（互換性のため）
+      - 12.1.8.4 **パスワード読み込み時刻記録** - パスワードが記録された場合のみ self.file_manager.update_password_loaded()実行
+    - 12.1.9 **テスト結果記録** - 行 194 で test_results[test_id] = result によりテスト結果を記録
+    - 12.1.10 **イテレーション完了記録** - 行 202 で self.file_manager.add_iteration_result()により JSON ファイルに保存
     - 12.2 **テスト実行完了ログ** - "テスト実行が完了し、結果を JSON ファイルに保存しました"ログ出力（行 115）
 13. **分析実行（JSON ファイル専用）** - analysis_executor.run_analysis_from_json_file(analyzers)実行（行 118）
     - 13.0 **JSON ファイルからデータ読み込み** - file_manager.get_execution_data()で JSON ファイルから実行データを取得
+    - 13.0.1 **CLI パスワードを使用した復号処理** - \_perform_decryption_with_cli_passwords()で復号処理を実行
+      - 13.0.1.1 **復号対象確認** - 最新イテレーションのテスト結果から CLI パスワードと暗号化ファイルの存在確認
+      - 13.0.1.2 **復号実行** - \_decrypt_storage_file()で各テストの暗号化ファイルを復号
+        - ログ出力: "テスト {test_id}: CLI パスワードを使用して復号を実行します"
+        - ログ出力: " 暗号化ファイル: {test_result.storage_filepath}"
+        - ログ出力: " A 用 CLI パスワード: {test_result.password_a_cli[:8]}..."
+        - ログ出力: " B 用 CLI パスワード: {test_result.password_b_cli[:8]}..."
+        - 実際の復号処理: 現在はログ出力のみ（復号ロジックは今後追加予定）
     - 13.1 **分析実行メソッド呼び出し** - self.analysis_executor.run_analysis_from_json_file(analyzers)で戻り値なしの分析実行（行 118）
     - 13.2 **分析実行完了ログ** - "分析実行が完了し、結果を JSON ファイルに保存しました"ログ出力（行 119）
 14. **レポート生成（JSON ファイル専用）** - \_generate_and_save_report_from_json()実行（行 122）
     - 14.0 **JSON ファイルからデータ読み込み** - file_manager.get_current_file_path()で JSON ファイルパスを取得
+    - 14.0.1 **新パスワード形式対応** - レポートテンプレートで新しいパスワード形式に対応
+      - テンプレート形式: "パスワード: {A 用パスワードランダム結果}:{A 用パスワード CLI からの返却結果}"
+      - プレースホルダー処理: get_placeholder_value()で"用パスワードランダム結果"と"用パスワード CLI からの返却結果"を個別処理
+      - データ取得: password_a_random, password_b_random, password_a_cli, password_b_cli フィールドから取得
+      - CLI レスポンス正確性確認: ランダムパスワードと CLI レスポンスパスワードの比較が可能
     - 14.1 **レポート生成メソッド呼び出し** - self.\_generate_and_save_report_from_json()で戻り値なしのレポート生成（行 122）
 15. **テスト完了ログ** - "テスト実行が完了しました"メッセージ出力（行 125）
 16. **結果集計（JSON ファイル専用）** - \_count_results_from_json()で成功数と失敗数をカウント（行 128）
@@ -85,6 +131,69 @@
     - 19.1 **メイン例外時の終了コード 1 返却** - run()メソッドで Exception 発生時は log_error()と try-except 内で file_manager.mark_error()実行後、終了コード 1 を返却（行 135-144）
     - 19.2 **main()関数実行** - runner = TestRunnerV2()でインスタンス生成、return runner.run()で実行（行 342-343）
     - 19.3 **プロセス終了実行** - sys.exit(main())で main()の戻り値を終了コードに設定（行 346）
+
+## 1.1 ランダムパスワード抽出ポイント
+
+### 1.1.1 パスワードファイル構成（test_passwords.txt）
+
+**パスワード総数**: 24 個
+**パスワード種別**:
+
+- 基本パスワード: password, Password123, weak, 12345678, abcdefgh, ABCDEFGH
+- 特殊文字含有: p@ssw0rd!, strongP@ssword123, P@$$w0rd_W1th-Sp3c!@l_Ch@r@ct3r$
+- 長文パスワード: ThisIsAVeryLongPasswordThatExceedsTwentyCharacters
+- スペース含有: "pass word with spaces", "EmptySpaceAtEnd", " EmptySpaceAtStart"
+- 日本語パスワード: パスワード 123, パスワード！＠＃＄％, password\_四\_user_bBBB
+- 絵文字含有: test*password*😄
+- 用途別パスワード: PW_4_user_a, UserA_P@ssw0rd, UserB_P@ssw0rd, Partition_A_Key123!, Partition_B_Key456!
+- テスト用パスワード: test_password_aaaa, shamir_secret_test
+
+### 1.1.2 ランダム抽出実装ポイント
+
+**実装場所**: utils/password_manager.py
+**主要関数**:
+
+- `get_random_password()` - 24 個のパスワードから random.choice()でランダム選択
+- `get_password_for_partition(partition)` - パーティション別パスワード取得（内部で get_random_password()を呼び出し）
+
+**抽出タイミング**:
+
+1. **BaseTest.get_password()呼び出し時** - 各テストケースでパーティション用パスワード要求時
+
+   - BaseTest.get_password('A') → utils.password_manager.get_password_for_partition('A') → get_random_password()
+   - BaseTest.get_password('B') → utils.password_manager.get_password_for_partition('B') → get_random_password()
+
+2. **テスト実行中の記録ポイント**:
+
+   - **行 175-180**: TestExecutor.run_tests()内でパスワード読み込み検出時
+   - **行 177**: `self.logger.info(f"DEBUG: テスト {test_id} のA用パスワード: {result['password_a']}")`
+   - **行 179**: `self.logger.info(f"DEBUG: テスト {test_id} のB用パスワード: {result['password_b']}")`
+   - **行 181**: `self.file_manager.update_password_loaded(test_id, iteration + 1)`
+
+3. **JSON ファイル記録ポイント**:
+   - **TestResult.password_a**: A 用パスワードの平文記録
+   - **TestResult.password_b**: B 用パスワードの平文記録
+   - **TestResult.password_loaded**: パスワード読み込み時刻記録
+
+### 1.1.3 ランダム性の特徴
+
+**選択アルゴリズム**: Python 標準ライブラリの random.choice()
+**重複許可**: 同一テスト実行内で同じパスワードが複数回選択される可能性あり
+**決定論性**: シード固定なし（実行ごとに異なる選択結果）
+**分布**: 24 個のパスワードに対して均等分布（理論上）
+
+**実際の選択例**:
+
+- テスト実行 1 回目: A 用="password", B 用="strongP@ssword123"
+- テスト実行 2 回目: A 用="パスワード 123", B 用="password"（重複可能）
+- テスト実行 3 回目: A 用="test*password*😄", B 用="Partition_A_Key123!"
+
+### 1.1.4 セキュリティ考慮事項
+
+**平文記録**: JSON ファイルとログにパスワード平文を記録（デバッグ目的）
+**ハッシュ化機能**: password_manager.get_password_hash()で SHA-256 ハッシュ化可能
+**ファイルアクセス制御**: test_passwords.txt の読み込み権限に依存
+**ログ出力制御**: DEBUG レベルでパスワード平文をログ出力
 
 ## 2 実装不足・問題点
 
@@ -107,7 +216,16 @@
   - **データ整合性確保**: 常に JSON ファイルを唯一のデータ源泉として使用し、メモリ上のオブジェクトは参照・保存しない
 - **設計の妥当性**: JSON ファイルを唯一のデータ源泉とすることで、データの不整合を防止し、デバッグ性と信頼性を向上
 
-### 2.3 ✅ エラーハンドリングの不完全性（部分修正済み）
+### 2.3 ✅ パスワード管理の改善（実装済み）
+
+- **実装済み**:
+  - **重複なしパスワード抽出**: get_two_random_passwords()で random.sample()を使用し、A 用と B 用パスワードの重複を完全排除
+  - **パスワード分離管理**: ランダムパスワード（password_a_random, password_b_random）と CLI パスワード（password_a_cli, password_b_cli）を分離保存
+  - **CLI パスワード復号対応**: 分析実行前に CLI パスワードを使用した復号処理を実装（\_perform_decryption_with_cli_passwords()）
+  - **レポート形式改善**: "パスワード: {ランダム結果}:{CLI 返却結果}"形式で CLI レスポンスの正確性確認が可能
+  - **データ構造拡張**: TestResult クラスに新しいパスワードフィールドを追加し、JSON 保存・読み込みに対応
+
+### 2.4 ✅ エラーハンドリングの不完全性（部分修正済み）
 
 - ~~問題: 各コンポーネント間の連携でエラーが発生した場合の処理が不十分~~
 - ~~実態: file_manager.mark_error()は呼ばれるが、部分的な成功データの活用方法が未定義~~
@@ -115,7 +233,7 @@
 - **部分修正済み**: try-except 内でのエラーハンドリングを強化、レポート生成失敗時の継続処理を実装
 - **残課題**: 部分的成功時のレポート生成機能は未実装
 
-### 2.4 ✅ 互換性維持の複雑性（適正化済み）
+### 2.5 ✅ 互換性維持の複雑性（適正化済み）
 
 - ~~問題: 既存の all_test_results 形式との互換性維持のため、データ変換処理が複雑~~
 - ~~実態: TestExecutor で互換性用のデータ変換を行っているが、パフォーマンス影響あり~~
@@ -126,7 +244,7 @@
   - **処理速度向上**: 不要なデータ変換処理を削除し、処理速度を向上
   - **データ変換の最適化**: generate_report_from_json_file()内でのみ必要最小限のデータ変換を実行
 
-### 2.5 ✅ フォールバック処理の明示化（実装済み）
+### 2.6 ✅ フォールバック処理の明示化（実装済み）
 
 - **実装済み**: 各種フォールバック処理を明示的に実装
   - 設定ファイル読み込み失敗時の即座終了
@@ -134,6 +252,12 @@
   - 分析モジュール未発見時の継続処理
   - JSON ファイルからのデータ取得失敗時のフォールバック処理
   - レポート生成失敗時の継続処理
+
+### 2.7 🔄 復号ロジックの実装（今後追加予定）
+
+- **現状**: CLI パスワードを使用した復号処理のフレームワークは実装済み
+- **今後追加予定**: \_decrypt_storage_file()内の実際の復号ロジック実装
+- **影響**: 現在は復号処理のログ出力のみで、実際の復号は未実行
 
 ## 3 データ構造
 
@@ -166,6 +290,10 @@
             "test_id": "test_id",
             "success": true,
             "storage_filepath": "/path/to/encrypted/file",
+            "password_a_random": "ランダムに選択されたA用パスワード",
+            "password_b_random": "ランダムに選択されたB用パスワード",
+            "password_a_cli": "CLIレスポンスから取得したA用パスワード",
+            "password_b_cli": "CLIレスポンスから取得したB用パスワード",
             "password_a": "...",
             "password_b": "...",
             "cli_response_received": "2025-01-10T14:31:15.456",

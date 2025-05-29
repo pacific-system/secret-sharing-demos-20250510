@@ -178,12 +178,27 @@ class TestExecutor:
                         self.logger.info(f"テスト {test_id} の CLI引数: {result['cli_args']}")
 
                     # パスワード読み込みをファイルに記録
-                    if "password_a" in result or "password_b" in result:
+                    password_recorded = False
+
+                    # ランダムパスワードの記録
+                    if "password_a_random" in result:
+                        self.logger.info(f"DEBUG: テスト {test_id} のA用ランダムパスワード: {result['password_a_random']}")
+                        password_recorded = True
+                    if "password_b_random" in result:
+                        self.logger.info(f"DEBUG: テスト {test_id} のB用ランダムパスワード: {result['password_b_random']}")
+                        password_recorded = True
+
+                    # CLIパスワードの記録
+                    if "password_a_cli" in result:
+                        self.logger.info(f"DEBUG: テスト {test_id} のA用CLIパスワード: {result['password_a_cli']}")
+                        password_recorded = True
+                    if "password_b_cli" in result:
+                        self.logger.info(f"DEBUG: テスト {test_id} のB用CLIパスワード: {result['password_b_cli']}")
+                        password_recorded = True
+
+                    # パスワードが記録された場合のみファイル更新
+                    if password_recorded:
                         self.file_manager.update_password_loaded(test_id, iteration + 1)
-                        if "password_a" in result:
-                            self.logger.info(f"DEBUG: テスト {test_id} のA用パスワード: {result['password_a']}")
-                        if "password_b" in result:
-                            self.logger.info(f"DEBUG: テスト {test_id} のB用パスワード: {result['password_b']}")
 
                     # 結果をログ出力
                     success = result.get("success", False)
@@ -231,8 +246,10 @@ class TestExecutor:
                 "test_id": test_result.test_id,
                 "success": test_result.success,
                 "storage_filename": test_result.storage_filepath,  # 互換性のため
-                "password_a": test_result.password_a,
-                "password_b": test_result.password_b,
+                "password_a_random": test_result.password_a_random,
+                "password_b_random": test_result.password_b_random,
+                "password_a_cli": test_result.password_a_cli,
+                "password_b_cli": test_result.password_b_cli,
                 "cli_args": test_result.cli_args,
                 "stdout": test_result.stdout,
                 "stderr": test_result.stderr,
@@ -266,8 +283,10 @@ class TestExecutor:
                     "test_id": test_result.test_id,
                     "success": test_result.success,
                     "storage_filename": test_result.storage_filepath,  # 互換性のため
-                    "password_a": test_result.password_a,
-                    "password_b": test_result.password_b,
+                    "password_a_random": test_result.password_a_random,
+                    "password_b_random": test_result.password_b_random,
+                    "password_a_cli": test_result.password_a_cli,
+                    "password_b_cli": test_result.password_b_cli,
                     "cli_args": test_result.cli_args,
                     "stdout": test_result.stdout,
                     "stderr": test_result.stderr,

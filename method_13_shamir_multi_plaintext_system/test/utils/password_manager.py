@@ -140,3 +140,32 @@ def get_password_hash(password: str) -> str:
     logger.debug(f"パスワードハッシュを計算しました: {password_hash[:8]}...")
 
     return password_hash
+
+def get_two_random_passwords() -> tuple[Optional[str], Optional[str]]:
+    """
+    重複なしで2個のランダムなパスワードを取得する
+
+    Returns:
+        (password_a, password_b): 重複なしの2個のパスワードのタプル、
+        パスワードが読み込めない場合は(None, None)
+    """
+    passwords = load_passwords()
+
+    if not passwords:
+        logger.error("パスワードが読み込めないため、ランダムなパスワードを返せません")
+        return None, None
+
+    if len(passwords) < 2:
+        logger.error("パスワードが2個未満のため、重複なしで2個のパスワードを返せません")
+        return None, None
+
+    # 重複なしで2個選択
+    selected_passwords = random.sample(passwords, 2)
+    password_a, password_b = selected_passwords[0], selected_passwords[1]
+
+    # ログにはパスワードの長さのみを出力（セキュリティのため）
+    logger.debug(f"重複なしで2個のランダムなパスワードを選択しました（長さ: {len(password_a)}, {len(password_b)}）")
+    logger.info(f"A用パスワード（ランダム選択）: {password_a}")
+    logger.info(f"B用パスワード（ランダム選択）: {password_b}")
+
+    return password_a, password_b

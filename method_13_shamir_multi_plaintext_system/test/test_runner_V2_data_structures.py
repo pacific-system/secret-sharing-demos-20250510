@@ -71,8 +71,12 @@ class TestResult:
     test_id: str
     success: bool = False
     storage_filepath: Optional[str] = None
-    password_a: Optional[str] = None
-    password_b: Optional[str] = None
+    # ランダムに決定したパスワード（テスト開始時）
+    password_a_random: Optional[str] = None
+    password_b_random: Optional[str] = None
+    # CLIレスポンスから取得したパスワード（実際の復号用）
+    password_a_cli: Optional[str] = None
+    password_b_cli: Optional[str] = None
     cli_args: Optional[Dict[str, Any]] = None
     cli_response_received: Optional[str] = None
     password_loaded: Optional[str] = None
@@ -171,8 +175,10 @@ class TestExecutionData:
                                 "test_id": test_result.test_id,
                                 "success": test_result.success,
                                 "storage_filepath": test_result.storage_filepath,
-                                "password_a": test_result.password_a,
-                                "password_b": test_result.password_b,
+                                "password_a_random": test_result.password_a_random,
+                                "password_b_random": test_result.password_b_random,
+                                "password_a_cli": test_result.password_a_cli,
+                                "password_b_cli": test_result.password_b_cli,
                                 "cli_args": test_result.cli_args,
                                 "cli_response_received": test_result.cli_response_received,
                                 "password_loaded": test_result.password_loaded,

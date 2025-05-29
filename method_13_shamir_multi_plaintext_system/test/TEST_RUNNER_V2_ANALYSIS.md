@@ -130,8 +130,68 @@
         - ログ出力: " A 用 CLI パスワード: {test_result.password_a_cli[:8]}..."
         - ログ出力: " B 用 CLI パスワード: {test_result.password_b_cli[:8]}..."
         - 実際の復号処理: 現在はログ出力のみ（復号ロジックは今後追加予定）
-    - 13.1 **分析実行メソッド呼び出し** - self.analysis_executor.run_analysis_from_json_file(analyzers)で戻り値なしの分析実行（行 118）
-    - 13.2 **分析実行完了ログ** - "分析実行が完了し、結果を JSON ファイルに保存しました"ログ出力（行 119）
+    - 13.1 **分析用データ構築** - JSON データから分析用データを構築（行 218-267）
+      - 13.1.1 **最新イテレーション結果構築** - latest_test_results 辞書の構築（行 223-242）
+        - **ループ範囲**: 行 224 `for test_id, test_result in latest_iteration.test_results.items():` から 行 242 まで
+        - **ループ変数**: test_id（テスト ID 文字列）, test_result（TestResult オブジェクト）
+        - **ループ処理**: 各テスト結果を分析用辞書形式に変換
+      - 13.1.2 **全イテレーション結果構築** - all_test_results 配列の構築（行 245-267）
+        - **外側ループ範囲**: 行 245 `for iteration_result in execution_data.test_execution["iterations"]:` から 行 267 まで
+        - **外側ループ変数**: iteration_result（IterationResult オブジェクト）
+        - **内側ループ範囲**: 行 247 `for test_id, test_result in iteration_result.test_results.items():` から 行 265 まで
+        - **内側ループ変数**: test_id（テスト ID 文字列）, test_result（TestResult オブジェクト）
+        - **ループ処理**: 各イテレーションの各テスト結果を分析用辞書形式に変換
+    - 13.2 **分析実行メインループ** - 検出された分析モジュールごとの実行（行 275-318）
+      - **ループ範囲**: 行 275 `for analyzer_id, analyzer_class in analyzers.items():` から 行 318 まで
+      - **ループ変数**: analyzer_id（分析 ID 文字列）, analyzer_class（分析クラス）
+      - **ループ継続・終了判断ポイント**:
+        - **継続判断**: `analyzer_id in analyzers` の条件でループ継続（Python の dict.items() による自動制御）
+        - **正常終了**: 全分析モジュールの実行完了後、自動的にループ終了
+        - **スキップ条件**: is_analysis_enabled(analyzer_id) が False の場合、continue でスキップ（行 277-279）
+        - **例外処理**: 個別分析の例外は catch されるが、**分析全体を停止する仕組みは未実装**
+      - **ループ内処理概要**:
+        - 行 276: 分析有効性チェック（設定による無効化確認）
+        - 行 281: analyzer_instance = analyzer_class() で分析インスタンス生成
+        - 行 284: 分析実行開始ログ出力
+        - 行 286-295: map_intersection 分析の特別処理分岐
+        - 行 296-305: その他分析の通常処理分岐
+        - 行 306-318: 例外処理とエラー結果記録
+    - 13.3 **map_intersection 分析の特別処理** - マップ交差分析の詳細ループ（行 286-295）
+      - 13.3.1 **分析実行** - self.map_analyzer.analyze_with_file_tracking()実行（行 287-290）
+      - 13.3.2 **比較結果記録の多重ループ（効率化版）** - \_record_comparison_results()内の 3 重ループ（行 156-177）
+        - **A 用マップ比較ループ（効率化版）**:
+          - **ループ範囲**: 行 158 `for comparison_key, rate in result["a_map_intersection"].items():` から 行 162 まで
+          - **ループ変数**: comparison_key（比較キータプル）, rate（一致率数値）
+          - **効率化実装**: map_intersection_analyzer.py で `i < j` 条件による重複計算排除
+          - **計算量削減**: 10 回イテレーション時 90 回 → 45 回（50%削減）
+          - **レポート要件維持**: 両方向キー `(i,j)` と `(j,i)` に同じ値を設定
+          - **ループ処理**: A 用パーティションマップ間の比較結果を JSON ファイルに記録
+          - **記録タイミング**: 各比較ペアごとに self.file_manager.add_map_comparison("a_map", comparison_str, rate) 実行
+        - **B 用マップ比較ループ（効率化版）**:
+          - **ループ範囲**: 行 165 `for comparison_key, rate in result["b_map_intersection"].items():` から 行 169 まで
+          - **ループ変数**: comparison_key（比較キータプル）, rate（一致率数値）
+          - **効率化実装**: map_intersection_analyzer.py で `i < j` 条件による重複計算排除
+          - **計算量削減**: 10 回イテレーション時 90 回 → 45 回（50%削減）
+          - **レポート要件維持**: 両方向キー `(i,j)` と `(j,i)` に同じ値を設定
+          - **ループ処理**: B 用パーティションマップ間の比較結果を JSON ファイルに記録
+          - **記録タイミング**: 各比較ペアごとに self.file_manager.add_map_comparison("b_map", comparison_str, rate) 実行
+        - **A-B 間マップ比較ループ（効率化対象外）**:
+          - **ループ範囲**: 行 172 `for comparison_key, rate in result["a_b_map_intersection"].items():` から 行 176 まで
+          - **ループ変数**: comparison_key（比較キータプル）, rate（一致率数値）
+          - **効率化対象外理由**: A-B 間比較は非対称のため効率化不可
+          - **計算量**: 10 回イテレーション時 100 回（変更なし）
+          - **ループ処理**: A 用と B 用パーティションマップ間の比較結果を JSON ファイルに記録
+          - **記録タイミング**: 各比較ペアごとに self.file_manager.add_map_comparison("ab_map", comparison_str, rate) 実行
+        - **効率化効果ログ出力**:
+          - **計算回数比較**: "A 用マップ比較: {optimized}回実行 (効率化前: {original}回)"
+          - **削減率表示**: "合計計算回数: {total_optimized}回 (効率化前: {total_original}回, {reduction_rate:.1f}%削減)"
+          - **10 回イテレーション例**: 280 回 → 190 回（32%削減）
+      - 13.3.3 **最終結果記録** - self.file_manager.complete_map_intersection_analysis(result)で最終結果を JSON ファイルに記録（行 179）
+    - 13.4 **その他分析の通常処理** - map_intersection 以外の分析実行（行 296-305）
+      - 13.4.1 **分析実行** - analyzer_instance.analyze(latest_test_results)実行（行 297）
+      - 13.4.2 **結果判定とログ出力** - result.get("pass", False)で合否判定（行 298-301）
+      - 13.4.3 **結果記録** - self.file_manager.add_other_analysis_result(analyzer_id, result)で JSON ファイルに記録（行 304）
+    - 13.5 **分析実行完了ログ** - "JSON ファイルベースの分析処理が完了しました"ログ出力（行 320）
 14. **レポート生成（JSON ファイル専用）** - \_generate_and_save_report_from_json()実行（行 122）
     - 14.0 **JSON ファイルからデータ読み込み** - file_manager.get_current_file_path()で JSON ファイルパスを取得
     - 14.0.1 **新パスワード形式対応** - レポートテンプレートで新しいパスワード形式に対応
@@ -188,9 +248,9 @@
 2. **テスト実行中の記録ポイント**:
 
    - **行 175-180**: TestExecutor.run_tests()内でパスワード読み込み検出時
-   - **行 177**: `self.logger.info(f"DEBUG: テスト {test_id} のA用パスワード: {result['password_a']}")`
-   - **行 179**: `self.logger.info(f"DEBUG: テスト {test_id} のB用パスワード: {result['password_b']}")`
-   - **行 181**: `self.file_manager.update_password_loaded(test_id, iteration + 1)`
+   - 行 177\*\*: `self.logger.info(f"DEBUG: テスト {test_id} のA用パスワード: {result['password_a']}")`
+   - 行 179\*\*: `self.logger.info(f"DEBUG: テスト {test_id} のB用パスワード: {result['password_b']}")`
+   - 行 181\*\*: `self.file_manager.update_password_loaded(test_id, iteration + 1)`
 
 3. **JSON ファイル記録ポイント**:
    - **TestResult.password_a**: A 用パスワードの平文記録

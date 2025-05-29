@@ -31,7 +31,7 @@ import os
 import sys
 import datetime
 import logging
-from typing import Dict, Any, List, Type, Optional
+from typing import Dict, Any, List, Type, Optional, Tuple
 
 # プロセス冒頭で実行環境を確定
 # test_runner_V2.pyの絶対パスを取得
@@ -52,6 +52,109 @@ from test_runner_V2_analysis_executor import AnalyzerDiscoverer, AnalysisExecuto
 
 # ログ設定（実行環境確定後に実行）
 logger = setup_logger()
+
+
+def generate_report_from_json_file(json_file_path: str) -> Optional[str]:
+    """
+    JSONファイルからレポートを生成する
+
+    Args:
+        json_file_path: JSONファイルのパス
+
+    Returns:
+        生成されたレポート文字列、失敗した場合はNone
+    """
+    try:
+        import json
+
+        # JSONファイルを読み込み
+        with open(json_file_path, 'r', encoding='utf-8') as f:
+            execution_data = json.load(f)
+
+        log_info(f"JSONファイルからデータを読み込みました: {json_file_path}")
+
+        # JSONデータを既存のgenerate_report関数で使用できる形式に変換
+        latest_test_results = {}
+        all_test_results = []
+        analysis_results = {}
+
+        # テスト実行データの変換
+        if "test_execution" in execution_data and "iterations" in execution_data["test_execution"]:
+            iterations = execution_data["test_execution"]["iterations"]
+
+            # 最新のイテレーション結果を取得
+            if iterations:
+                latest_iteration = iterations[-1]
+                if "test_results" in latest_iteration:
+                    for test_id, test_result in latest_iteration["test_results"].items():
+                        latest_test_results[test_id] = {
+                            "test_id": test_result.get("test_id", test_id),
+                            "success": test_result.get("success", False),
+                            "storage_filename": test_result.get("storage_filepath", ""),
+                            "password_a_random": test_result.get("password_a_random", ""),
+                            "password_b_random": test_result.get("password_b_random", ""),
+                            "password_a_cli": test_result.get("password_a_cli", ""),
+                            "password_b_cli": test_result.get("password_b_cli", ""),
+                            "cli_args": test_result.get("cli_args", ""),
+                            "stdout": test_result.get("stdout", ""),
+                            "stderr": test_result.get("stderr", ""),
+                            "exit_code": test_result.get("exit_code", 0),
+                            "partition_map_a": test_result.get("partition_map_a", ""),
+                            "partition_map_b": test_result.get("partition_map_b", ""),
+                            "execution_time": test_result.get("execution_time", 0.0),
+                            "performance_data": test_result.get("performance_data", {}),
+                            "error": test_result.get("error", "")
+                        }
+
+            # 全イテレーション結果の変換
+            for i, iteration in enumerate(iterations):
+                iteration_results = {}
+                if "test_results" in iteration:
+                    for test_id, test_result in iteration["test_results"].items():
+                        iteration_results[test_id] = {
+                            "test_id": test_result.get("test_id", test_id),
+                            "success": test_result.get("success", False),
+                            "storage_filename": test_result.get("storage_filepath", ""),
+                            "password_a_random": test_result.get("password_a_random", ""),
+                            "password_b_random": test_result.get("password_b_random", ""),
+                            "password_a_cli": test_result.get("password_a_cli", ""),
+                            "password_b_cli": test_result.get("password_b_cli", ""),
+                            "cli_args": test_result.get("cli_args", ""),
+                            "stdout": test_result.get("stdout", ""),
+                            "stderr": test_result.get("stderr", ""),
+                            "exit_code": test_result.get("exit_code", 0),
+                            "partition_map_a": test_result.get("partition_map_a", ""),
+                            "partition_map_b": test_result.get("partition_map_b", ""),
+                            "execution_time": test_result.get("execution_time", 0.0),
+                            "performance_data": test_result.get("performance_data", {}),
+                            "error": test_result.get("error", "")
+                        }
+
+                all_test_results.append({
+                    "iteration": iteration.get("iteration", i + 1),
+                    "results": iteration_results
+                })
+
+        # 分析実行データの変換
+        if "analysis_execution" in execution_data:
+            analysis_exec = execution_data["analysis_execution"]
+
+            # map_intersection分析結果
+            if "map_intersection" in analysis_exec and analysis_exec["map_intersection"]:
+                map_data = analysis_exec["map_intersection"]
+                if "final_results" in map_data:
+                    analysis_results["map_intersection"] = map_data["final_results"]
+
+            # その他の分析結果
+            if "other_analyses" in analysis_exec:
+                analysis_results.update(analysis_exec["other_analyses"])
+
+        # 既存のgenerate_report関数を呼び出し
+        return generate_report(latest_test_results, analysis_results, all_test_results)
+
+    except Exception as e:
+        log_error(f"JSONファイルからのレポート生成中にエラーが発生しました: {str(e)}")
+        return None
 
 
 class TestRunnerV2:
@@ -191,7 +294,7 @@ class TestRunnerV2:
             except Exception as inner_e:
                 log_error(f"レポート生成エラー記録中にさらにエラーが発生しました: {str(inner_e)}")
 
-    def _count_results_from_json(self) -> tuple[int, int]:
+    def _count_results_from_json(self) -> Tuple[int, int]:
         """
         JSONファイルから結果を読み込んで成功数と失敗数をカウント
 
@@ -221,110 +324,6 @@ class TestRunnerV2:
         except Exception as e:
             log_error(f"JSONファイルからの結果カウント中にエラーが発生しました: {str(e)}")
             return 0, 0
-
-
-# JSONファイルからレポート生成する新しい関数をインポート
-def generate_report_from_json_file(json_file_path: str) -> Optional[str]:
-    """
-    JSONファイルからレポートを生成する
-
-    Args:
-        json_file_path: JSONファイルのパス
-
-    Returns:
-        生成されたレポート文字列、失敗した場合はNone
-    """
-    try:
-        import json
-
-        # JSONファイルを読み込み
-        with open(json_file_path, 'r', encoding='utf-8') as f:
-            execution_data = json.load(f)
-
-        log_info(f"JSONファイルからデータを読み込みました: {json_file_path}")
-
-        # JSONデータを既存のgenerate_report関数で使用できる形式に変換
-        latest_test_results = {}
-        all_test_results = []
-        analysis_results = {}
-
-        # テスト実行データの変換
-        if "test_execution" in execution_data and "iterations" in execution_data["test_execution"]:
-            iterations = execution_data["test_execution"]["iterations"]
-
-            # 最新のイテレーション結果を取得
-            if iterations:
-                latest_iteration = iterations[-1]
-                if "test_results" in latest_iteration:
-                    for test_id, test_result in latest_iteration["test_results"].items():
-                        latest_test_results[test_id] = {
-                            "test_id": test_result.get("test_id", test_id),
-                            "success": test_result.get("success", False),
-                            "storage_filename": test_result.get("storage_filepath", ""),
-                            "password_a_random": test_result.get("password_a_random", ""),
-                            "password_b_random": test_result.get("password_b_random", ""),
-                            "password_a_cli": test_result.get("password_a_cli", ""),
-                            "password_b_cli": test_result.get("password_b_cli", ""),
-                            "cli_args": test_result.get("cli_args", ""),
-                            "stdout": test_result.get("stdout", ""),
-                            "stderr": test_result.get("stderr", ""),
-                            "exit_code": test_result.get("exit_code", 0),
-                            "partition_map_a": test_result.get("partition_map_a", ""),
-                            "partition_map_b": test_result.get("partition_map_b", ""),
-                            "execution_time": test_result.get("execution_time", 0.0),
-                            "performance_data": test_result.get("performance_data", {}),
-                            "error": test_result.get("error", "")
-                        }
-
-            # 全イテレーション結果の変換
-            for i, iteration in enumerate(iterations):
-                iteration_results = {}
-                if "test_results" in iteration:
-                    for test_id, test_result in iteration["test_results"].items():
-                        iteration_results[test_id] = {
-                            "test_id": test_result.get("test_id", test_id),
-                            "success": test_result.get("success", False),
-                            "storage_filename": test_result.get("storage_filepath", ""),
-                            "password_a_random": test_result.get("password_a_random", ""),
-                            "password_b_random": test_result.get("password_b_random", ""),
-                            "password_a_cli": test_result.get("password_a_cli", ""),
-                            "password_b_cli": test_result.get("password_b_cli", ""),
-                            "cli_args": test_result.get("cli_args", ""),
-                            "stdout": test_result.get("stdout", ""),
-                            "stderr": test_result.get("stderr", ""),
-                            "exit_code": test_result.get("exit_code", 0),
-                            "partition_map_a": test_result.get("partition_map_a", ""),
-                            "partition_map_b": test_result.get("partition_map_b", ""),
-                            "execution_time": test_result.get("execution_time", 0.0),
-                            "performance_data": test_result.get("performance_data", {}),
-                            "error": test_result.get("error", "")
-                        }
-
-                all_test_results.append({
-                    "iteration": iteration.get("iteration", i + 1),
-                    "results": iteration_results
-                })
-
-        # 分析実行データの変換
-        if "analysis_execution" in execution_data:
-            analysis_exec = execution_data["analysis_execution"]
-
-            # map_intersection分析結果
-            if "map_intersection" in analysis_exec and analysis_exec["map_intersection"]:
-                map_data = analysis_exec["map_intersection"]
-                if "final_results" in map_data:
-                    analysis_results["map_intersection"] = map_data["final_results"]
-
-            # その他の分析結果
-            if "other_analyses" in analysis_exec:
-                analysis_results.update(analysis_exec["other_analyses"])
-
-        # 既存のgenerate_report関数を呼び出し
-        return generate_report(latest_test_results, analysis_results, all_test_results)
-
-    except Exception as e:
-        log_error(f"JSONファイルからのレポート生成中にエラーが発生しました: {str(e)}")
-        return None
 
 
 def main():

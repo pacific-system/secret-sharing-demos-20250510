@@ -186,25 +186,33 @@ class MapIntersectionAnalyzer:
             return analysis_results
 
         # 全ての組み合わせについて交差率を計算（総当たり）
-        # A領域パーティションマップ同士の交差
+        # A領域パーティションマップ同士の交差（効率化版：重複計算を排除）
         for i, a_map_i in enumerate(a_maps):
             for j, a_map_j in enumerate(a_maps):
-                if i != j:  # 同じマップ同士の比較は意味がないのでスキップ
-                    # 交差率を計算
+                if i < j:  # i < j の条件で重複計算を排除（効率化）
+                    # 交差率を計算（1回のみ）
                     intersection_rate = self.calculate_intersection_rate(a_map_i["map"], a_map_j["map"])
-                    # キーは (iteration_i, iteration_j) という形式
-                    key = (a_map_i["iteration"], a_map_j["iteration"])
-                    analysis_results["a_map_intersection"][key] = intersection_rate
 
-        # B領域パーティションマップ同士の交差
+                    # 両方向のキーに同じ値を設定（レポート要件維持）
+                    key_ij = (a_map_i["iteration"], a_map_j["iteration"])
+                    key_ji = (a_map_j["iteration"], a_map_i["iteration"])
+
+                    analysis_results["a_map_intersection"][key_ij] = intersection_rate
+                    analysis_results["a_map_intersection"][key_ji] = intersection_rate  # 対称値
+
+        # B領域パーティションマップ同士の交差（効率化版：重複計算を排除）
         for i, b_map_i in enumerate(b_maps):
             for j, b_map_j in enumerate(b_maps):
-                if i != j:  # 同じマップ同士の比較は意味がないのでスキップ
-                    # 交差率を計算
+                if i < j:  # i < j の条件で重複計算を排除（効率化）
+                    # 交差率を計算（1回のみ）
                     intersection_rate = self.calculate_intersection_rate(b_map_i["map"], b_map_j["map"])
-                    # キーは (iteration_i, iteration_j) という形式
-                    key = (b_map_i["iteration"], b_map_j["iteration"])
-                    analysis_results["b_map_intersection"][key] = intersection_rate
+
+                    # 両方向のキーに同じ値を設定（レポート要件維持）
+                    key_ij = (b_map_i["iteration"], b_map_j["iteration"])
+                    key_ji = (b_map_j["iteration"], b_map_i["iteration"])
+
+                    analysis_results["b_map_intersection"][key_ij] = intersection_rate
+                    analysis_results["b_map_intersection"][key_ji] = intersection_rate  # 対称値
 
         # A領域とB領域のパーティションマップ間の交差
         for i, a_map in enumerate(a_maps):
@@ -233,6 +241,25 @@ class MapIntersectionAnalyzer:
 
         # 詳細ログ
         logger.info(f"交差分析のために抽出されたパーティションマップ: A={len(a_maps)}件, B={len(b_maps)}件")
+
+        # 効率化の効果をログ出力
+        a_comparisons_optimized = len(a_maps) * (len(a_maps) - 1) // 2  # 効率化後の計算回数
+        b_comparisons_optimized = len(b_maps) * (len(b_maps) - 1) // 2  # 効率化後の計算回数
+        ab_comparisons = len(a_maps) * len(b_maps)  # A-B間比較は効率化対象外
+
+        a_comparisons_original = len(a_maps) * (len(a_maps) - 1)  # 効率化前の計算回数
+        b_comparisons_original = len(b_maps) * (len(b_maps) - 1)  # 効率化前の計算回数
+
+        total_optimized = a_comparisons_optimized + b_comparisons_optimized + ab_comparisons
+        total_original = a_comparisons_original + b_comparisons_original + ab_comparisons
+
+        reduction_rate = ((total_original - total_optimized) / total_original * 100) if total_original > 0 else 0
+
+        logger.info(f"パーティションマップ交差分析の効率化効果:")
+        logger.info(f"  A用マップ比較: {a_comparisons_optimized}回実行 (効率化前: {a_comparisons_original}回)")
+        logger.info(f"  B用マップ比較: {b_comparisons_optimized}回実行 (効率化前: {b_comparisons_original}回)")
+        logger.info(f"  A-B間マップ比較: {ab_comparisons}回実行 (効率化対象外)")
+        logger.info(f"  合計計算回数: {total_optimized}回 (効率化前: {total_original}回, {reduction_rate:.1f}%削減)")
 
         # 分析結果をより詳細に保存（テーブル用データ構造）
         # 各テスト実行ごとのマップキー比較結果を生成

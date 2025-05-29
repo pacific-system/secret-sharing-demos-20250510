@@ -222,19 +222,6 @@ class TestRunnerV2:
             log_error(f"JSONファイルからの結果カウント中にエラーが発生しました: {str(e)}")
             return 0, 0
 
-    def _generate_and_save_report(self, latest_test_results: Dict[str, Any], analysis_results: Dict[str, Dict[str, Any]], all_test_results: List[Dict[str, Dict[str, Any]]]) -> None:
-        """
-        レポート生成と保存（旧メソッド - 非推奨）
-
-        Args:
-            latest_test_results: 最新のテスト結果
-            analysis_results: 分析結果
-            all_test_results: 全テスト結果
-        """
-        # このメソッドは互換性のために残すが、使用は非推奨
-        log_warning("_generate_and_save_report()は非推奨です。_generate_and_save_report_from_json()を使用してください")
-        self._generate_and_save_report_from_json()
-
 
 # JSONファイルからレポート生成する新しい関数をインポート
 def generate_report_from_json_file(json_file_path: str) -> Optional[str]:
@@ -274,8 +261,10 @@ def generate_report_from_json_file(json_file_path: str) -> Optional[str]:
                             "test_id": test_result.get("test_id", test_id),
                             "success": test_result.get("success", False),
                             "storage_filename": test_result.get("storage_filepath", ""),
-                            "password_a": test_result.get("password_a", ""),
-                            "password_b": test_result.get("password_b", ""),
+                            "password_a_random": test_result.get("password_a_random", ""),
+                            "password_b_random": test_result.get("password_b_random", ""),
+                            "password_a_cli": test_result.get("password_a_cli", ""),
+                            "password_b_cli": test_result.get("password_b_cli", ""),
                             "cli_args": test_result.get("cli_args", ""),
                             "stdout": test_result.get("stdout", ""),
                             "stderr": test_result.get("stderr", ""),
@@ -296,8 +285,10 @@ def generate_report_from_json_file(json_file_path: str) -> Optional[str]:
                             "test_id": test_result.get("test_id", test_id),
                             "success": test_result.get("success", False),
                             "storage_filename": test_result.get("storage_filepath", ""),
-                            "password_a": test_result.get("password_a", ""),
-                            "password_b": test_result.get("password_b", ""),
+                            "password_a_random": test_result.get("password_a_random", ""),
+                            "password_b_random": test_result.get("password_b_random", ""),
+                            "password_a_cli": test_result.get("password_a_cli", ""),
+                            "password_b_cli": test_result.get("password_b_cli", ""),
                             "cli_args": test_result.get("cli_args", ""),
                             "stdout": test_result.get("stdout", ""),
                             "stderr": test_result.get("stderr", ""),

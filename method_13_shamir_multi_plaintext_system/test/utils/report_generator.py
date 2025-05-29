@@ -673,12 +673,12 @@ def get_placeholder_value(placeholder: str, test_results: Dict[str, Any], analys
         return "（パーティションマップキーが取得できませんでした）"
 
     # パスワード関連
-    if placeholder.endswith("用パスワードランダム結果"):
+    if placeholder.endswith("用パスワード"):
         partition = placeholder[0].lower()  # 'A'用 または 'B'用の先頭文字を取得し小文字に変換
 
         # 特定のテスト結果が指定されている場合はそれを使用
         if specific_test_result:
-            # テスト結果からランダムパスワードを取得
+            # テスト結果からランダムパスワードを取得（新しいパスワード管理システム）
             random_password_key = f"password_{partition}_random"
             if random_password_key in specific_test_result:
                 password = specific_test_result[random_password_key]
@@ -734,37 +734,6 @@ def get_placeholder_value(placeholder: str, test_results: Dict[str, Any], analys
         # CLIパスワードが見つからない場合
         logger.warning(f"{partition.upper()}用CLIパスワードがテスト結果全体で見つかりません")
         return f"（{partition.upper()}用CLIパスワードが取得できません）"
-
-    if placeholder.endswith("用パスワード"):
-        partition = placeholder[0].lower()  # 'A'用 または 'B'用の先頭文字を取得し小文字に変換
-
-        # 特定のテスト結果が指定されている場合はそれを使用
-        if specific_test_result:
-            # テスト結果から直接パスワードを取得
-            direct_password_key = f"password_{partition}"
-            if direct_password_key in specific_test_result:
-                password = specific_test_result[direct_password_key]
-                if password:
-                    logger.info(f"テストの{partition.upper()}用パスワードを取得しました: {password}")
-                    return password
-
-            # パスワードが見つからない場合
-            logger.warning(f"{partition.upper()}用パスワードが特定テスト結果に保存されていません - テスト異常")
-            return f"（{partition.upper()}用パスワードが取得できません - テスト失敗）"
-
-        # 特定のテスト結果がない場合、最初の成功したテストからパスワードを取得
-        for test_id, result in test_results.items():
-            if result.get("success", False):
-                direct_password_key = f"password_{partition}"
-                if direct_password_key in result:
-                    password = result[direct_password_key]
-                    if password:
-                        logger.info(f"テスト全体の{partition.upper()}用パスワードを取得しました: {password}")
-                        return password
-
-        # パスワードが見つからない場合
-        logger.warning(f"{partition.upper()}用パスワードがテスト結果全体で見つかりません - テスト異常")
-        return f"（{partition.upper()}用パスワードが取得できません - テスト失敗）"
 
     # テーブル用の値
     if placeholder == "✅/❌":
